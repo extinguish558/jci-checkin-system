@@ -1,0 +1,7 @@
+{
+  "name": "嘉義青商活動報到及抽獎系統_雲端共享版",
+  "description": "AI-powered event check-in system with OCR for handwriting, MC view, and integrated lottery.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
