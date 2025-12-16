@@ -413,8 +413,8 @@ const AdminPanel: React.FC = () => {
                       {isAdmin ? '已解鎖' : '已鎖定'}
                   </button>
                   
-                  {/* Force Sync Button - ONLY SHOW IF ADMIN AND CONNECTED AND HAS GUESTS */}
-                  {isAdmin && isCloudConnected && guests.length > 0 && (
+                  {/* Force Sync Button - SHOW IF ADMIN AND CONNECTED (Removed guests.length check) */}
+                  {isAdmin && isCloudConnected && (
                       <button 
                           onClick={handleForceSyncClick}
                           className="flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold border bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100 transition-colors"
