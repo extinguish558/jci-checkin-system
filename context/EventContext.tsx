@@ -108,8 +108,6 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       });
 
       // CLOUD FIRST STRATEGY:
-      // We trust the cloud 100%. We replace local state with cloud state.
-      // This ensures all devices see exactly the same thing.
       setGuests(cloudGuests);
       saveToLocal(cloudGuests);
 
@@ -140,9 +138,6 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   }, []);
 
   // --- ACTIONS ---
-  // All actions now prioritize Cloud Writes. 
-  // We do NOT manually setGuests() if we are connected to the cloud.
-  // We let the onSnapshot listener update the UI.
 
   const updateSettings = async (newSettings: Partial<SystemSettings>) => {
     // Optimistic update for settings is okay as it feels snappier
@@ -188,9 +183,6 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const addGuestsFromDraft = async (drafts: ParsedGuestDraft[], checkInTimestamp: Date) => {
     const globalRound = settings.currentCheckInRound;
     
-    // We calculate the logic against the CURRENT known guests
-    // Because this is async, if two people scan at exact same millisecond, 
-    // Firestore transactions would be needed for perfect safety, but batch is atomic enough for this use case.
     const currentGuests = [...guests];
     const existingNames = new Map<string, number>(); 
     currentGuests.forEach((g, idx) => existingNames.set(g.name, idx));
@@ -198,7 +190,6 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const newDocs: { type: 'set' | 'update', refId: string, data: any }[] = [];
     const BLACKLIST = ['姓名', 'Name', '職稱', 'Title', '備註', 'Note'];
 
-    // Track local updates just for Offline Mode fallback
     const offlineGuestList = [...currentGuests];
 
     drafts.forEach(draft => {
@@ -219,11 +210,14 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             let newCheckInTime = existing.checkInTime;
 
             if (shouldAddRound) {
+                // MUTUAL EXCLUSIVITY:
+                // If checking in for a new round, we force the rounds array to ONLY contain this round.
+                // This prevents R1 and R2 co-existing.
+                newRounds = [targetRound];
+                
+                // Only update time if they weren't checked in before
                 if (!existing.isCheckedIn) {
-                    newRounds = [targetRound];
                     newCheckInTime = checkInTimestamp.toISOString();
-                } else if (!newRounds.includes(targetRound)) {
-                     newRounds.push(targetRound);
                 }
             }
 
@@ -239,7 +233,7 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                 code: draft.code || existing.code
             };
             
-            offlineGuestList[idx] = updatedGuest; // Update local tracking
+            offlineGuestList[idx] = updatedGuest;
             newDocs.push({ type: 'update', refId: existing.id, data: updatedGuest });
 
         } else {
@@ -261,7 +255,7 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                 wonRounds: []
             };
             
-            offlineGuestList.push(newGuest); // Update local tracking
+            offlineGuestList.push(newGuest);
             existingNames.set(newGuest.name, offlineGuestList.length - 1);
             newDocs.push({ type: 'set', refId: draftId, data: newGuest });
         }
@@ -284,14 +278,11 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                 await currentBatch.commit();
             }
             console.log("Cloud batch write successful");
-            // DO NOT setGuests here. The snapshot listener will trigger and update the UI.
-            // This ensures we are viewing exactly what is on the server.
         } catch (e) {
             console.error("Cloud Sync Failed:", e);
             throw new Error("同步失敗，請檢查網路連線");
         }
     } else {
-        // Fallback: Offline Mode
         console.warn("Offline: Updating local state only.");
         setGuests(offlineGuestList);
         saveToLocal(offlineGuestList);
@@ -321,9 +312,13 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       let newCheckInTime = guest.checkInTime;
 
       if (isAttendingTarget) {
-          newRounds = currentRounds.filter(r => r !== targetRound);
+          // If clicking the SAME round, cancel check-in (Clear all rounds)
+          newRounds = [];
       } else {
-          newRounds = [...currentRounds, targetRound].sort((a,b) => a-b);
+          // MUTUAL EXCLUSIVITY:
+          // If clicking a DIFFERENT round, SWITCH to it (Clear others, set to this one)
+          newRounds = [targetRound];
+          
           if (!guest.isCheckedIn) {
               newCheckInTime = new Date().toISOString();
           }
@@ -380,8 +375,6 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const drawWinner = (mode: DrawMode = 'default'): Guest | null => {
-    // Drawing logic relies on current local state (which is synced) to Pick a Winner
-    // Then writes the result to Cloud.
     const checkedInGuests = guests.filter(g => g.isCheckedIn);
     const currentRound = settings.lotteryRoundCounter;
 
@@ -415,7 +408,6 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     if (db && isCloudConnected) {
         db.collection("guests").doc(winner.id).update(updates);
     } else {
-        // Offline draw
         const newGuests = guests.map(g => g.id === winner.id ? { ...g, ...updates } : g);
         setGuests(newGuests);
         saveToLocal(newGuests);
