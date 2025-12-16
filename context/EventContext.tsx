@@ -126,7 +126,25 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         cloudGuests.push(doc.data() as Guest);
       });
 
-      // CLOUD FIRST STRATEGY:
+      // --- PROTECTIVE LOGIC START ---
+      // Situation: Cloud is empty (cloudGuests.length === 0)
+      // BUT Local has data (guests.length > 0 or localStorage has data)
+      // This happens if sync failed previously. We should NOT wipe local data.
+      if (cloudGuests.length === 0) {
+          const localStr = localStorage.getItem('event_guests');
+          const localData = localStr ? JSON.parse(localStr) : [];
+          
+          if (localData.length > 0) {
+              console.warn("Cloud is empty, but Local has data. Preventing overwrite to allow manual sync.");
+              // We intentionally do NOT call setGuests([]) here.
+              // We just let the local state persist.
+              // The user can then click "Force Upload" to fix the cloud state.
+              return; 
+          }
+      }
+      // --- PROTECTIVE LOGIC END ---
+
+      // CLOUD FIRST STRATEGY (Normal Case):
       setGuests(cloudGuests);
       saveToLocal(cloudGuests);
 
@@ -154,7 +172,7 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       unsubscribeGuests();
       unsubscribeSettings();
     };
-  }, []);
+  }, []); // Remove dependency on 'guests' to avoid re-triggering listener on local updates
 
   // --- ACTIONS ---
 
