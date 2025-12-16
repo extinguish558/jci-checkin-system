@@ -356,10 +356,14 @@ const AdminPanel: React.FC = () => {
 
   const handleForceSyncClick = (e: React.MouseEvent) => {
       e.stopPropagation();
+      
+      // Warn if offline, but allow proceeding
       if (!isCloudConnected) {
-          alert("雲端尚未連線，無法執行同步。");
-          return;
+          if (!confirm("⚠️ 目前系統顯示「未連線」。\n\n強制寫入後，資料會先存在瀏覽器中，等待網路連線恢復後自動上傳至 Firebase。\n\n確定要執行嗎？")) {
+              return;
+          }
       }
+
       setConfirmModal({
           isOpen: true,
           type: 'FORCE_SYNC',
@@ -383,7 +387,7 @@ const AdminPanel: React.FC = () => {
           setProgressMsg("正在將資料上傳至雲端...");
           try {
               await uploadAllLocalDataToCloud();
-              alert("同步成功！雲端資料已更新。");
+              alert("同步指令已送出！\n(若目前離線，資料將在網路恢復後自動同步)");
           } catch (e: any) {
               alert("同步失敗：" + e.message);
           } finally {
@@ -429,8 +433,8 @@ const AdminPanel: React.FC = () => {
                       {isAdmin ? '已解鎖' : '已鎖定'}
                   </button>
                   
-                  {/* Force Sync Button - SHOW IF ADMIN AND CONNECTED (Removed guests.length check) */}
-                  {isAdmin && isCloudConnected && (
+                  {/* Force Sync Button - ALWAYS SHOW IF ADMIN, IGNORE CONNECTION STATE */}
+                  {isAdmin && (
                       <button 
                           onClick={handleForceSyncClick}
                           className="flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold border bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100 transition-colors"
