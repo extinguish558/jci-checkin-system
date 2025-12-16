@@ -84,6 +84,13 @@ const McPanel: React.FC = () => {
       GuestCategory.OTHER
   ];
 
+  // Helper: Normalize Full-width characters to Half-width (Fixes Cloud Data Issues)
+  const toHalfWidth = (str: string) => {
+      return str.replace(/[\uff01-\uff5e]/g, function(ch) {
+          return String.fromCharCode(ch.charCodeAt(0) - 0xfee0);
+      }).replace(/\u3000/g, ' ');
+  };
+
   // Helper for sorting generic lists
   const sortGuests = (list: Guest[]) => {
       return list.sort((a, b) => {
@@ -94,9 +101,27 @@ const McPanel: React.FC = () => {
 
   // Helper: Extract number from title for sorting (e.g. "第30屆" -> 30, "112年度" -> 112)
   const getTitleNumber = (title: string): number => {
-      if (title.includes('創會')) return 0; // "Founding" priority
-      const match = title.match(/(\d+)/);
+      if (!title) return 999999;
+      
+      // Normalize first to handle "第４０屆" (Full width numbers)
+      const normalizedTitle = toHalfWidth(title);
+
+      if (normalizedTitle.includes('創會')) return 0; // "Founding" priority
+      
+      const match = normalizedTitle.match(/(\d+)/);
       return match ? parseInt(match[0], 10) : 999999; // If no number, put at end
+  };
+
+  // Helper: Stable Sort (Primary: Number, Secondary: Name)
+  // This prevents the list from jumping around if numbers are equal or missing
+  const stableSortByTitleNumber = (a: Guest, b: Guest) => {
+      const numA = getTitleNumber(a.title);
+      const numB = getTitleNumber(b.title);
+      
+      if (numA !== numB) return numA - numB;
+      
+      // Fallback to name to ensure stability
+      return a.name.localeCompare(b.name, "zh-TW");
   };
 
   // Grouping for "To Be Introduced" (Left Column) - With Strict Rules
@@ -125,10 +150,16 @@ const McPanel: React.FC = () => {
           // Priority: Title Keyword > Category
           // This ensures that even if a President is categorized as 'OB', they appear in the President list if title says "會長".
           const title = g.title.trim();
+          const normalizedTitle = toHalfWidth(title); // Use normalized for checks too
           
-          const isPresident = title.includes('會長') || g.category === GuestCategory.PAST_PRESIDENT;
-          const isChairman = title.includes('主席') || g.category === GuestCategory.PAST_CHAIRMAN;
+          // Improved Logic: Explicitly check for keywords
+          const isPresident = normalizedTitle.includes('會長') || g.category === GuestCategory.PAST_PRESIDENT;
+          const isChairman = normalizedTitle.includes('主席') || g.category === GuestCategory.PAST_CHAIRMAN;
           
+          // Exclude if title implies they are a "Current" committee chairman but not a "Past Chairman" in category context
+          // But usually specifically "歷屆主席" or "XXXX年主席" is what we want.
+          // For simplicity, we stick to the Keyword + Category logic but enforce the sort.
+
           if (isPresident) {
               groups.presidents.push(g);
           } else if (isChairman) {
@@ -141,10 +172,10 @@ const McPanel: React.FC = () => {
 
       // Sorting Logic
       // 1. Presidents: Sort by Title Number (Session/Term) - Ascending (Low to High)
-      groups.presidents.sort((a, b) => getTitleNumber(a.title) - getTitleNumber(b.title));
+      groups.presidents.sort(stableSortByTitleNumber);
       
       // 2. Chairmen: Sort by Title Number (Year) - Ascending (Low to High)
-      groups.chairmen.sort((a, b) => getTitleNumber(a.title) - getTitleNumber(b.title));
+      groups.chairmen.sort(stableSortByTitleNumber);
       
       // 3. VIPs: Default sort
       sortGuests(groups.vips);
