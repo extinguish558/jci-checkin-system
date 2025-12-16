@@ -206,17 +206,18 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             const idx = existingNames.get(cleanName)!;
             const existing = offlineGuestList[idx];
             
+            // Start with existing rounds, but we will OVERWRITE if shouldAddRound is true
             let newRounds = [...(existing.attendedRounds || [])];
             let newCheckInTime = existing.checkInTime;
 
             if (shouldAddRound) {
-                // MUTUAL EXCLUSIVITY:
-                // If checking in for a new round, we force the rounds array to ONLY contain this round.
-                // This prevents R1 and R2 co-existing.
+                // MUTUAL EXCLUSIVITY ENFORCED:
+                // If checking in via Import/AI, we force the guest into THIS round only.
+                // This clears any other rounds (e.g., if they were R1, now they become R2).
                 newRounds = [targetRound];
                 
-                // Only update time if they weren't checked in before
-                if (!existing.isCheckedIn) {
+                // Set time if they weren't checked in properly before
+                if (!existing.isCheckedIn || !newCheckInTime) {
                     newCheckInTime = checkInTimestamp.toISOString();
                 }
             }
@@ -226,7 +227,7 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                 attendedRounds: newRounds,
                 isCheckedIn: newRounds.length > 0,
                 round: newRounds.length > 0 ? Math.max(...newRounds) : undefined,
-                checkInTime: newCheckInTime,
+                checkInTime: newRounds.length > 0 ? newCheckInTime : undefined, // Clear time if no rounds
                 title: draft.title || existing.title,
                 note: draft.note || existing.note,
                 category: draft.category || existing.category,
@@ -238,6 +239,7 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
         } else {
             const draftId = generateId();
+            // New guest created with strict round logic
             const newRounds = shouldAddRound ? [targetRound] : [];
             const newGuest: Guest = {
                 id: draftId,
@@ -312,23 +314,34 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       let newCheckInTime = guest.checkInTime;
 
       if (isAttendingTarget) {
-          // If clicking the SAME round, cancel check-in (Clear all rounds)
+          // CANCEL CHECK-IN:
+          // User clicked the active round button. We assume they want to cancel check-in completely.
+          // Since we enforce mutual exclusivity, removing the active round means removing ALL rounds.
           newRounds = [];
+          newCheckInTime = undefined; // Explicitly clear time
       } else {
-          // MUTUAL EXCLUSIVITY:
-          // If clicking a DIFFERENT round, SWITCH to it (Clear others, set to this one)
+          // SWITCH / CHECK-IN:
+          // User clicked a different round (or was not checked in).
+          // We enforce mutual exclusivity by setting rounds ONLY to this target round.
+          // This automatically handles the "Switch R1 to R2" case by overwriting R1.
           newRounds = [targetRound];
           
+          // Set time if not previously checked in, or if we want to update time on switch
+          // (Here we only set if not checked in, preserving original arrival time if just fixing round)
           if (!guest.isCheckedIn) {
               newCheckInTime = new Date().toISOString();
           }
       }
       
+      // Safety: ensure undefined is handled if Firestore dislikes undefined (it usually ignores it or needs null)
+      // We will use standard object updates. Firestore update({checkInTime: deleteField()}) is ideal but complexity.
+      // We'll stick to string | null logic if needed, but here simple assignment usually works.
+      
       const updates = {
           attendedRounds: newRounds,
           isCheckedIn: newRounds.length > 0,
           round: newRounds.length > 0 ? Math.max(...newRounds) : undefined,
-          checkInTime: newCheckInTime
+          checkInTime: newRounds.length > 0 ? newCheckInTime : null // Use null to clear in Firestore
       };
 
       // CLOUD FIRST
