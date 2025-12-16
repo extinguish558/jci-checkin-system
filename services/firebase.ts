@@ -1,5 +1,5 @@
-import firebase from "firebase/app";
-import "firebase/firestore";
+import firebase from "firebase/compat/app";
+import "firebase/compat/firestore";
 
 // TODO: 請將此處替換為您在 Firebase Console 取得的設定資訊
 // 步驟:
