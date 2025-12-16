@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { useEvent } from '../context/EventContext';
 import { GuestCategory, Guest } from '../types';
-import { CheckCircle2, Circle, RefreshCw, Mic2, Users, ListFilter, ArrowRight, ChevronDown, ChevronUp, Crown, Star, User, Layers } from 'lucide-react';
+import { CheckCircle2, Circle, RefreshCw, Mic2, Users, ListFilter, ArrowRight, ChevronDown, ChevronUp, Crown, Star, User, Layers, Globe } from 'lucide-react';
 
 interface VipCardProps {
   guest: Guest;
@@ -74,9 +74,9 @@ const McPanel: React.FC = () => {
 
   // VIP Categories Definition for History (Show ALL categories in history)
   const allHistoryCategories = [
+      GuestCategory.HQ_GUEST, // Added priority to history
       GuestCategory.PAST_PRESIDENT,
       GuestCategory.PAST_CHAIRMAN,
-      GuestCategory.HQ_GUEST,
       GuestCategory.GOV_OFFICIAL,
       GuestCategory.VISITING_CHAPTER,
       GuestCategory.MEMBER_OB,
@@ -127,6 +127,7 @@ const McPanel: React.FC = () => {
   // Grouping for "To Be Introduced" (Left Column) - With Strict Rules
   const groupedUnintroduced = useMemo(() => {
       const groups = {
+          hq: [] as Guest[], // New HQ Group
           presidents: [] as Guest[],
           chairmen: [] as Guest[],
           vips: [] as Guest[]
@@ -147,20 +148,22 @@ const McPanel: React.FC = () => {
           if (g.title.includes('見習會友')) return;
 
           // Categorization Logic:
-          // Priority: Title Keyword > Category
-          // This ensures that even if a President is categorized as 'OB', they appear in the President list if title says "會長".
           const title = g.title.trim();
-          const normalizedTitle = toHalfWidth(title); // Use normalized for checks too
+          const normalizedTitle = toHalfWidth(title); 
           
           // Improved Logic: Explicitly check for keywords
+          // PRIORITY 1: HEADQUARTERS (總會)
+          const isHQ = normalizedTitle.includes('總會') || g.category === GuestCategory.HQ_GUEST;
+          
+          // PRIORITY 2: PRESIDENTS
           const isPresident = normalizedTitle.includes('會長') || g.category === GuestCategory.PAST_PRESIDENT;
+          
+          // PRIORITY 3: CHAIRMEN
           const isChairman = normalizedTitle.includes('主席') || g.category === GuestCategory.PAST_CHAIRMAN;
           
-          // Exclude if title implies they are a "Current" committee chairman but not a "Past Chairman" in category context
-          // But usually specifically "歷屆主席" or "XXXX年主席" is what we want.
-          // For simplicity, we stick to the Keyword + Category logic but enforce the sort.
-
-          if (isPresident) {
+          if (isHQ) {
+              groups.hq.push(g);
+          } else if (isPresident) {
               groups.presidents.push(g);
           } else if (isChairman) {
               groups.chairmen.push(g);
@@ -171,13 +174,16 @@ const McPanel: React.FC = () => {
       });
 
       // Sorting Logic
-      // 1. Presidents: Sort by Title Number (Session/Term) - Ascending (Low to High)
+      // 1. HQ: Sort by Check-in time (First come first serve usually for HQ unless specific rank)
+      sortGuests(groups.hq);
+
+      // 2. Presidents: Sort by Title Number (Session/Term) - Ascending
       groups.presidents.sort(stableSortByTitleNumber);
       
-      // 2. Chairmen: Sort by Title Number (Year) - Ascending (Low to High)
+      // 3. Chairmen: Sort by Title Number (Year) - Ascending
       groups.chairmen.sort(stableSortByTitleNumber);
       
-      // 3. VIPs: Default sort
+      // 4. VIPs: Default sort
       sortGuests(groups.vips);
 
       return groups;
@@ -329,7 +335,7 @@ const McPanel: React.FC = () => {
         {/* Content Area */}
         {activeTab === 'vip' ? (
              <div className="flex flex-col md:flex-row gap-4 h-[calc(100vh-280px)] min-h-[500px]">
-                {/* LEFT: Unintroduced (Grouped into 3 Categories) */}
+                {/* LEFT: Unintroduced (Grouped into 4 Categories) */}
                 <div className={`${isUnintroExpanded ? 'flex-1' : 'flex-none h-14'} bg-white rounded-xl shadow-sm border border-indigo-200 flex flex-col overflow-hidden transition-all duration-300`}>
                     <div 
                         className="bg-indigo-50 p-3 font-bold text-indigo-900 border-b border-indigo-100 flex justify-between items-center cursor-pointer select-none hover:bg-indigo-100 transition-colors"
@@ -344,7 +350,17 @@ const McPanel: React.FC = () => {
                     {isUnintroExpanded && (
                         <div className="flex-1 overflow-y-auto p-3 custom-scrollbar bg-slate-50/50">
                             
-                            {/* 1. PRESIDENTS - Sorted by Term */}
+                            {/* 1. HQ (總會) - Highest Priority */}
+                            {groupedUnintroduced.hq.length > 0 && (
+                                <div className="mb-6">
+                                    <h3 className="text-sm font-bold text-indigo-800 uppercase mb-3 flex items-center gap-2 border-b border-indigo-100 pb-1">
+                                        <Globe size={16} className="text-blue-500" fill="currentColor"/> 總會長官/貴賓 ({groupedUnintroduced.hq.length})
+                                    </h3>
+                                    {groupedUnintroduced.hq.map(g => <VipCard key={g.id} guest={g} side="left" onToggle={toggleIntroduced} />)}
+                                </div>
+                            )}
+
+                            {/* 2. PRESIDENTS - Sorted by Term */}
                             {groupedUnintroduced.presidents.length > 0 && (
                                 <div className="mb-6">
                                     <h3 className="text-sm font-bold text-indigo-800 uppercase mb-3 flex items-center gap-2 border-b border-indigo-100 pb-1">
@@ -354,7 +370,7 @@ const McPanel: React.FC = () => {
                                 </div>
                             )}
 
-                            {/* 2. CHAIRMEN - Sorted by Year */}
+                            {/* 3. CHAIRMEN - Sorted by Year */}
                             {groupedUnintroduced.chairmen.length > 0 && (
                                 <div className="mb-6">
                                     <h3 className="text-sm font-bold text-indigo-800 uppercase mb-3 flex items-center gap-2 border-b border-indigo-100 pb-1">
@@ -364,7 +380,7 @@ const McPanel: React.FC = () => {
                                 </div>
                             )}
 
-                            {/* 3. ALL OTHER VIPS (With Titles) */}
+                            {/* 4. ALL OTHER VIPS (With Titles) */}
                             {groupedUnintroduced.vips.length > 0 && (
                                 <div className="mb-6">
                                     <h3 className="text-sm font-bold text-indigo-800 uppercase mb-3 flex items-center gap-2 border-b border-indigo-100 pb-1">
