@@ -165,17 +165,27 @@ const AdminPanel: React.FC = () => {
     }
   };
 
-  const handleConfirmDraft = () => {
+  const handleConfirmDraft = async () => {
     const selectedDrafts = draftGuests.filter(d => d.isSelected);
     if (selectedDrafts.length === 0) return alert("請至少勾選一位");
     if (selectedDrafts.some(d => !d.name.trim())) return alert("請輸入姓名");
     
     // Use current time
     const checkInDate = new Date();
+    
+    setIsProcessing(true);
+    setProgressMsg("正在匯入名單...");
 
-    addGuestsFromDraft(selectedDrafts, checkInDate);
-    setDraftGuests([]);
-    alert(`成功匯入 ${selectedDrafts.length} 筆資料`);
+    try {
+        await addGuestsFromDraft(selectedDrafts, checkInDate);
+        setDraftGuests([]);
+        alert(`成功匯入 ${selectedDrafts.length} 筆資料`);
+    } catch (e: any) {
+        alert("匯入發生錯誤：" + e.message);
+    } finally {
+        setIsProcessing(false);
+        setProgressMsg("");
+    }
   };
 
   // Enhanced CheckInButton
@@ -241,7 +251,7 @@ const AdminPanel: React.FC = () => {
       setManualEntries(manualEntries.filter((_, i) => i !== index));
   };
 
-  const submitManualEntries = () => {
+  const submitManualEntries = async () => {
       const validEntries = manualEntries.filter(e => e.name.trim() !== '');
       if (validEntries.length === 0) return alert('請至少輸入一位人員姓名');
 
@@ -256,11 +266,17 @@ const AdminPanel: React.FC = () => {
           hasSignature: manualCheckInTarget !== 0,
           forcedRound: manualCheckInTarget !== 0 ? manualCheckInTarget : undefined
       }));
-
-      addGuestsFromDraft(drafts, checkInDate);
       
-      setManualEntries([{ code: '', name: '', title: '', category: GuestCategory.OTHER, note: '' }]);
-      alert(`已新增 ${validEntries.length} 位人員`);
+      setIsProcessing(true);
+      try {
+          await addGuestsFromDraft(drafts, checkInDate);
+          setManualEntries([{ code: '', name: '', title: '', category: GuestCategory.OTHER, note: '' }]);
+          alert(`已新增 ${validEntries.length} 位人員`);
+      } catch (e: any) {
+          alert("新增失敗: " + e.message);
+      } finally {
+          setIsProcessing(false);
+      }
   };
 
   // List Data
@@ -582,7 +598,9 @@ const AdminPanel: React.FC = () => {
                   </div>
                   <div className="flex gap-2 mt-4">
                       <button onClick={addManualRow} className="flex items-center gap-1 text-blue-600 font-bold text-sm px-3 py-2 border border-blue-200 rounded hover:bg-blue-50"><Plus size={16}/> 新增</button>
-                      <button onClick={submitManualEntries} className="flex-1 bg-blue-600 text-white font-bold py-2 rounded hover:bg-blue-700 shadow-sm">確認新增</button>
+                      <button onClick={submitManualEntries} className="flex-1 bg-blue-600 text-white font-bold py-2 rounded hover:bg-blue-700 shadow-sm" disabled={isProcessing}>
+                          {isProcessing ? '處理中...' : '確認新增'}
+                      </button>
                   </div>
                 </div>
             )}
@@ -786,8 +804,10 @@ const AdminPanel: React.FC = () => {
                         </div>
                         <div className="flex gap-2">
                             <button onClick={() => setDraftGuests([])} className="px-4 py-2 rounded text-slate-500 hover:bg-slate-100 font-bold">取消</button>
-                            <button onClick={handleConfirmDraft} className="bg-green-600 text-white px-6 py-2 rounded-lg text-sm font-bold shadow-md hover:bg-green-700 flex items-center gap-2">
-                                <CheckSquare size={16} /> 確認匯入
+                            {/* Wait for processing */}
+                            <button onClick={handleConfirmDraft} disabled={isProcessing} className="bg-green-600 text-white px-6 py-2 rounded-lg text-sm font-bold shadow-md hover:bg-green-700 flex items-center gap-2 disabled:opacity-50">
+                                {isProcessing ? <RefreshCcw className="animate-spin" size={16}/> : <CheckSquare size={16} />} 
+                                {isProcessing ? "處理中..." : "確認匯入"}
                             </button>
                         </div>
                     </div>
