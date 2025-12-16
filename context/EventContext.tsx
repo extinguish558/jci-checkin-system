@@ -116,8 +116,6 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       });
 
       // CLOUD FIRST STRATEGY:
-      // Only update if we have data or if it's a genuine empty state from server
-      // This prevents some race conditions where snapshot returns empty initially
       setGuests(cloudGuests);
       saveToLocal(cloudGuests);
 
@@ -155,7 +153,7 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setSettings(nextSettings);
     saveSettingsToLocal(nextSettings);
     
-    if (db && isCloudConnected) {
+    if (db) {
         try {
             await db.collection("config").doc("mainSettings").update(newSettings);
         } catch (e) {
@@ -165,8 +163,10 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const uploadAllLocalDataToCloud = async () => {
-      if (!db || !isCloudConnected) {
-          throw new Error("尚未連線至雲端，無法上傳。");
+      // Relaxed check: As long as db instance exists, we allow trying to write.
+      // Firestore handles offline queuing automatically.
+      if (!db) {
+          throw new Error("Firebase 尚未初始化，無法上傳。");
       }
       
       console.log("Starting full sync upload...");
@@ -197,8 +197,7 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     let finalGuests: Guest[] = [];
     let newDocs: { type: 'set' | 'update', refId: string, data: any }[] = [];
 
-    // Use Functional Update to ensure we are working with the latest state
-    // and to perform the optimistic update correctly.
+    // Use Functional Update
     setGuests(prevGuests => {
         const currentGuests = [...prevGuests];
         const existingNames = new Map<string, number>(); 
@@ -206,7 +205,6 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
         const offlineGuestList = [...currentGuests];
         
-        // Reset docs collection for this run
         newDocs = [];
 
         drafts.forEach(draft => {
@@ -278,8 +276,8 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         return offlineGuestList;
     });
 
-    // CLOUD SYNC (Background)
-    if (db && isCloudConnected) {
+    // CLOUD SYNC
+    if (db) {
         try {
             const MAX_BATCH_SIZE = 450;
             for (let i = 0; i < newDocs.length; i += MAX_BATCH_SIZE) {
@@ -297,24 +295,17 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             console.log("Cloud batch write successful");
         } catch (e: any) {
             console.error("Cloud Sync Failed:", e);
-            // CRITICAL FIX: If cloud write fails, user data might disappear if snapshot reverts it.
-            // We must warn the user and maybe force local state preservation.
-            // In this app, local state is already set above.
-            // If the snapshot listener fires "Reverted" data (empty) because write failed, we are in trouble.
-            // However, usually permission denied keeps the local changes as 'pending'.
-            alert(`⚠️ 雲端同步失敗！\n\n原因: ${e.message}\n\n資料已先儲存於本機，請檢查 Firebase 權限設定 (Rules) 是否允許寫入。\n建議先將資料匯出備份，或檢查網路。`);
+            alert(`⚠️ 雲端同步失敗！\n\n原因: ${e.message}\n\n資料已先儲存於本機，請檢查 Firebase 權限設定。`);
         }
     }
   };
 
   const updateGuestInfo = async (id: string, updates: Partial<Guest>) => {
-      // Optimistic Update
       const newGuests = guests.map(g => g.id === id ? { ...g, ...updates } : g);
       setGuests(newGuests);
       saveToLocal(newGuests);
 
-      // Cloud Sync
-      if (db && isCloudConnected) {
+      if (db) {
           try {
               await db.collection("guests").doc(id).update(updates);
           } catch (e) {
@@ -334,11 +325,9 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       let newCheckInTime = guest.checkInTime;
 
       if (isAttendingTarget) {
-          // CANCEL CHECK-IN
           newRounds = [];
           newCheckInTime = undefined; 
       } else {
-          // SWITCH / CHECK-IN
           newRounds = [targetRound];
           if (!guest.isCheckedIn) {
               newCheckInTime = new Date().toISOString();
@@ -354,13 +343,11 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       
       Object.keys(updates).forEach(key => updates[key] === undefined && delete updates[key]);
 
-      // Optimistic Update
       const newGuests = guests.map(g => g.id === id ? { ...g, ...updates } : g);
       setGuests(newGuests);
       saveToLocal(newGuests);
 
-      // Cloud Sync
-      if (db && isCloudConnected) {
+      if (db) {
           try {
               await db.collection("guests").doc(id).update(updates);
           } catch (e) {
@@ -374,24 +361,22 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     if (!guest) return;
     const newVal = !guest.isIntroduced;
     
-    // Optimistic Update
     const newGuests = guests.map(g => g.id === id ? { ...g, isIntroduced: newVal } : g);
     setGuests(newGuests);
     saveToLocal(newGuests);
     
-    if (db && isCloudConnected) {
+    if (db) {
         await db.collection("guests").doc(id).update({ isIntroduced: newVal });
     }
   };
 
   const resetIntroductions = async () => {
     if (confirm('確定要重置所有介紹狀態嗎？')) {
-        // Optimistic Update
         const newGuests = guests.map(g => g.isIntroduced ? { ...g, isIntroduced: false } : g);
         setGuests(newGuests);
         saveToLocal(newGuests);
 
-        if (db && isCloudConnected) {
+        if (db) {
             const batch = db.batch();
             guests.forEach(g => {
                 if (g.isIntroduced) {
@@ -434,12 +419,11 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         winRound: currentRound
     };
 
-    // Optimistic Update
     const newGuests = guests.map(g => g.id === winner.id ? { ...g, ...updates } : g);
     setGuests(newGuests);
     saveToLocal(newGuests);
 
-    if (db && isCloudConnected) {
+    if (db) {
         db.collection("guests").doc(winner.id).update(updates);
     }
 
@@ -450,14 +434,13 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     if (confirm('確定要重置所有抽獎名單嗎？(將清除所有中獎紀錄)')) {
       const newSettings = { ...settings, lotteryRoundCounter: 1 };
       
-      // Optimistic Update
       const newGuests = guests.map(g => ({ ...g, isWinner: false, winRound: undefined, wonRounds: [] }));
       setGuests(newGuests);
       saveToLocal(newGuests);
       setSettings(newSettings);
       saveSettingsToLocal(newSettings);
       
-      if (db && isCloudConnected) {
+      if (db) {
           const batch = db.batch();
           guests.forEach(g => {
               if (g.isWinner || (g.wonRounds && g.wonRounds.length > 0)) {
@@ -483,13 +466,12 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const clearAllData = async () => {
-      // Optimistic
       setGuests([]);
       saveToLocal([]);
       setSettings(defaultSettings);
       saveSettingsToLocal(defaultSettings);
 
-      if (db && isCloudConnected) {
+      if (db) {
         try {
             const chunkSize = 400;
             for (let i = 0; i < guests.length; i += chunkSize) {
@@ -506,12 +488,11 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   }
 
   const deleteGuest = async (id: string) => {
-      // Optimistic
       const newGuests = guests.filter(g => g.id !== id);
       setGuests(newGuests);
       saveToLocal(newGuests);
 
-      if (db && isCloudConnected) {
+      if (db) {
           await db.collection("guests").doc(id).delete();
       }
   }
