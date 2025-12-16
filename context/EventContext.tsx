@@ -21,6 +21,7 @@ interface EventContextType {
   toggleCheckInRound: (id: string, round: number) => Promise<void>;
   isCloudConnected: boolean; 
   connectionError: string | null;
+  usingLocalDataProtection: boolean; // New Flag
   
   // New Sync Function
   uploadAllLocalDataToCloud: () => Promise<void>;
@@ -47,6 +48,7 @@ const generateId = () => {
 };
 
 // Helper to remove undefined keys for Firestore
+// CRITICAL FIX: Firestore throws error if field is undefined
 const sanitizeForFirestore = (data: any) => {
     const clean = { ...data };
     Object.keys(clean).forEach(key => {
@@ -77,7 +79,8 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const [isCloudConnected, setIsCloudConnected] = useState(false);
   const [connectionError, setConnectionError] = useState<string | null>(null);
-  
+  const [usingLocalDataProtection, setUsingLocalDataProtection] = useState(false);
+
   // Persist Admin State
   const [isAdmin, setIsAdmin] = useState(() => {
       try {
@@ -127,24 +130,23 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       });
 
       // --- PROTECTIVE LOGIC START ---
-      // Situation: Cloud is empty (cloudGuests.length === 0)
-      // BUT Local has data (guests.length > 0 or localStorage has data)
-      // This happens if sync failed previously. We should NOT wipe local data.
+      // Situation: Cloud is empty (0 records), BUT Local has data.
+      // This happens when first connecting, or if previous sync failed.
+      // We PREVENT the cloud from wiping local data in this specific case.
       if (cloudGuests.length === 0) {
           const localStr = localStorage.getItem('event_guests');
           const localData = localStr ? JSON.parse(localStr) : [];
           
           if (localData.length > 0) {
-              console.warn("Cloud is empty, but Local has data. Preventing overwrite to allow manual sync.");
-              // We intentionally do NOT call setGuests([]) here.
-              // We just let the local state persist.
-              // The user can then click "Force Upload" to fix the cloud state.
+              console.warn("Cloud is empty, but Local has data. Preventing overwrite.");
+              setUsingLocalDataProtection(true);
               return; 
           }
       }
       // --- PROTECTIVE LOGIC END ---
 
-      // CLOUD FIRST STRATEGY (Normal Case):
+      // Normal Sync: Cloud dictates the state
+      setUsingLocalDataProtection(false);
       setGuests(cloudGuests);
       saveToLocal(cloudGuests);
 
@@ -172,12 +174,12 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       unsubscribeGuests();
       unsubscribeSettings();
     };
-  }, []); // Remove dependency on 'guests' to avoid re-triggering listener on local updates
+  }, []);
 
   // --- ACTIONS ---
 
   const updateSettings = async (newSettings: Partial<SystemSettings>) => {
-    // Optimistic update for settings is okay as it feels snappier
+    // Optimistic update
     const nextSettings = { ...settings, ...newSettings };
     setSettings(nextSettings);
     saveSettingsToLocal(nextSettings);
@@ -192,8 +194,6 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const uploadAllLocalDataToCloud = async () => {
-      // Relaxed check: As long as db instance exists, we allow trying to write.
-      // Firestore handles offline queuing automatically.
       if (!db) {
           throw new Error("Firebase 尚未初始化，無法上傳。");
       }
@@ -210,7 +210,7 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           const batch = db.batch();
           chunk.forEach(g => {
               const ref = db.collection("guests").doc(g.id);
-              // SANITIZE DATA HERE
+              // CRITICAL: Sanitize to remove undefined fields
               batch.set(ref, sanitizeForFirestore(g), { merge: true });
           });
           await batch.commit();
@@ -218,6 +218,7 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
       await db.collection("config").doc("mainSettings").set(settings, { merge: true });
       console.log("Full sync upload complete.");
+      setUsingLocalDataProtection(false); // Disable protection as cloud now has data
   };
 
   const addGuestsFromDraft = async (drafts: ParsedGuestDraft[], checkInTimestamp: Date) => {
@@ -274,7 +275,6 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                 };
                 
                 offlineGuestList[idx] = updatedGuest;
-                // SANITIZE BEFORE PUSHING TO DOCS
                 newDocs.push({ type: 'update', refId: existing.id, data: sanitizeForFirestore(updatedGuest) });
 
             } else {
@@ -298,7 +298,6 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                 
                 offlineGuestList.push(newGuest);
                 existingNames.set(newGuest.name, offlineGuestList.length - 1);
-                // SANITIZE BEFORE PUSHING TO DOCS
                 newDocs.push({ type: 'set', refId: draftId, data: sanitizeForFirestore(newGuest) });
             }
         });
@@ -339,7 +338,6 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
       if (db) {
           try {
-              // Sanitize updates as well
               await db.collection("guests").doc(id).update(sanitizeForFirestore(updates));
           } catch (e) {
               console.error("Update guest info failed:", e);
@@ -371,10 +369,10 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           attendedRounds: newRounds,
           isCheckedIn: newRounds.length > 0,
           round: newRounds.length > 0 ? Math.max(...newRounds) : undefined,
-          checkInTime: newRounds.length > 0 ? newCheckInTime : null // Explicit null or undefined
+          checkInTime: newRounds.length > 0 ? newCheckInTime : null 
       };
       
-      // Cleanup undefined locally just to be clean
+      // Cleanup locally
       Object.keys(updates).forEach(key => updates[key] === undefined && delete updates[key]);
 
       const newGuests = guests.map(g => g.id === id ? { ...g, ...updates } : g);
@@ -383,7 +381,6 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
       if (db) {
           try {
-              // Sanitize before update
               await db.collection("guests").doc(id).update(sanitizeForFirestore(updates));
           } catch (e) {
                console.error("Toggle check-in failed:", e);
@@ -479,12 +476,9 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           const batch = db.batch();
           guests.forEach(g => {
               if (g.isWinner || (g.wonRounds && g.wonRounds.length > 0)) {
-                  // Explicitly set undefined fields to delete them using FieldValue.delete() is better, 
-                  // but here we just update specific fields. 
-                  // For safety, we just overwrite them.
                   batch.update(db.collection("guests").doc(g.id), { 
                       isWinner: false, 
-                      winRound: null, // use null for legacy field
+                      winRound: null, 
                       wonRounds: [] 
                   });
               }
@@ -553,7 +547,8 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       toggleCheckInRound,
       isCloudConnected,
       connectionError,
-      uploadAllLocalDataToCloud, // Export
+      usingLocalDataProtection, // Export Flag
+      uploadAllLocalDataToCloud, 
       isAdmin,
       loginAdmin,
       logoutAdmin
