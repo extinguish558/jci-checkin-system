@@ -19,9 +19,12 @@ interface EventContextType {
   clearAllData: () => void;
   deleteGuest: (id: string) => void;
   toggleCheckInRound: (id: string, round: number) => void;
-  isCloudConnected: boolean; // Status indicator
-  connectionError: string | null; // New: Error details
+  isCloudConnected: boolean; 
+  connectionError: string | null;
   
+  // New Sync Function
+  uploadAllLocalDataToCloud: () => Promise<void>;
+
   // Auth
   isAdmin: boolean;
   loginAdmin: (password: string) => boolean;
@@ -46,7 +49,7 @@ const generateId = () => {
 const EventContext = createContext<EventContextType | undefined>(undefined);
 
 export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  // Initialize state from LocalStorage to ensure data persists even if Cloud fails
+  // Initialize state from LocalStorage
   const [guests, setGuests] = useState<Guest[]>(() => {
       try {
           const local = localStorage.getItem('event_guests');
@@ -64,9 +67,8 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [isCloudConnected, setIsCloudConnected] = useState(false);
   const [connectionError, setConnectionError] = useState<string | null>(null);
   
-  // Admin Auth State (Session based, resets on refresh for safety)
   const [isAdmin, setIsAdmin] = useState(false);
-  const ADMIN_PASSWORD = "8888"; // Simple hardcoded password
+  const ADMIN_PASSWORD = "8888"; 
 
   const loginAdmin = (password: string) => {
       if (password === ADMIN_PASSWORD) {
@@ -80,7 +82,6 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       setIsAdmin(false);
   };
 
-  // Helper to persist to local storage
   const saveToLocal = (newGuests: Guest[]) => {
       localStorage.setItem('event_guests', JSON.stringify(newGuests));
   };
@@ -106,21 +107,21 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         cloudGuests.push(doc.data() as Guest);
       });
 
-      // SAFE MERGE STRATEGY (修正資料被覆蓋問題)
+      // SAFE MERGE STRATEGY
       setGuests(prevGuests => {
           const cloudMap = new Map(cloudGuests.map(g => [g.id, g]));
           
-          // 1. Iterate through LOCAL guests
+          // 1. Update existing local guests with cloud data
           const mergedGuests = prevGuests.map(local => {
               if (cloudMap.has(local.id)) {
                   const cloudData = cloudMap.get(local.id)!;
-                  cloudMap.delete(local.id); // Mark as processed
+                  cloudMap.delete(local.id); 
                   return cloudData;
               }
               return local;
           });
 
-          // 2. Add any NEW guests from Cloud that weren't in Local
+          // 2. Add NEW guests from Cloud
           const newFromCloud = Array.from(cloudMap.values());
           
           const finalGuests = [...mergedGuests, ...newFromCloud];
@@ -132,17 +133,16 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }, (error: any) => {
       console.error("Firebase Guest Sync Error:", error);
       setIsCloudConnected(false);
-      setConnectionError(error.message); // Capture error message
+      setConnectionError(error.message);
     });
 
-    // Listener for Settings Document
+    // Listener for Settings
     const unsubscribeSettings = db.collection("config").doc("mainSettings").onSnapshot((docSnap: any) => {
       if (docSnap.exists) {
         const s = docSnap.data() as SystemSettings;
         setSettings(s);
         saveSettingsToLocal(s);
       } else {
-        // Initialize settings if not exists
         db.collection("config").doc("mainSettings").set(defaultSettings).catch(console.error);
       }
     }, (error: any) => {
@@ -155,9 +155,7 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     };
   }, []);
 
-  // Helper to update Firestore
   const updateSettings = async (newSettings: Partial<SystemSettings>) => {
-    // Optimistic update
     const nextSettings = { ...settings, ...newSettings };
     setSettings(nextSettings);
     saveSettingsToLocal(nextSettings);
@@ -168,6 +166,38 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     } catch (e) {
         console.error("Error updating settings:", e);
     }
+  };
+
+  // --- NEW: Force Upload Local Data to Cloud ---
+  const uploadAllLocalDataToCloud = async () => {
+      if (!db || !isCloudConnected) {
+          throw new Error("尚未連線至雲端，無法上傳。");
+      }
+      
+      console.log("Starting full sync upload...");
+      const MAX_BATCH_SIZE = 450;
+      
+      // 1. Sync Guests
+      const guestChunks = [];
+      for (let i = 0; i < guests.length; i += MAX_BATCH_SIZE) {
+          guestChunks.push(guests.slice(i, i + MAX_BATCH_SIZE));
+      }
+
+      for (const chunk of guestChunks) {
+          const batch = db.batch();
+          chunk.forEach(g => {
+              const ref = db.collection("guests").doc(g.id);
+              // Use set with merge: true to avoid overwriting newer cloud data if any, 
+              // but ensure local data exists on cloud
+              batch.set(ref, g, { merge: true });
+          });
+          await batch.commit();
+      }
+
+      // 2. Sync Settings
+      await db.collection("config").doc("mainSettings").set(settings, { merge: true });
+      
+      console.log("Full sync upload complete.");
   };
 
   const addGuestsFromDraft = async (drafts: ParsedGuestDraft[], checkInTimestamp: Date) => {
@@ -202,7 +232,9 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                 if (!existing.isCheckedIn) {
                     newRounds = [targetRound];
                     newCheckInTime = checkInTimestamp.toISOString();
-                } 
+                } else if (!newRounds.includes(targetRound)) {
+                     newRounds.push(targetRound);
+                }
             }
 
             const updatedGuest: Guest = {
@@ -292,9 +324,11 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       let newCheckInTime = guest.checkInTime;
 
       if (isAttendingTarget) {
-          newRounds = [];
+          // Remove this round
+          newRounds = currentRounds.filter(r => r !== targetRound);
       } else {
-          newRounds = [targetRound];
+          // Add this round
+          newRounds = [...currentRounds, targetRound].sort((a,b) => a-b);
           if (!guest.isCheckedIn) {
               newCheckInTime = new Date().toISOString();
           }
@@ -303,7 +337,7 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       const updates = {
           attendedRounds: newRounds,
           isCheckedIn: newRounds.length > 0,
-          round: newRounds.length > 0 ? newRounds[0] : undefined,
+          round: newRounds.length > 0 ? Math.max(...newRounds) : undefined, // Use highest round as display
           checkInTime: newCheckInTime
       };
 
@@ -470,6 +504,7 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       toggleCheckInRound,
       isCloudConnected,
       connectionError,
+      uploadAllLocalDataToCloud, // Export
       isAdmin,
       loginAdmin,
       logoutAdmin
