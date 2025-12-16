@@ -67,12 +67,19 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [isCloudConnected, setIsCloudConnected] = useState(false);
   const [connectionError, setConnectionError] = useState<string | null>(null);
   
-  const [isAdmin, setIsAdmin] = useState(false);
+  // Persist Admin State
+  const [isAdmin, setIsAdmin] = useState(() => {
+      try {
+          return localStorage.getItem('isAdmin') === 'true';
+      } catch { return false; }
+  });
+  
   const ADMIN_PASSWORD = "8888"; 
 
   const loginAdmin = (password: string) => {
       if (password === ADMIN_PASSWORD) {
           setIsAdmin(true);
+          localStorage.setItem('isAdmin', 'true');
           return true;
       }
       return false;
@@ -80,6 +87,7 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const logoutAdmin = () => {
       setIsAdmin(false);
+      localStorage.removeItem('isAdmin');
   };
 
   const saveToLocal = (newGuests: Guest[]) => {
@@ -206,7 +214,7 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             const idx = existingNames.get(cleanName)!;
             const existing = offlineGuestList[idx];
             
-            // Start with existing rounds, but we will OVERWRITE if shouldAddRound is true
+            // Start with existing rounds
             let newRounds = [...(existing.attendedRounds || [])];
             let newCheckInTime = existing.checkInTime;
 
@@ -216,7 +224,7 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                 // This clears any other rounds (e.g., if they were R1, now they become R2).
                 newRounds = [targetRound];
                 
-                // Set time if they weren't checked in properly before
+                // Set time if they weren't checked in properly before or if we want to refresh it
                 if (!existing.isCheckedIn || !newCheckInTime) {
                     newCheckInTime = checkInTimestamp.toISOString();
                 }
@@ -227,7 +235,7 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                 attendedRounds: newRounds,
                 isCheckedIn: newRounds.length > 0,
                 round: newRounds.length > 0 ? Math.max(...newRounds) : undefined,
-                checkInTime: newRounds.length > 0 ? newCheckInTime : undefined, // Clear time if no rounds
+                checkInTime: newRounds.length > 0 ? newCheckInTime : undefined, 
                 title: draft.title || existing.title,
                 note: draft.note || existing.note,
                 category: draft.category || existing.category,
@@ -321,28 +329,26 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           newCheckInTime = undefined; // Explicitly clear time
       } else {
           // SWITCH / CHECK-IN:
-          // User clicked a different round (or was not checked in).
+          // User clicked a different round.
           // We enforce mutual exclusivity by setting rounds ONLY to this target round.
           // This automatically handles the "Switch R1 to R2" case by overwriting R1.
           newRounds = [targetRound];
           
-          // Set time if not previously checked in, or if we want to update time on switch
-          // (Here we only set if not checked in, preserving original arrival time if just fixing round)
           if (!guest.isCheckedIn) {
               newCheckInTime = new Date().toISOString();
           }
       }
       
-      // Safety: ensure undefined is handled if Firestore dislikes undefined (it usually ignores it or needs null)
-      // We will use standard object updates. Firestore update({checkInTime: deleteField()}) is ideal but complexity.
-      // We'll stick to string | null logic if needed, but here simple assignment usually works.
-      
-      const updates = {
+      // Use null to clear in Firestore for robustness
+      const updates: any = {
           attendedRounds: newRounds,
           isCheckedIn: newRounds.length > 0,
           round: newRounds.length > 0 ? Math.max(...newRounds) : undefined,
-          checkInTime: newRounds.length > 0 ? newCheckInTime : null // Use null to clear in Firestore
+          checkInTime: newRounds.length > 0 ? newCheckInTime : null
       };
+      
+      // Remove undefined keys to avoid Firestore errors
+      Object.keys(updates).forEach(key => updates[key] === undefined && delete updates[key]);
 
       // CLOUD FIRST
       if (db && isCloudConnected) {
