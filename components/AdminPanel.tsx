@@ -2,7 +2,7 @@ import React, { useState, useRef, useMemo, useEffect } from 'react';
 import { useEvent } from '../context/EventContext';
 import { parseCheckInSheet, ParseMode, FileInput } from '../services/geminiService';
 import { ParsedGuestDraft, GuestCategory, Guest } from '../types';
-import { Camera, RefreshCcw, Save, Plus, UserPlus, FileCheck, Type, Users, UserX, Clock, Settings, Trash2, PenLine, FileText, UploadCloud, ChevronRight, CheckSquare, X, Edit, AlertCircle, UserMinus, Search, Hash, Cloud, CloudOff, AlertTriangle, Lock, Unlock } from 'lucide-react';
+import { Camera, RefreshCcw, Save, Plus, UserPlus, FileCheck, Type, Users, UserX, Clock, Settings, Trash2, PenLine, FileText, UploadCloud, ChevronRight, CheckSquare, X, Edit, AlertCircle, UserMinus, Search, Hash, Cloud, CloudOff, AlertTriangle, Lock, Unlock, Circle } from 'lucide-react';
 
 interface ReviewGuest extends ParsedGuestDraft {
   isSelected: boolean;
@@ -18,7 +18,7 @@ interface ManualEntryRow {
 }
 
 const AdminPanel: React.FC = () => {
-  const { settings, updateSettings, addGuestsFromDraft, updateGuestInfo, guests, deleteGuest, toggleCheckInRound, isCloudConnected, clearAllData, isAdmin, loginAdmin, logoutAdmin } = useEvent();
+  const { settings, updateSettings, addGuestsFromDraft, updateGuestInfo, guests, deleteGuest, toggleCheckInRound, isCloudConnected, connectionError, clearAllData, isAdmin, loginAdmin, logoutAdmin } = useEvent();
   const [isProcessing, setIsProcessing] = useState(false);
   const [draftGuests, setDraftGuests] = useState<ReviewGuest[]>([]);
   const [importMode, setImportMode] = useState<ParseMode>('CHECK_IN'); 
@@ -141,18 +141,21 @@ const AdminPanel: React.FC = () => {
               newDrafts.push(...mapped);
           } catch (error) {
               console.error(`Error processing batch ${batchIndex}:`, error);
+              // Don't throw here, try to process other batches
           }
       }
 
       if (newDrafts.length > 0) {
           setDraftGuests(prev => mergeGuests(prev, newDrafts)); 
       } else {
-          alert("未能辨識出資料，請確認圖片或檔案內容。");
+          // 詳細提示使用者為什麼沒有資料
+          alert("未能辨識出任何資料。\n\n可能原因：\n1. 圖片模糊或無文字\n2. Excel 檔案缺少「姓名」欄位\n3. AI 無法讀取內容 (請確認 API Key 設定)");
       }
 
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
-      alert("處理檔案時發生錯誤");
+      // 顯示具體的錯誤訊息，幫助除錯
+      alert(`處理檔案時發生錯誤：\n${err.message || '未知錯誤'}\n\n如果您剛設定 API Key，請記得在 Vercel 點擊 Redeploy。`);
     } finally {
       setIsProcessing(false);
       setProgressMsg('');
@@ -173,14 +176,27 @@ const AdminPanel: React.FC = () => {
     alert(`成功匯入 ${selectedDrafts.length} 筆資料`);
   };
 
-  // Toggle switch helper
-  const ToggleSwitch = ({ checked, onChange, label, colorClass }: { checked: boolean, onChange: () => void, label: string, colorClass: string }) => (
-      <div className="flex flex-col items-center cursor-pointer" onClick={(e) => { e.stopPropagation(); onChange(); }}>
-          <div className={`w-12 h-6 flex items-center bg-gray-300 rounded-full p-1 duration-300 ease-in-out ${checked ? colorClass : ''}`}>
-              <div className={`bg-white w-4 h-4 rounded-full shadow-md transform duration-300 ease-in-out ${checked ? 'translate-x-6' : ''}`}></div>
-          </div>
-          <span className={`text-[10px] mt-1 font-bold ${checked ? 'text-slate-700' : 'text-slate-400'}`}>{checked ? '已報到' : '未報到'}</span>
-      </div>
+  // Replaced ToggleSwitch with a clearer CheckInButton
+  const CheckInButton = ({ isActive, onClick, activeColorClass }: { isActive: boolean, onClick: () => void, activeColorClass: string }) => (
+      <button 
+          onClick={(e) => { e.stopPropagation(); onClick(); }}
+          className={`
+              w-full py-2 px-1 rounded-lg font-bold text-sm transition-all shadow-sm border
+              ${isActive 
+                  ? `${activeColorClass} text-white border-transparent scale-105 shadow-md` 
+                  : 'bg-white text-slate-300 border-slate-200 hover:bg-slate-50 hover:text-slate-400 hover:border-slate-300'}
+          `}
+      >
+          {isActive ? (
+              <span className="flex items-center justify-center gap-1">
+                  <CheckSquare size={16} className="stroke-[3px]" /> 已到
+              </span>
+          ) : (
+              <span className="flex items-center justify-center gap-1">
+                  <div className="w-4 h-4 rounded-full border-2 border-slate-200"></div> 未到
+              </span>
+          )}
+      </button>
   );
 
   const handleSaveEdit = () => {
@@ -333,6 +349,12 @@ const AdminPanel: React.FC = () => {
       }
   };
 
+  const handleConnectionClick = () => {
+      if (!isCloudConnected) {
+          alert(`連線狀態錯誤：\n${connectionError || '未知錯誤'}\n\n建議排除方式：\n1. 請試著「重新整理」網頁。\n2. 確認 Firebase 專案已建立並選擇「測試模式」。\n3. 檢查網路連線。`);
+      }
+  };
+
   return (
     <div className="p-4 max-w-6xl mx-auto pb-24">
       {/* Hidden File Input */}
@@ -363,7 +385,11 @@ const AdminPanel: React.FC = () => {
                       {isAdmin ? '已解鎖 (點擊鎖定)' : '已鎖定 (點擊解鎖)'}
                   </button>
 
-                  <div className={`flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold border ${isCloudConnected ? 'bg-green-100 text-green-700 border-green-200' : 'bg-red-100 text-red-700 border-red-200'}`}>
+                  <div 
+                      className={`flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold border cursor-pointer ${isCloudConnected ? 'bg-green-100 text-green-700 border-green-200' : 'bg-red-100 text-red-700 border-red-200'}`}
+                      onClick={handleConnectionClick}
+                      title={connectionError || (isCloudConnected ? "連線正常" : "點擊查看錯誤")}
+                  >
                       {isCloudConnected ? <Cloud size={14} /> : <CloudOff size={14} />}
                       {isCloudConnected ? '雲端連線中' : '未連線 (僅本機)'}
                   </div>
@@ -571,23 +597,21 @@ const AdminPanel: React.FC = () => {
                             <td className="p-3 text-slate-500 truncate max-w-[150px]">{g.note}</td>
                             <td className="p-3"><span className="bg-slate-200 text-slate-600 px-2 py-1 rounded text-xs whitespace-nowrap">{g.category}</span></td>
                             
-                            {/* R1 Toggle - Always active for usage */}
+                            {/* R1 Toggle */}
                             <td className="p-3 text-center bg-blue-50/30">
-                                <ToggleSwitch 
-                                    label="R1"
-                                    colorClass="bg-blue-600"
-                                    checked={g.attendedRounds?.includes(1) || false} 
-                                    onChange={() => toggleCheckInRound(g.id, 1)} 
+                                <CheckInButton 
+                                    isActive={g.attendedRounds?.includes(1) || false}
+                                    onClick={() => toggleCheckInRound(g.id, 1)}
+                                    activeColorClass="bg-blue-600 shadow-blue-200"
                                 />
                             </td>
 
-                            {/* R2 Toggle - Always active for usage */}
+                            {/* R2 Toggle */}
                             <td className="p-3 text-center bg-purple-50/30">
-                                <ToggleSwitch 
-                                    label="R2"
-                                    colorClass="bg-purple-600"
-                                    checked={g.attendedRounds?.includes(2) || false} 
-                                    onChange={() => toggleCheckInRound(g.id, 2)} 
+                                <CheckInButton 
+                                    isActive={g.attendedRounds?.includes(2) || false}
+                                    onClick={() => toggleCheckInRound(g.id, 2)}
+                                    activeColorClass="bg-purple-600 shadow-purple-200"
                                 />
                             </td>
 

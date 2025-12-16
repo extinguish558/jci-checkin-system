@@ -20,6 +20,7 @@ interface EventContextType {
   deleteGuest: (id: string) => void;
   toggleCheckInRound: (id: string, round: number) => void;
   isCloudConnected: boolean; // Status indicator
+  connectionError: string | null; // New: Error details
   
   // Auth
   isAdmin: boolean;
@@ -61,6 +62,7 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   });
 
   const [isCloudConnected, setIsCloudConnected] = useState(false);
+  const [connectionError, setConnectionError] = useState<string | null>(null);
   
   // Admin Auth State (Session based, resets on refresh for safety)
   const [isAdmin, setIsAdmin] = useState(false);
@@ -90,35 +92,31 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   useEffect(() => {
     if (!isFirebaseReady || !db) {
       console.warn("Firebase not configured. Running in Local Mode.");
+      setConnectionError("Firebase Config 無效或未設定");
       return;
     }
 
-    setIsCloudConnected(true);
-
     // Listener for Guests Collection
     const unsubscribeGuests = db.collection("guests").onSnapshot((snapshot: any) => {
+      setIsCloudConnected(true);
+      setConnectionError(null);
+
       const cloudGuests: Guest[] = [];
       snapshot.forEach((doc: any) => {
         cloudGuests.push(doc.data() as Guest);
       });
 
       // SAFE MERGE STRATEGY (修正資料被覆蓋問題)
-      // Logic: Merge Cloud data into Local state, but NEVER delete local data solely because it's missing from Cloud.
-      // This protects data if Cloud sync is slow/partial or if Cloud DB was accidentally wiped.
-      
       setGuests(prevGuests => {
           const cloudMap = new Map(cloudGuests.map(g => [g.id, g]));
           
           // 1. Iterate through LOCAL guests
           const mergedGuests = prevGuests.map(local => {
-              // If Cloud has a newer version of this guest, use Cloud version (Source of Truth for updates)
               if (cloudMap.has(local.id)) {
                   const cloudData = cloudMap.get(local.id)!;
                   cloudMap.delete(local.id); // Mark as processed
                   return cloudData;
               }
-              // If Cloud does NOT have this guest, KEEP the local version.
-              // We assume it's a local draft that hasn't synced yet.
               return local;
           });
 
@@ -127,7 +125,6 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           
           const finalGuests = [...mergedGuests, ...newFromCloud];
           
-          // Persist combined list
           saveToLocal(finalGuests);
           return finalGuests;
       });
@@ -135,6 +132,7 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }, (error: any) => {
       console.error("Firebase Guest Sync Error:", error);
       setIsCloudConnected(false);
+      setConnectionError(error.message); // Capture error message
     });
 
     // Listener for Settings Document
@@ -175,51 +173,36 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const addGuestsFromDraft = async (drafts: ParsedGuestDraft[], checkInTimestamp: Date) => {
     const globalRound = settings.currentCheckInRound;
     
-    // Prepare new list based on current state
     const updatedGuestList = [...guests];
-    const existingNames = new Map<string, number>(); // Map Name -> Index
+    const existingNames = new Map<string, number>(); 
     
     updatedGuestList.forEach((g, idx) => existingNames.set(g.name, idx));
 
-    // To handle large imports (210+), we need to handle batching carefully if sending to cloud
-    // But first, we update LOCAL state immediately so user sees results.
-
-    const newDocs: any[] = []; // Store operations to commit later if needed
+    const newDocs: any[] = []; 
     const BLACKLIST = ['姓名', 'Name', '職稱', 'Title', '備註', 'Note'];
 
     drafts.forEach(draft => {
-        // FINAL VALIDATION GATEKEEPER
         if (!draft.name || !draft.name.trim()) return;
         const cleanName = draft.name.trim();
-        // Check if name is in blacklist (case insensitive)
         if (BLACKLIST.some(b => b.toLowerCase() === cleanName.toLowerCase())) return;
 
         const shouldAddRound = draft.hasSignature;
-        // Determines which round to apply: Use forceRound if provided, else global settings
         const targetRound = draft.forcedRound !== undefined ? draft.forcedRound : globalRound;
         
         const exists = existingNames.has(cleanName);
         
         if (exists) {
-            // Update Existing
             const idx = existingNames.get(cleanName)!;
             const existing = updatedGuestList[idx];
             
             let newRounds = [...(existing.attendedRounds || [])];
-            
-            // LOGIC CHANGE: First Check-in Prevails (以第一次報到為準)
-            // Only update check-in status if they are NOT currently checked in.
-            // If they are already checked in (length > 0), we ignore the new round signal from this draft.
             let newCheckInTime = existing.checkInTime;
 
             if (shouldAddRound) {
                 if (!existing.isCheckedIn) {
-                    // Not checked in yet? Check them in to THIS round.
                     newRounds = [targetRound];
                     newCheckInTime = checkInTimestamp.toISOString();
                 } 
-                // Else: Already checked in. Do NOT overwrite rounds. 
-                // E.g. If checked in at R1, and scanning R2 list, they stay R1.
             }
 
             const updatedGuest: Guest = {
@@ -238,9 +221,7 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             newDocs.push({ type: 'update', refId: existing.id, data: updatedGuest });
 
         } else {
-            // Create New
             const draftId = generateId();
-            // New guest, simply set round if signed
             const newRounds = shouldAddRound ? [targetRound] : [];
             const newGuest: Guest = {
                 id: draftId,
@@ -264,15 +245,11 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         }
     });
 
-    // 1. CRITICAL: Update UI & LocalStorage IMMEDIATELY
-    // This solves the "nothing happens" issue.
     setGuests(updatedGuestList);
     saveToLocal(updatedGuestList);
 
-    // 2. Cloud Sync (Background)
     if (db && isFirebaseReady && newDocs.length > 0) {
         try {
-            // Simple chunking for batch write
             const MAX_BATCH_SIZE = 450;
             for (let i = 0; i < newDocs.length; i += MAX_BATCH_SIZE) {
                 const chunk = newDocs.slice(i, i + MAX_BATCH_SIZE);
@@ -288,6 +265,7 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             }
         } catch (e) {
             console.error("Cloud Sync Failed:", e);
+            setConnectionError("資料寫入失敗，請檢查權限");
         }
     }
   };
@@ -313,16 +291,10 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       let newRounds: number[];
       let newCheckInTime = guest.checkInTime;
 
-      // LOGIC CHANGE: MUTUALLY EXCLUSIVE ROUNDS
       if (isAttendingTarget) {
-          // If currently attending this round, toggle OFF (remove all rounds)
           newRounds = [];
       } else {
-          // If not attending this round, toggle ON (and force this round ONLY)
-          // This removes any other existing round automatically.
           newRounds = [targetRound];
-          
-          // Only update timestamp if they weren't checked in before
           if (!guest.isCheckedIn) {
               newCheckInTime = new Date().toISOString();
           }
@@ -331,7 +303,7 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       const updates = {
           attendedRounds: newRounds,
           isCheckedIn: newRounds.length > 0,
-          round: newRounds.length > 0 ? newRounds[0] : undefined, // Simplify round logic
+          round: newRounds.length > 0 ? newRounds[0] : undefined,
           checkInTime: newCheckInTime
       };
 
@@ -450,9 +422,6 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const clearAllData = async () => {
-      // Logic moved to UI (AdminPanel) to avoid browser confirm issues.
-      // This function now executes immediately.
-      
       setGuests([]);
       saveToLocal([]);
       setSettings(defaultSettings);
@@ -461,7 +430,6 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       if (!db) return;
       
       try {
-        // Delete in batches of 400
         const chunkSize = 400;
         for (let i = 0; i < guests.length; i += chunkSize) {
             const chunk = guests.slice(i, i + chunkSize);
@@ -501,6 +469,7 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       deleteGuest,
       toggleCheckInRound,
       isCloudConnected,
+      connectionError,
       isAdmin,
       loginAdmin,
       logoutAdmin
