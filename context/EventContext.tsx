@@ -271,7 +271,11 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         }
     });
 
-    // CLOUD FIRST LOGIC
+    // OPTIMISTIC UPDATE: Update local state IMMEDIATELY so user sees the change
+    setGuests(offlineGuestList);
+    saveToLocal(offlineGuestList);
+
+    // CLOUD SYNC (Background)
     if (db && isCloudConnected) {
         try {
             const MAX_BATCH_SIZE = 450;
@@ -290,24 +294,25 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             console.log("Cloud batch write successful");
         } catch (e) {
             console.error("Cloud Sync Failed:", e);
-            throw new Error("同步失敗，請檢查網路連線");
+            // Optional: Revert UI or show error toast here if needed
+            // But usually keeping local state is safer than reverting to empty
         }
-    } else {
-        console.warn("Offline: Updating local state only.");
-        setGuests(offlineGuestList);
-        saveToLocal(offlineGuestList);
     }
   };
 
   const updateGuestInfo = async (id: string, updates: Partial<Guest>) => {
-      // CLOUD FIRST
+      // Optimistic Update
+      const newGuests = guests.map(g => g.id === id ? { ...g, ...updates } : g);
+      setGuests(newGuests);
+      saveToLocal(newGuests);
+
+      // Cloud Sync
       if (db && isCloudConnected) {
-          await db.collection("guests").doc(id).update(updates);
-      } else {
-          // Offline Fallback
-          const newGuests = guests.map(g => g.id === id ? { ...g, ...updates } : g);
-          setGuests(newGuests);
-          saveToLocal(newGuests);
+          try {
+              await db.collection("guests").doc(id).update(updates);
+          } catch (e) {
+              console.error("Update guest info failed:", e);
+          }
       }
   };
 
@@ -322,24 +327,17 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       let newCheckInTime = guest.checkInTime;
 
       if (isAttendingTarget) {
-          // CANCEL CHECK-IN:
-          // User clicked the active round button. We assume they want to cancel check-in completely.
-          // Since we enforce mutual exclusivity, removing the active round means removing ALL rounds.
+          // CANCEL CHECK-IN
           newRounds = [];
-          newCheckInTime = undefined; // Explicitly clear time
+          newCheckInTime = undefined; 
       } else {
-          // SWITCH / CHECK-IN:
-          // User clicked a different round.
-          // We enforce mutual exclusivity by setting rounds ONLY to this target round.
-          // This automatically handles the "Switch R1 to R2" case by overwriting R1.
+          // SWITCH / CHECK-IN
           newRounds = [targetRound];
-          
           if (!guest.isCheckedIn) {
               newCheckInTime = new Date().toISOString();
           }
       }
       
-      // Use null to clear in Firestore for robustness
       const updates: any = {
           attendedRounds: newRounds,
           isCheckedIn: newRounds.length > 0,
@@ -347,17 +345,20 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           checkInTime: newRounds.length > 0 ? newCheckInTime : null
       };
       
-      // Remove undefined keys to avoid Firestore errors
       Object.keys(updates).forEach(key => updates[key] === undefined && delete updates[key]);
 
-      // CLOUD FIRST
+      // Optimistic Update
+      const newGuests = guests.map(g => g.id === id ? { ...g, ...updates } : g);
+      setGuests(newGuests);
+      saveToLocal(newGuests);
+
+      // Cloud Sync
       if (db && isCloudConnected) {
-          await db.collection("guests").doc(id).update(updates);
-      } else {
-          // Offline Fallback
-          const newGuests = guests.map(g => g.id === id ? { ...g, ...updates } : g);
-          setGuests(newGuests);
-          saveToLocal(newGuests);
+          try {
+              await db.collection("guests").doc(id).update(updates);
+          } catch (e) {
+               console.error("Toggle check-in failed:", e);
+          }
       }
   };
 
@@ -366,17 +367,23 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     if (!guest) return;
     const newVal = !guest.isIntroduced;
     
+    // Optimistic Update
+    const newGuests = guests.map(g => g.id === id ? { ...g, isIntroduced: newVal } : g);
+    setGuests(newGuests);
+    saveToLocal(newGuests);
+    
     if (db && isCloudConnected) {
         await db.collection("guests").doc(id).update({ isIntroduced: newVal });
-    } else {
-        const newGuests = guests.map(g => g.id === id ? { ...g, isIntroduced: newVal } : g);
-        setGuests(newGuests);
-        saveToLocal(newGuests);
     }
   };
 
   const resetIntroductions = async () => {
     if (confirm('確定要重置所有介紹狀態嗎？')) {
+        // Optimistic Update
+        const newGuests = guests.map(g => g.isIntroduced ? { ...g, isIntroduced: false } : g);
+        setGuests(newGuests);
+        saveToLocal(newGuests);
+
         if (db && isCloudConnected) {
             const batch = db.batch();
             guests.forEach(g => {
@@ -385,10 +392,6 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                 }
             });
             await batch.commit();
-        } else {
-            const newGuests = guests.map(g => g.isIntroduced ? { ...g, isIntroduced: false } : g);
-            setGuests(newGuests);
-            saveToLocal(newGuests);
         }
     }
   };
@@ -424,12 +427,13 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         winRound: currentRound
     };
 
+    // Optimistic Update
+    const newGuests = guests.map(g => g.id === winner.id ? { ...g, ...updates } : g);
+    setGuests(newGuests);
+    saveToLocal(newGuests);
+
     if (db && isCloudConnected) {
         db.collection("guests").doc(winner.id).update(updates);
-    } else {
-        const newGuests = guests.map(g => g.id === winner.id ? { ...g, ...updates } : g);
-        setGuests(newGuests);
-        saveToLocal(newGuests);
     }
 
     return winner;
@@ -438,6 +442,13 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const resetLottery = async () => {
     if (confirm('確定要重置所有抽獎名單嗎？(將清除所有中獎紀錄)')) {
       const newSettings = { ...settings, lotteryRoundCounter: 1 };
+      
+      // Optimistic Update
+      const newGuests = guests.map(g => ({ ...g, isWinner: false, winRound: undefined, wonRounds: [] }));
+      setGuests(newGuests);
+      saveToLocal(newGuests);
+      setSettings(newSettings);
+      saveSettingsToLocal(newSettings);
       
       if (db && isCloudConnected) {
           const batch = db.batch();
@@ -452,12 +463,6 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           });
           batch.update(db.collection("config").doc("mainSettings"), { lotteryRoundCounter: 1 });
           await batch.commit();
-      } else {
-          const newGuests = guests.map(g => ({ ...g, isWinner: false, winRound: undefined, wonRounds: [] }));
-          setGuests(newGuests);
-          saveToLocal(newGuests);
-          setSettings(newSettings);
-          saveSettingsToLocal(newSettings);
       }
     }
   };
@@ -471,6 +476,12 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const clearAllData = async () => {
+      // Optimistic
+      setGuests([]);
+      saveToLocal([]);
+      setSettings(defaultSettings);
+      saveSettingsToLocal(defaultSettings);
+
       if (db && isCloudConnected) {
         try {
             const chunkSize = 400;
@@ -484,21 +495,17 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         } catch (e) {
             console.error("Error clearing cloud data:", e);
         }
-      } else {
-          setGuests([]);
-          saveToLocal([]);
-          setSettings(defaultSettings);
-          saveSettingsToLocal(defaultSettings);
       }
   }
 
   const deleteGuest = async (id: string) => {
+      // Optimistic
+      const newGuests = guests.filter(g => g.id !== id);
+      setGuests(newGuests);
+      saveToLocal(newGuests);
+
       if (db && isCloudConnected) {
           await db.collection("guests").doc(id).delete();
-      } else {
-          const newGuests = guests.filter(g => g.id !== id);
-          setGuests(newGuests);
-          saveToLocal(newGuests);
       }
   }
 
