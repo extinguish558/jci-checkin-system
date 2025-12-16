@@ -3,15 +3,31 @@ import react from '@vitejs/plugin-react'
 
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => {
-  // 載入環境變數 (包含 .env 檔案與 Vercel 系統變數)
-  // 第三個參數 '' 表示載入所有變數，不限制前綴
+  // 載入環境變數
   const env = loadEnv(mode, '.', '');
 
   return {
     plugins: [react()],
     define: {
-      // 明確將 API_KEY 注入到前端程式碼中，比直接 process.env 更穩定
       'process.env.API_KEY': JSON.stringify(env.API_KEY)
+    },
+    build: {
+      // 提高單檔大小警告上限 (防止 build log 出現黃字警告)
+      chunkSizeWarningLimit: 2000,
+      rollupOptions: {
+        output: {
+          manualChunks: (id) => {
+            // 將大型第三方套件拆分為獨立檔案，優化瀏覽器快取
+            if (id.includes('node_modules')) {
+              if (id.includes('firebase')) return 'firebase';
+              if (id.includes('@google/genai')) return 'genai';
+              if (id.includes('xlsx')) return 'xlsx';
+              if (id.includes('lucide-react')) return 'icons';
+              if (id.includes('react')) return 'vendor';
+            }
+          }
+        }
+      }
     }
   }
 })
