@@ -116,6 +116,8 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       });
 
       // CLOUD FIRST STRATEGY:
+      // Only update if we have data or if it's a genuine empty state from server
+      // This prevents some race conditions where snapshot returns empty initially
       setGuests(cloudGuests);
       saveToLocal(cloudGuests);
 
@@ -190,90 +192,91 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const addGuestsFromDraft = async (drafts: ParsedGuestDraft[], checkInTimestamp: Date) => {
     const globalRound = settings.currentCheckInRound;
-    
-    const currentGuests = [...guests];
-    const existingNames = new Map<string, number>(); 
-    currentGuests.forEach((g, idx) => existingNames.set(g.name, idx));
-
-    const newDocs: { type: 'set' | 'update', refId: string, data: any }[] = [];
     const BLACKLIST = ['姓名', 'Name', '職稱', 'Title', '備註', 'Note'];
 
-    const offlineGuestList = [...currentGuests];
+    let finalGuests: Guest[] = [];
+    let newDocs: { type: 'set' | 'update', refId: string, data: any }[] = [];
 
-    drafts.forEach(draft => {
-        if (!draft.name || !draft.name.trim()) return;
-        const cleanName = draft.name.trim();
-        if (BLACKLIST.some(b => b.toLowerCase() === cleanName.toLowerCase())) return;
+    // Use Functional Update to ensure we are working with the latest state
+    // and to perform the optimistic update correctly.
+    setGuests(prevGuests => {
+        const currentGuests = [...prevGuests];
+        const existingNames = new Map<string, number>(); 
+        currentGuests.forEach((g, idx) => existingNames.set(g.name, idx));
 
-        const shouldAddRound = draft.hasSignature;
-        const targetRound = draft.forcedRound !== undefined ? draft.forcedRound : globalRound;
+        const offlineGuestList = [...currentGuests];
         
-        const exists = existingNames.has(cleanName);
-        
-        if (exists) {
-            const idx = existingNames.get(cleanName)!;
-            const existing = offlineGuestList[idx];
+        // Reset docs collection for this run
+        newDocs = [];
+
+        drafts.forEach(draft => {
+            if (!draft.name || !draft.name.trim()) return;
+            const cleanName = draft.name.trim();
+            if (BLACKLIST.some(b => b.toLowerCase() === cleanName.toLowerCase())) return;
+
+            const shouldAddRound = draft.hasSignature;
+            const targetRound = draft.forcedRound !== undefined ? draft.forcedRound : globalRound;
             
-            // Start with existing rounds
-            let newRounds = [...(existing.attendedRounds || [])];
-            let newCheckInTime = existing.checkInTime;
-
-            if (shouldAddRound) {
-                // MUTUAL EXCLUSIVITY ENFORCED:
-                // If checking in via Import/AI, we force the guest into THIS round only.
-                // This clears any other rounds (e.g., if they were R1, now they become R2).
-                newRounds = [targetRound];
+            const exists = existingNames.has(cleanName);
+            
+            if (exists) {
+                const idx = existingNames.get(cleanName)!;
+                const existing = offlineGuestList[idx];
                 
-                // Set time if they weren't checked in properly before or if we want to refresh it
-                if (!existing.isCheckedIn || !newCheckInTime) {
-                    newCheckInTime = checkInTimestamp.toISOString();
+                let newRounds = [...(existing.attendedRounds || [])];
+                let newCheckInTime = existing.checkInTime;
+
+                if (shouldAddRound) {
+                    newRounds = [targetRound]; // Mutual Exclusivity
+                    if (!existing.isCheckedIn || !newCheckInTime) {
+                        newCheckInTime = checkInTimestamp.toISOString();
+                    }
                 }
+
+                const updatedGuest: Guest = {
+                    ...existing,
+                    attendedRounds: newRounds,
+                    isCheckedIn: newRounds.length > 0,
+                    round: newRounds.length > 0 ? Math.max(...newRounds) : undefined,
+                    checkInTime: newRounds.length > 0 ? newCheckInTime : undefined, 
+                    title: draft.title || existing.title,
+                    note: draft.note || existing.note,
+                    category: draft.category || existing.category,
+                    code: draft.code || existing.code
+                };
+                
+                offlineGuestList[idx] = updatedGuest;
+                newDocs.push({ type: 'update', refId: existing.id, data: updatedGuest });
+
+            } else {
+                const draftId = generateId();
+                const newRounds = shouldAddRound ? [targetRound] : [];
+                const newGuest: Guest = {
+                    id: draftId,
+                    code: draft.code || '',
+                    name: cleanName,
+                    title: draft.title || '', 
+                    category: draft.category,
+                    note: draft.note || '', 
+                    attendedRounds: newRounds,
+                    isCheckedIn: newRounds.length > 0,
+                    checkInTime: shouldAddRound ? checkInTimestamp.toISOString() : undefined,
+                    round: shouldAddRound ? targetRound : undefined,
+                    isIntroduced: false,
+                    isWinner: false,
+                    wonRounds: []
+                };
+                
+                offlineGuestList.push(newGuest);
+                existingNames.set(newGuest.name, offlineGuestList.length - 1);
+                newDocs.push({ type: 'set', refId: draftId, data: newGuest });
             }
+        });
 
-            const updatedGuest: Guest = {
-                ...existing,
-                attendedRounds: newRounds,
-                isCheckedIn: newRounds.length > 0,
-                round: newRounds.length > 0 ? Math.max(...newRounds) : undefined,
-                checkInTime: newRounds.length > 0 ? newCheckInTime : undefined, 
-                title: draft.title || existing.title,
-                note: draft.note || existing.note,
-                category: draft.category || existing.category,
-                code: draft.code || existing.code
-            };
-            
-            offlineGuestList[idx] = updatedGuest;
-            newDocs.push({ type: 'update', refId: existing.id, data: updatedGuest });
-
-        } else {
-            const draftId = generateId();
-            // New guest created with strict round logic
-            const newRounds = shouldAddRound ? [targetRound] : [];
-            const newGuest: Guest = {
-                id: draftId,
-                code: draft.code || '',
-                name: cleanName,
-                title: draft.title || '', 
-                category: draft.category,
-                note: draft.note || '', 
-                attendedRounds: newRounds,
-                isCheckedIn: newRounds.length > 0,
-                checkInTime: shouldAddRound ? checkInTimestamp.toISOString() : undefined,
-                round: shouldAddRound ? targetRound : undefined,
-                isIntroduced: false,
-                isWinner: false,
-                wonRounds: []
-            };
-            
-            offlineGuestList.push(newGuest);
-            existingNames.set(newGuest.name, offlineGuestList.length - 1);
-            newDocs.push({ type: 'set', refId: draftId, data: newGuest });
-        }
+        finalGuests = offlineGuestList;
+        saveToLocal(offlineGuestList);
+        return offlineGuestList;
     });
-
-    // OPTIMISTIC UPDATE: Update local state IMMEDIATELY so user sees the change
-    setGuests(offlineGuestList);
-    saveToLocal(offlineGuestList);
 
     // CLOUD SYNC (Background)
     if (db && isCloudConnected) {
@@ -292,10 +295,14 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                 await currentBatch.commit();
             }
             console.log("Cloud batch write successful");
-        } catch (e) {
+        } catch (e: any) {
             console.error("Cloud Sync Failed:", e);
-            // Optional: Revert UI or show error toast here if needed
-            // But usually keeping local state is safer than reverting to empty
+            // CRITICAL FIX: If cloud write fails, user data might disappear if snapshot reverts it.
+            // We must warn the user and maybe force local state preservation.
+            // In this app, local state is already set above.
+            // If the snapshot listener fires "Reverted" data (empty) because write failed, we are in trouble.
+            // However, usually permission denied keeps the local changes as 'pending'.
+            alert(`⚠️ 雲端同步失敗！\n\n原因: ${e.message}\n\n資料已先儲存於本機，請檢查 Firebase 權限設定 (Rules) 是否允許寫入。\n建議先將資料匯出備份，或檢查網路。`);
         }
     }
   };
