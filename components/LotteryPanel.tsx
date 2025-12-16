@@ -1,11 +1,11 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useEvent, DrawMode } from '../context/EventContext';
-import { Trophy, Play, PartyPopper, Settings2, SkipForward, Users, CheckCircle, Circle, Repeat, Download, FileSpreadsheet } from 'lucide-react';
+import { Trophy, Play, PartyPopper, Settings2, SkipForward, Users, CheckCircle, Circle, Repeat, Download, FileSpreadsheet, Trash2 } from 'lucide-react';
 import { Guest } from '../types';
 import { exportToExcel } from '../services/geminiService';
 
 const LotteryPanel: React.FC = () => {
-  const { drawWinner, guests, settings, jumpToLotteryRound } = useEvent();
+  const { drawWinner, guests, settings, jumpToLotteryRound, clearLotteryRound, isAdmin } = useEvent();
   const [currentWinner, setCurrentWinner] = useState<Guest | null>(null);
   const [isAnimating, setIsAnimating] = useState(false);
   const [currentTime, setCurrentTime] = useState(new Date());
@@ -90,6 +90,10 @@ const LotteryPanel: React.FC = () => {
   const handleDownloadWinners = () => {
       if (guests.length === 0) return alert("目前沒有資料可以下載");
       exportToExcel(guests, settings.eventName);
+  };
+  
+  const handleClearRound = (round: number) => {
+      clearLotteryRound(round);
   };
 
   const getNoCandidateMessage = (mode: DrawMode) => {
@@ -231,8 +235,18 @@ const LotteryPanel: React.FC = () => {
                  <div className="overflow-y-auto custom-scrollbar space-y-4 pr-2 pb-4 flex-1">
                     {groupedWinners.map((group) => (
                         <div key={group.round} className={`rounded-xl border overflow-hidden ${group.round === currentRound ? 'bg-white/10 border-yellow-500/50' : 'bg-white/5 border-white/10'}`}>
-                            <div className={`px-4 py-2 font-bold flex items-center gap-2 sticky top-0 z-10 backdrop-blur-md ${group.round === currentRound ? 'text-yellow-400 bg-black/20' : 'text-slate-300 bg-black/10'}`}>
-                                <PartyPopper size={16} /> 第 {group.round} 輪得獎名單 ({group.list.length}人)
+                            <div className={`px-4 py-2 font-bold flex items-center justify-between sticky top-0 z-10 backdrop-blur-md ${group.round === currentRound ? 'text-yellow-400 bg-black/20' : 'text-slate-300 bg-black/10'}`}>
+                                <span className="flex items-center gap-2">
+                                    <PartyPopper size={16} /> 第 {group.round} 輪得獎名單 ({group.list.length}人)
+                                </span>
+                                {/* Clear Round Button */}
+                                <button 
+                                    onClick={() => handleClearRound(group.round)}
+                                    className="text-xs flex items-center gap-1 bg-red-500/10 hover:bg-red-500/30 text-red-400 hover:text-red-200 px-2 py-1 rounded border border-red-500/20 transition-colors"
+                                    title="清除此輪得獎名單"
+                                >
+                                    <Trash2 size={12}/> 清除此輪
+                                </button>
                             </div>
                             <div className="p-3 grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-3">
                                 {group.list.map((winner) => (
