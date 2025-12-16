@@ -1,11 +1,7 @@
 import firebase from "firebase/compat/app";
 import "firebase/compat/firestore";
 
-// TODO: 請將此處替換為您在 Firebase Console 取得的設定資訊
-// 步驟:
-// 1. 登入 console.firebase.google.com
-// 2. 建立專案 -> 新增 Web 應用程式 (</> 圖示)
-// 3. 複製 firebaseConfig 內容貼上覆蓋下方變數
+// Config from user screenshot (Project: jci-c1)
 const firebaseConfig = {
   apiKey: "AIzaSyCJHPpZGmrmt3TsrvKWUyIcIaDKzfZyKhs",
   authDomain: "jci-c1.firebaseapp.com",
@@ -16,12 +12,22 @@ const firebaseConfig = {
   measurementId: "G-R2LX85KDZ7"
 };
 
-// Initialize Firebase
-// 我們加入一個簡單的檢查，避免在沒有設定時報錯，方便您先看到介面
-const isConfigured = firebaseConfig.projectId !== "您的專案ID";
+// 檢查使用者是否已經設定了真實的 Project ID
+// 如果 projectId 包含 "您的專案ID" 字樣，代表使用者還沒設定，程式會自動切換成單機模式
+const isConfigured = firebaseConfig.projectId && !firebaseConfig.projectId.includes("您的專案ID");
 
 if (isConfigured && !firebase.apps.length) {
-    firebase.initializeApp(firebaseConfig);
+    try {
+        firebase.initializeApp(firebaseConfig);
+        console.log("Firebase initialized with project:", firebaseConfig.projectId);
+    } catch (e) {
+        console.error("Firebase initialization failed:", e);
+    }
+} else {
+    if (!isConfigured) {
+        console.warn("Firebase 尚未設定！系統將以「單機模式」運作，資料不會跨裝置同步。");
+        console.warn("請前往 services/firebase.ts 填入正確的 firebaseConfig。");
+    }
 }
 
 export const app = isConfigured && firebase.apps.length ? firebase.app() : null;
