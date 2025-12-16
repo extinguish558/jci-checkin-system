@@ -1,8 +1,8 @@
 import React, { useState, useRef, useMemo, useEffect } from 'react';
 import { useEvent } from '../context/EventContext';
-import { parseCheckInSheet, ParseMode, FileInput } from '../services/geminiService';
+import { parseCheckInSheet, ParseMode, FileInput, exportToExcel } from '../services/geminiService';
 import { ParsedGuestDraft, GuestCategory, Guest } from '../types';
-import { Camera, RefreshCcw, Save, Plus, UserPlus, FileCheck, Type, Users, UserX, Clock, Settings, Trash2, PenLine, FileText, UploadCloud, ChevronRight, CheckSquare, X, Edit, AlertCircle, UserMinus, Search, Hash, Cloud, CloudOff, AlertTriangle, Lock, Unlock, Circle, Upload, Shield } from 'lucide-react';
+import { Camera, RefreshCcw, Save, Plus, UserPlus, FileCheck, Type, Users, UserX, Clock, Settings, Trash2, PenLine, FileText, UploadCloud, ChevronRight, CheckSquare, X, Edit, AlertCircle, UserMinus, Search, Hash, Cloud, CloudOff, AlertTriangle, Lock, Unlock, Circle, Upload, Shield, Download } from 'lucide-react';
 
 interface ReviewGuest extends ParsedGuestDraft {
   isSelected: boolean;
@@ -278,6 +278,11 @@ const AdminPanel: React.FC = () => {
           setIsProcessing(false);
       }
   };
+
+  const handleDownloadExcel = () => {
+      if (guests.length === 0) return alert("目前沒有資料可以下載");
+      exportToExcel(guests, settings.eventName);
+  }
 
   // List Data
   const stats = useMemo(() => {
@@ -624,7 +629,7 @@ const AdminPanel: React.FC = () => {
        </div>
 
       {/* List Table */}
-      <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+      <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden mb-6">
          {/* Stats Bar */}
          <div className="flex flex-col gap-4 bg-slate-50 px-4 py-3 border-b border-slate-200">
              <div className="w-full overflow-x-auto pb-2 md:pb-0 no-scrollbar">
@@ -786,6 +791,18 @@ const AdminPanel: React.FC = () => {
             )}
          </div>
       </div>
+      
+      {/* Download Excel Button */}
+      {isAdmin && (
+          <div className="flex justify-center mb-6">
+              <button 
+                  onClick={handleDownloadExcel}
+                  className="bg-green-600 text-white font-bold py-3 px-6 rounded-full shadow-md hover:bg-green-700 hover:shadow-lg transition-all flex items-center gap-2"
+              >
+                  <Download size={20} /> 下載報到與中獎名單 (Excel)
+              </button>
+          </div>
+      )}
 
        {/* LOGIN MODAL */}
        {showLoginModal && (
