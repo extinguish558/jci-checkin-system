@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useEvent, DrawMode } from '../context/EventContext';
-import { Trophy, Play, PartyPopper, Settings2, SkipForward, Users, CheckCircle, Circle, Repeat } from 'lucide-react';
+import { Trophy, Play, PartyPopper, Settings2, SkipForward, Users, CheckCircle, Circle, Repeat, Download, FileSpreadsheet } from 'lucide-react';
 import { Guest } from '../types';
+import { exportToExcel } from '../services/geminiService';
 
 const LotteryPanel: React.FC = () => {
   const { drawWinner, guests, settings, jumpToLotteryRound } = useEvent();
@@ -85,6 +86,11 @@ const LotteryPanel: React.FC = () => {
       jumpToLotteryRound(round);
       setCurrentWinner(null);
   }
+
+  const handleDownloadWinners = () => {
+      if (guests.length === 0) return alert("目前沒有資料可以下載");
+      exportToExcel(guests, settings.eventName);
+  };
 
   const getNoCandidateMessage = (mode: DrawMode) => {
       switch(mode) {
@@ -214,7 +220,12 @@ const LotteryPanel: React.FC = () => {
         {/* Winner List - Grouped & Always Visible & Scrollable */}
         {groupedWinners.length > 0 && (
             <div className="w-full flex-1 min-h-0 flex flex-col">
-                 <h3 className="text-center text-white/50 text-sm uppercase tracking-widest mb-2 shrink-0">得獎名單歷程</h3>
+                 <div className="flex justify-between items-end mb-2 shrink-0 px-2">
+                     <h3 className="text-center text-white/50 text-sm uppercase tracking-widest">得獎名單歷程</h3>
+                     <button onClick={handleDownloadWinners} className="text-xs flex items-center gap-1 text-green-400 hover:text-green-300 font-bold border border-green-400/30 px-2 py-1 rounded bg-green-400/10">
+                         <FileSpreadsheet size={12}/> 下載名單 (Excel)
+                     </button>
+                 </div>
                  
                  {/* SCROLLABLE CONTAINER */}
                  <div className="overflow-y-auto custom-scrollbar space-y-4 pr-2 pb-4 flex-1">
