@@ -2,7 +2,7 @@ import React, { useState, useRef, useMemo, useEffect } from 'react';
 import { useEvent } from '../context/EventContext';
 import { parseCheckInSheet, ParseMode, FileInput } from '../services/geminiService';
 import { ParsedGuestDraft, GuestCategory, Guest } from '../types';
-import { Camera, RefreshCcw, Save, Plus, UserPlus, FileCheck, Type, Users, UserX, Clock, Settings, Trash2, PenLine, FileText, UploadCloud, ChevronRight, CheckSquare, X, Edit, AlertCircle, UserMinus, Search, Hash, Cloud, CloudOff, AlertTriangle, Lock, Unlock, Circle } from 'lucide-react';
+import { Camera, RefreshCcw, Save, Plus, UserPlus, FileCheck, Type, Users, UserX, Clock, Settings, Trash2, PenLine, FileText, UploadCloud, ChevronRight, CheckSquare, X, Edit, AlertCircle, UserMinus, Search, Hash, Cloud, CloudOff, AlertTriangle, Lock, Unlock, Circle, Upload } from 'lucide-react';
 
 interface ReviewGuest extends ParsedGuestDraft {
   isSelected: boolean;
@@ -18,7 +18,12 @@ interface ManualEntryRow {
 }
 
 const AdminPanel: React.FC = () => {
-  const { settings, updateSettings, addGuestsFromDraft, updateGuestInfo, guests, deleteGuest, toggleCheckInRound, isCloudConnected, connectionError, clearAllData, isAdmin, loginAdmin, logoutAdmin } = useEvent();
+  const { 
+      settings, updateSettings, addGuestsFromDraft, updateGuestInfo, guests, deleteGuest, 
+      toggleCheckInRound, isCloudConnected, connectionError, clearAllData, 
+      isAdmin, loginAdmin, logoutAdmin, uploadAllLocalDataToCloud 
+  } = useEvent();
+
   const [isProcessing, setIsProcessing] = useState(false);
   const [draftGuests, setDraftGuests] = useState<ReviewGuest[]>([]);
   const [importMode, setImportMode] = useState<ParseMode>('CHECK_IN'); 
@@ -36,8 +41,8 @@ const AdminPanel: React.FC = () => {
   // Custom Confirm Modal State
   const [confirmModal, setConfirmModal] = useState<{
       isOpen: boolean;
-      type: 'DELETE_ONE' | 'CLEAR_ALL';
-      step: 1 | 2; // For double confirmation
+      type: 'DELETE_ONE' | 'CLEAR_ALL' | 'FORCE_SYNC';
+      step: 1 | 2; 
       data?: { id: string; name: string };
   }>({ isOpen: false, type: 'DELETE_ONE', step: 1 });
   
@@ -141,20 +146,17 @@ const AdminPanel: React.FC = () => {
               newDrafts.push(...mapped);
           } catch (error) {
               console.error(`Error processing batch ${batchIndex}:`, error);
-              // Don't throw here, try to process other batches
           }
       }
 
       if (newDrafts.length > 0) {
           setDraftGuests(prev => mergeGuests(prev, newDrafts)); 
       } else {
-          // 詳細提示使用者為什麼沒有資料
           alert("未能辨識出任何資料。\n\n可能原因：\n1. 圖片模糊或無文字\n2. Excel 檔案缺少「姓名」欄位\n3. AI 無法讀取內容 (請確認 API Key 設定)");
       }
 
     } catch (err: any) {
       console.error(err);
-      // 顯示具體的錯誤訊息，幫助除錯
       alert(`處理檔案時發生錯誤：\n${err.message || '未知錯誤'}\n\n如果您剛設定 API Key，請記得在 Vercel 點擊 Redeploy。`);
     } finally {
       setIsProcessing(false);
@@ -176,28 +178,40 @@ const AdminPanel: React.FC = () => {
     alert(`成功匯入 ${selectedDrafts.length} 筆資料`);
   };
 
-  // Replaced ToggleSwitch with a clearer CheckInButton
-  const CheckInButton = ({ isActive, onClick, activeColorClass }: { isActive: boolean, onClick: () => void, activeColorClass: string }) => (
-      <button 
-          onClick={(e) => { e.stopPropagation(); onClick(); }}
-          className={`
-              w-full py-2 px-1 rounded-lg font-bold text-sm transition-all shadow-sm border
-              ${isActive 
-                  ? `${activeColorClass} text-white border-transparent scale-105 shadow-md` 
-                  : 'bg-white text-slate-300 border-slate-200 hover:bg-slate-50 hover:text-slate-400 hover:border-slate-300'}
-          `}
-      >
-          {isActive ? (
-              <span className="flex items-center justify-center gap-1">
-                  <CheckSquare size={16} className="stroke-[3px]" /> 已到
-              </span>
-          ) : (
-              <span className="flex items-center justify-center gap-1">
-                  <div className="w-4 h-4 rounded-full border-2 border-slate-200"></div> 未到
-              </span>
-          )}
-      </button>
-  );
+  // Enhanced CheckInButton
+  const CheckInButton = ({ isActive, onClick, theme }: { isActive: boolean, onClick: () => void, theme: 'blue' | 'purple' }) => {
+    const isBlue = theme === 'blue';
+    const activeClass = isBlue 
+        ? 'bg-blue-600 border-blue-600 text-white' 
+        : 'bg-purple-600 border-purple-600 text-white';
+    
+    const inactiveClass = isBlue
+        ? 'bg-blue-50/50 border-blue-200 text-blue-400 hover:bg-blue-100 hover:text-blue-600 hover:border-blue-400'
+        : 'bg-purple-50/50 border-purple-200 text-purple-400 hover:bg-purple-100 hover:text-purple-600 hover:border-purple-400';
+
+    return (
+        <button 
+            onClick={(e) => { e.stopPropagation(); onClick(); }}
+            className={`
+                w-full py-2 px-1 rounded-lg font-bold text-sm transition-all border-2
+                flex items-center justify-center gap-1 shadow-sm
+                ${isActive 
+                    ? `${activeClass} scale-105 shadow-md` 
+                    : inactiveClass}
+            `}
+        >
+            {isActive ? (
+                <>
+                    <CheckSquare size={18} className="stroke-[3px]" /> 已到
+                </>
+            ) : (
+                <>
+                    <div className={`w-4 h-4 rounded border-2 border-current opacity-60`}></div> 未到
+                </>
+            )}
+        </button>
+    );
+  };
 
   const handleSaveEdit = () => {
       if (!editingGuest) return;
@@ -213,7 +227,6 @@ const AdminPanel: React.FC = () => {
       setEditingGuest(null);
   };
 
-  // --- Manual Entry Logic ---
   const updateManualEntry = (index: number, field: keyof ManualEntryRow, value: string) => {
       const newEntries = [...manualEntries];
       newEntries[index] = { ...newEntries[index], [field]: value };
@@ -232,7 +245,6 @@ const AdminPanel: React.FC = () => {
       const validEntries = manualEntries.filter(e => e.name.trim() !== '');
       if (validEntries.length === 0) return alert('請至少輸入一位人員姓名');
 
-      // Use current time
       const checkInDate = new Date();
 
       const drafts: ParsedGuestDraft[] = validEntries.map(e => ({
@@ -247,7 +259,6 @@ const AdminPanel: React.FC = () => {
 
       addGuestsFromDraft(drafts, checkInDate);
       
-      // Reset
       setManualEntries([{ code: '', name: '', title: '', category: GuestCategory.OTHER, note: '' }]);
       alert(`已新增 ${validEntries.length} 位人員`);
   };
@@ -281,25 +292,19 @@ const AdminPanel: React.FC = () => {
     );
   }, [guests, searchTerm]);
 
-  // Sort: Group by OB/YB, then by Code (Ascending)
   const displayGuests = useMemo(() => {
     const sorted = [...filteredGuests].sort((a, b) => {
-        // 1. Category Priority: OB > YB > Others
         const getPrio = (cat: GuestCategory) => {
             if (cat === GuestCategory.MEMBER_OB) return 1;
             if (cat === GuestCategory.MEMBER_YB) return 2;
             return 3;
         };
-        
         const prioA = getPrio(a.category);
         const prioB = getPrio(b.category);
-        
         if (prioA !== prioB) return prioA - prioB;
         
-        // 2. Sort by Code
         const codeA = a.code || '';
         const codeB = b.code || '';
-        
         return codeA.localeCompare(codeB, undefined, { numeric: true, sensitivity: 'base' });
     });
     return sorted;
@@ -312,10 +317,8 @@ const AdminPanel: React.FC = () => {
       </div>
   )
 
-  // -- DELETE HANDLERS (New Logic) --
-
   const handleDeleteClick = (e: React.MouseEvent, id: string, name: string) => {
-      e.stopPropagation(); // Stop row click
+      e.stopPropagation();
       e.preventDefault();
       setConfirmModal({
           isOpen: true,
@@ -335,7 +338,20 @@ const AdminPanel: React.FC = () => {
       });
   };
 
-  const executeConfirmAction = () => {
+  const handleForceSyncClick = (e: React.MouseEvent) => {
+      e.stopPropagation();
+      if (!isCloudConnected) {
+          alert("雲端尚未連線，無法執行同步。");
+          return;
+      }
+      setConfirmModal({
+          isOpen: true,
+          type: 'FORCE_SYNC',
+          step: 1
+      });
+  }
+
+  const executeConfirmAction = async () => {
       if (confirmModal.type === 'DELETE_ONE' && confirmModal.data) {
           deleteGuest(confirmModal.data.id);
           setConfirmModal({ ...confirmModal, isOpen: false });
@@ -346,6 +362,18 @@ const AdminPanel: React.FC = () => {
           }
           clearAllData();
           setConfirmModal({ ...confirmModal, isOpen: false });
+      } else if (confirmModal.type === 'FORCE_SYNC') {
+          setIsProcessing(true);
+          setProgressMsg("正在將資料上傳至雲端...");
+          try {
+              await uploadAllLocalDataToCloud();
+              alert("同步成功！雲端資料已更新。");
+          } catch (e: any) {
+              alert("同步失敗：" + e.message);
+          } finally {
+              setIsProcessing(false);
+              setConfirmModal({ ...confirmModal, isOpen: false });
+          }
       }
   };
 
@@ -369,21 +397,32 @@ const AdminPanel: React.FC = () => {
 
       {/* Header */}
       <div className="flex flex-col gap-4 mb-6">
-          <div className="flex justify-between items-end border-b border-slate-200 pb-4">
+          <div className="flex flex-col md:flex-row justify-between md:items-end border-b border-slate-200 pb-4 gap-4">
               <div className="flex items-center gap-3">
                    <h2 className="text-2xl font-bold flex items-center gap-2 text-slate-800">
                     <Settings className="w-6 h-6" /> 後台管理
                    </h2>
               </div>
-              <div className="flex items-center gap-4">
+              <div className="flex flex-wrap items-center gap-4">
                   {/* Admin Login Button */}
                   <button 
                       onClick={() => isAdmin ? logoutAdmin() : setShowLoginModal(true)}
                       className={`flex items-center gap-2 px-3 py-1 rounded-full text-xs font-bold border transition-colors ${isAdmin ? 'bg-red-50 text-red-600 border-red-200' : 'bg-slate-100 text-slate-500 border-slate-300'}`}
                   >
                       {isAdmin ? <Unlock size={14} /> : <Lock size={14} />}
-                      {isAdmin ? '已解鎖 (點擊鎖定)' : '已鎖定 (點擊解鎖)'}
+                      {isAdmin ? '已解鎖' : '已鎖定'}
                   </button>
+                  
+                  {/* Force Sync Button - ONLY SHOW IF ADMIN AND CONNECTED AND HAS GUESTS */}
+                  {isAdmin && isCloudConnected && guests.length > 0 && (
+                      <button 
+                          onClick={handleForceSyncClick}
+                          className="flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold border bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100 transition-colors"
+                          title="將這台電腦的資料強制上傳到雲端，解決不同步問題"
+                      >
+                          <Upload size={14} /> 強制上傳本機資料
+                      </button>
+                  )}
 
                   <div 
                       className={`flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold border cursor-pointer ${isCloudConnected ? 'bg-green-100 text-green-700 border-green-200' : 'bg-red-100 text-red-700 border-red-200'}`}
@@ -391,7 +430,7 @@ const AdminPanel: React.FC = () => {
                       title={connectionError || (isCloudConnected ? "連線正常" : "點擊查看錯誤")}
                   >
                       {isCloudConnected ? <Cloud size={14} /> : <CloudOff size={14} />}
-                      {isCloudConnected ? '雲端連線中' : '未連線 (僅本機)'}
+                      {isCloudConnected ? '雲端連線中' : '未連線'}
                   </div>
                   <div className="text-xl font-mono font-bold text-slate-500 flex items-center gap-2">
                      <Clock size={20} />
@@ -442,7 +481,7 @@ const AdminPanel: React.FC = () => {
               <div className="text-xs opacity-60">Step 1: 上傳總名單 (Excel/PDF)</div>
           </button>
 
-           {/* Check-in Upload - Always Available (Usage) */}
+           {/* Check-in Upload */}
            <div className="bg-white p-2 rounded-xl shadow-sm border border-slate-200 flex flex-col gap-1">
                <div className="text-center text-slate-400 text-xs font-bold py-1 flex items-center justify-center gap-1">
                    <Camera size={14}/> 簽到表辨識 (Step 2)
@@ -602,7 +641,7 @@ const AdminPanel: React.FC = () => {
                                 <CheckInButton 
                                     isActive={g.attendedRounds?.includes(1) || false}
                                     onClick={() => toggleCheckInRound(g.id, 1)}
-                                    activeColorClass="bg-blue-600 shadow-blue-200"
+                                    theme="blue"
                                 />
                             </td>
 
@@ -611,7 +650,7 @@ const AdminPanel: React.FC = () => {
                                 <CheckInButton 
                                     isActive={g.attendedRounds?.includes(2) || false}
                                     onClick={() => toggleCheckInRound(g.id, 2)}
-                                    activeColorClass="bg-purple-600 shadow-purple-200"
+                                    theme="purple"
                                 />
                             </td>
 
@@ -689,21 +728,24 @@ const AdminPanel: React.FC = () => {
             <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm animate-in fade-in duration-200">
                 <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm p-6 transform transition-all scale-100">
                     <div className="flex flex-col items-center text-center">
-                        <div className={`rounded-full p-4 mb-4 ${confirmModal.type === 'CLEAR_ALL' ? 'bg-red-100 text-red-600' : 'bg-slate-100 text-slate-600'}`}>
-                            <AlertTriangle size={32} />
+                        <div className={`rounded-full p-4 mb-4 ${confirmModal.type === 'CLEAR_ALL' ? 'bg-red-100 text-red-600' : (confirmModal.type === 'FORCE_SYNC' ? 'bg-blue-100 text-blue-600' : 'bg-slate-100 text-slate-600')}`}>
+                            {confirmModal.type === 'FORCE_SYNC' ? <UploadCloud size={32}/> : <AlertTriangle size={32} />}
                         </div>
                         
                         <h3 className="text-xl font-bold text-slate-800 mb-2">
                             {confirmModal.type === 'CLEAR_ALL' 
                                 ? (confirmModal.step === 1 ? "警告：刪除所有資料？" : "再次確認：真的要清空嗎？")
-                                : "確認刪除資料"
+                                : (confirmModal.type === 'FORCE_SYNC' ? "確認上傳本機資料？" : "確認刪除資料")
                             }
                         </h3>
                         
                         <p className="text-slate-500 mb-6">
                             {confirmModal.type === 'CLEAR_ALL' 
                                 ? (confirmModal.step === 1 ? "此操作將刪除「所有」報到、名單與抽獎紀錄，且無法復原。" : "所有資料將會立即消失，請確認您已備份或無需保留。")
-                                : <span>確定要刪除「<span className="font-bold text-slate-800">{confirmModal.data?.name}</span>」嗎？</span>
+                                : (confirmModal.type === 'FORCE_SYNC' 
+                                    ? "此操作會將您這台電腦的所有名單資料強制寫入雲端資料庫。請確認這是最新資料。" 
+                                    : <span>確定要刪除「<span className="font-bold text-slate-800">{confirmModal.data?.name}</span>」嗎？</span>
+                                  )
                             }
                         </p>
 
@@ -716,11 +758,11 @@ const AdminPanel: React.FC = () => {
                             </button>
                             <button 
                                 onClick={executeConfirmAction}
-                                className={`flex-1 py-3 px-4 rounded-lg font-bold text-white shadow-md transition-colors ${confirmModal.type === 'CLEAR_ALL' ? 'bg-red-600 hover:bg-red-700' : 'bg-slate-800 hover:bg-slate-900'}`}
+                                className={`flex-1 py-3 px-4 rounded-lg font-bold text-white shadow-md transition-colors ${confirmModal.type === 'CLEAR_ALL' ? 'bg-red-600 hover:bg-red-700' : (confirmModal.type === 'FORCE_SYNC' ? 'bg-blue-600 hover:bg-blue-700' : 'bg-slate-800 hover:bg-slate-900')}`}
                             >
                                 {confirmModal.type === 'CLEAR_ALL' 
                                     ? (confirmModal.step === 1 ? "下一步 (確認)" : "確認清空")
-                                    : "確認刪除"
+                                    : (confirmModal.type === 'FORCE_SYNC' ? "確認上傳" : "確認刪除")
                                 }
                             </button>
                         </div>
