@@ -2,7 +2,7 @@ import React, { useState, useRef, useMemo, useEffect } from 'react';
 import { useEvent } from '../context/EventContext';
 import { parseCheckInSheet, ParseMode, FileInput } from '../services/geminiService';
 import { ParsedGuestDraft, GuestCategory, Guest } from '../types';
-import { Camera, RefreshCcw, Save, Plus, UserPlus, FileCheck, Type, Users, UserX, Clock, Settings, Trash2, PenLine, FileText, UploadCloud, ChevronRight, CheckSquare, X, Edit, AlertCircle, UserMinus, Search, Hash, Cloud, CloudOff, AlertTriangle, Lock, Unlock, Circle, Upload } from 'lucide-react';
+import { Camera, RefreshCcw, Save, Plus, UserPlus, FileCheck, Type, Users, UserX, Clock, Settings, Trash2, PenLine, FileText, UploadCloud, ChevronRight, CheckSquare, X, Edit, AlertCircle, UserMinus, Search, Hash, Cloud, CloudOff, AlertTriangle, Lock, Unlock, Circle, Upload, Shield } from 'lucide-react';
 
 interface ReviewGuest extends ParsedGuestDraft {
   isSelected: boolean;
@@ -21,7 +21,7 @@ const AdminPanel: React.FC = () => {
   const { 
       settings, updateSettings, addGuestsFromDraft, updateGuestInfo, guests, deleteGuest, 
       toggleCheckInRound, isCloudConnected, connectionError, clearAllData, 
-      isAdmin, loginAdmin, logoutAdmin, uploadAllLocalDataToCloud 
+      isAdmin, loginAdmin, logoutAdmin, uploadAllLocalDataToCloud, usingLocalDataProtection 
   } = useEvent();
 
   const [isProcessing, setIsProcessing] = useState(false);
@@ -422,6 +422,19 @@ const AdminPanel: React.FC = () => {
                    <h2 className="text-2xl font-bold flex items-center gap-2 text-slate-800">
                     <Settings className="w-6 h-6" /> 後台管理
                    </h2>
+                   
+                   {/* Sync Status Badge */}
+                   {usingLocalDataProtection ? (
+                       <span className="flex items-center gap-1 text-xs bg-orange-100 text-orange-700 px-2 py-1 rounded border border-orange-200 animate-pulse">
+                           <Shield size={12}/> 保護模式：使用本機資料
+                       </span>
+                   ) : (
+                       isCloudConnected && (
+                           <span className="flex items-center gap-1 text-xs bg-indigo-50 text-indigo-600 px-2 py-1 rounded border border-indigo-100">
+                               <Cloud size={12}/> 雲端同步中
+                           </span>
+                       )
+                   )}
               </div>
               <div className="flex flex-wrap items-center gap-4">
                   {/* Admin Login Button */}
