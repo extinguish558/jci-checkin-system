@@ -46,6 +46,17 @@ const generateId = () => {
     return Date.now().toString(36) + Math.random().toString(36).substr(2);
 };
 
+// Helper to remove undefined keys for Firestore
+const sanitizeForFirestore = (data: any) => {
+    const clean = { ...data };
+    Object.keys(clean).forEach(key => {
+        if (clean[key] === undefined) {
+            delete clean[key];
+        }
+    });
+    return clean;
+};
+
 const EventContext = createContext<EventContextType | undefined>(undefined);
 
 export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -181,7 +192,8 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           const batch = db.batch();
           chunk.forEach(g => {
               const ref = db.collection("guests").doc(g.id);
-              batch.set(ref, g, { merge: true });
+              // SANITIZE DATA HERE
+              batch.set(ref, sanitizeForFirestore(g), { merge: true });
           });
           await batch.commit();
       }
@@ -244,7 +256,8 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                 };
                 
                 offlineGuestList[idx] = updatedGuest;
-                newDocs.push({ type: 'update', refId: existing.id, data: updatedGuest });
+                // SANITIZE BEFORE PUSHING TO DOCS
+                newDocs.push({ type: 'update', refId: existing.id, data: sanitizeForFirestore(updatedGuest) });
 
             } else {
                 const draftId = generateId();
@@ -267,7 +280,8 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                 
                 offlineGuestList.push(newGuest);
                 existingNames.set(newGuest.name, offlineGuestList.length - 1);
-                newDocs.push({ type: 'set', refId: draftId, data: newGuest });
+                // SANITIZE BEFORE PUSHING TO DOCS
+                newDocs.push({ type: 'set', refId: draftId, data: sanitizeForFirestore(newGuest) });
             }
         });
 
@@ -307,7 +321,8 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
       if (db) {
           try {
-              await db.collection("guests").doc(id).update(updates);
+              // Sanitize updates as well
+              await db.collection("guests").doc(id).update(sanitizeForFirestore(updates));
           } catch (e) {
               console.error("Update guest info failed:", e);
           }
@@ -338,9 +353,10 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           attendedRounds: newRounds,
           isCheckedIn: newRounds.length > 0,
           round: newRounds.length > 0 ? Math.max(...newRounds) : undefined,
-          checkInTime: newRounds.length > 0 ? newCheckInTime : null
+          checkInTime: newRounds.length > 0 ? newCheckInTime : null // Explicit null or undefined
       };
       
+      // Cleanup undefined locally just to be clean
       Object.keys(updates).forEach(key => updates[key] === undefined && delete updates[key]);
 
       const newGuests = guests.map(g => g.id === id ? { ...g, ...updates } : g);
@@ -349,7 +365,8 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
       if (db) {
           try {
-              await db.collection("guests").doc(id).update(updates);
+              // Sanitize before update
+              await db.collection("guests").doc(id).update(sanitizeForFirestore(updates));
           } catch (e) {
                console.error("Toggle check-in failed:", e);
           }
@@ -444,9 +461,12 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           const batch = db.batch();
           guests.forEach(g => {
               if (g.isWinner || (g.wonRounds && g.wonRounds.length > 0)) {
+                  // Explicitly set undefined fields to delete them using FieldValue.delete() is better, 
+                  // but here we just update specific fields. 
+                  // For safety, we just overwrite them.
                   batch.update(db.collection("guests").doc(g.id), { 
                       isWinner: false, 
-                      winRound: null as any, 
+                      winRound: null, // use null for legacy field
                       wonRounds: [] 
                   });
               }
