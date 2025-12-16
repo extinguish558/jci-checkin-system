@@ -8,17 +8,17 @@ interface EventContextType {
   guests: Guest[];
   settings: SystemSettings;
   updateSettings: (newSettings: Partial<SystemSettings>) => void;
-  addGuestsFromDraft: (drafts: ParsedGuestDraft[], checkInTimestamp: Date) => void;
-  updateGuestInfo: (id: string, updates: Partial<Guest>) => void;
-  toggleIntroduced: (id: string) => void;
-  resetIntroductions: () => void;
+  addGuestsFromDraft: (drafts: ParsedGuestDraft[], checkInTimestamp: Date) => Promise<void>;
+  updateGuestInfo: (id: string, updates: Partial<Guest>) => Promise<void>;
+  toggleIntroduced: (id: string) => Promise<void>;
+  resetIntroductions: () => Promise<void>;
   drawWinner: (mode?: DrawMode) => Guest | null;
-  resetLottery: () => void;
+  resetLottery: () => Promise<void>;
   nextLotteryRound: () => void;
   jumpToLotteryRound: (round: number) => void; 
-  clearAllData: () => void;
-  deleteGuest: (id: string) => void;
-  toggleCheckInRound: (id: string, round: number) => void;
+  clearAllData: () => Promise<void>;
+  deleteGuest: (id: string) => Promise<void>;
+  toggleCheckInRound: (id: string, round: number) => Promise<void>;
   isCloudConnected: boolean; 
   connectionError: string | null;
   
@@ -38,7 +38,7 @@ const defaultSettings: SystemSettings = {
   totalRounds: 2,
 };
 
-// Helper for generating IDs without external library
+// Helper for generating IDs
 const generateId = () => {
     if (typeof crypto !== 'undefined' && crypto.randomUUID) {
         return crypto.randomUUID();
@@ -49,7 +49,7 @@ const generateId = () => {
 const EventContext = createContext<EventContextType | undefined>(undefined);
 
 export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  // Initialize state from LocalStorage
+  // Initialize state from LocalStorage for faster first paint
   const [guests, setGuests] = useState<Guest[]>(() => {
       try {
           const local = localStorage.getItem('event_guests');
@@ -89,7 +89,7 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       localStorage.setItem('event_settings', JSON.stringify(newSettings));
   }
 
-  // 1. Initial Load & Real-time Listeners (Firestore)
+  // 1. Real-time Listeners (Firestore) - The Source of Truth
   useEffect(() => {
     if (!isFirebaseReady || !db) {
       console.warn("Firebase not configured. Running in Local Mode.");
@@ -107,28 +107,11 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         cloudGuests.push(doc.data() as Guest);
       });
 
-      // SAFE MERGE STRATEGY
-      setGuests(prevGuests => {
-          const cloudMap = new Map(cloudGuests.map(g => [g.id, g]));
-          
-          // 1. Update existing local guests with cloud data
-          const mergedGuests = prevGuests.map(local => {
-              if (cloudMap.has(local.id)) {
-                  const cloudData = cloudMap.get(local.id)!;
-                  cloudMap.delete(local.id); 
-                  return cloudData;
-              }
-              return local;
-          });
-
-          // 2. Add NEW guests from Cloud
-          const newFromCloud = Array.from(cloudMap.values());
-          
-          const finalGuests = [...mergedGuests, ...newFromCloud];
-          
-          saveToLocal(finalGuests);
-          return finalGuests;
-      });
+      // CLOUD FIRST STRATEGY:
+      // We trust the cloud 100%. We replace local state with cloud state.
+      // This ensures all devices see exactly the same thing.
+      setGuests(cloudGuests);
+      saveToLocal(cloudGuests);
 
     }, (error: any) => {
       console.error("Firebase Guest Sync Error:", error);
@@ -143,6 +126,7 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         setSettings(s);
         saveSettingsToLocal(s);
       } else {
+        // Init settings if missing
         db.collection("config").doc("mainSettings").set(defaultSettings).catch(console.error);
       }
     }, (error: any) => {
@@ -155,20 +139,26 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     };
   }, []);
 
+  // --- ACTIONS ---
+  // All actions now prioritize Cloud Writes. 
+  // We do NOT manually setGuests() if we are connected to the cloud.
+  // We let the onSnapshot listener update the UI.
+
   const updateSettings = async (newSettings: Partial<SystemSettings>) => {
+    // Optimistic update for settings is okay as it feels snappier
     const nextSettings = { ...settings, ...newSettings };
     setSettings(nextSettings);
     saveSettingsToLocal(nextSettings);
     
-    if (!db) return;
-    try {
-        await db.collection("config").doc("mainSettings").update(newSettings);
-    } catch (e) {
-        console.error("Error updating settings:", e);
+    if (db && isCloudConnected) {
+        try {
+            await db.collection("config").doc("mainSettings").update(newSettings);
+        } catch (e) {
+            console.error("Error updating settings:", e);
+        }
     }
   };
 
-  // --- NEW: Force Upload Local Data to Cloud ---
   const uploadAllLocalDataToCloud = async () => {
       if (!db || !isCloudConnected) {
           throw new Error("尚未連線至雲端，無法上傳。");
@@ -177,7 +167,6 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       console.log("Starting full sync upload...");
       const MAX_BATCH_SIZE = 450;
       
-      // 1. Sync Guests
       const guestChunks = [];
       for (let i = 0; i < guests.length; i += MAX_BATCH_SIZE) {
           guestChunks.push(guests.slice(i, i + MAX_BATCH_SIZE));
@@ -187,29 +176,30 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           const batch = db.batch();
           chunk.forEach(g => {
               const ref = db.collection("guests").doc(g.id);
-              // Use set with merge: true to avoid overwriting newer cloud data if any, 
-              // but ensure local data exists on cloud
               batch.set(ref, g, { merge: true });
           });
           await batch.commit();
       }
 
-      // 2. Sync Settings
       await db.collection("config").doc("mainSettings").set(settings, { merge: true });
-      
       console.log("Full sync upload complete.");
   };
 
   const addGuestsFromDraft = async (drafts: ParsedGuestDraft[], checkInTimestamp: Date) => {
     const globalRound = settings.currentCheckInRound;
     
-    const updatedGuestList = [...guests];
+    // We calculate the logic against the CURRENT known guests
+    // Because this is async, if two people scan at exact same millisecond, 
+    // Firestore transactions would be needed for perfect safety, but batch is atomic enough for this use case.
+    const currentGuests = [...guests];
     const existingNames = new Map<string, number>(); 
-    
-    updatedGuestList.forEach((g, idx) => existingNames.set(g.name, idx));
+    currentGuests.forEach((g, idx) => existingNames.set(g.name, idx));
 
-    const newDocs: any[] = []; 
+    const newDocs: { type: 'set' | 'update', refId: string, data: any }[] = [];
     const BLACKLIST = ['姓名', 'Name', '職稱', 'Title', '備註', 'Note'];
+
+    // Track local updates just for Offline Mode fallback
+    const offlineGuestList = [...currentGuests];
 
     drafts.forEach(draft => {
         if (!draft.name || !draft.name.trim()) return;
@@ -223,7 +213,7 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         
         if (exists) {
             const idx = existingNames.get(cleanName)!;
-            const existing = updatedGuestList[idx];
+            const existing = offlineGuestList[idx];
             
             let newRounds = [...(existing.attendedRounds || [])];
             let newCheckInTime = existing.checkInTime;
@@ -249,7 +239,7 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                 code: draft.code || existing.code
             };
             
-            updatedGuestList[idx] = updatedGuest;
+            offlineGuestList[idx] = updatedGuest; // Update local tracking
             newDocs.push({ type: 'update', refId: existing.id, data: updatedGuest });
 
         } else {
@@ -271,16 +261,14 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                 wonRounds: []
             };
             
-            updatedGuestList.push(newGuest);
-            existingNames.set(newGuest.name, updatedGuestList.length - 1);
+            offlineGuestList.push(newGuest); // Update local tracking
+            existingNames.set(newGuest.name, offlineGuestList.length - 1);
             newDocs.push({ type: 'set', refId: draftId, data: newGuest });
         }
     });
 
-    setGuests(updatedGuestList);
-    saveToLocal(updatedGuestList);
-
-    if (db && isFirebaseReady && newDocs.length > 0) {
+    // CLOUD FIRST LOGIC
+    if (db && isCloudConnected) {
         try {
             const MAX_BATCH_SIZE = 450;
             for (let i = 0; i < newDocs.length; i += MAX_BATCH_SIZE) {
@@ -295,22 +283,31 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                 
                 await currentBatch.commit();
             }
+            console.log("Cloud batch write successful");
+            // DO NOT setGuests here. The snapshot listener will trigger and update the UI.
+            // This ensures we are viewing exactly what is on the server.
         } catch (e) {
             console.error("Cloud Sync Failed:", e);
-            setConnectionError("資料寫入失敗，請檢查權限");
+            throw new Error("同步失敗，請檢查網路連線");
         }
+    } else {
+        // Fallback: Offline Mode
+        console.warn("Offline: Updating local state only.");
+        setGuests(offlineGuestList);
+        saveToLocal(offlineGuestList);
     }
   };
 
   const updateGuestInfo = async (id: string, updates: Partial<Guest>) => {
-      const newGuests = guests.map(g => g.id === id ? { ...g, ...updates } : g);
-      setGuests(newGuests);
-      saveToLocal(newGuests);
-
-      if (!db) return;
-      try {
+      // CLOUD FIRST
+      if (db && isCloudConnected) {
           await db.collection("guests").doc(id).update(updates);
-      } catch(e) { console.error(e); }
+      } else {
+          // Offline Fallback
+          const newGuests = guests.map(g => g.id === id ? { ...g, ...updates } : g);
+          setGuests(newGuests);
+          saveToLocal(newGuests);
+      }
   };
 
   const toggleCheckInRound = async (id: string, targetRound: number) => {
@@ -324,10 +321,8 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       let newCheckInTime = guest.checkInTime;
 
       if (isAttendingTarget) {
-          // Remove this round
           newRounds = currentRounds.filter(r => r !== targetRound);
       } else {
-          // Add this round
           newRounds = [...currentRounds, targetRound].sort((a,b) => a-b);
           if (!guest.isCheckedIn) {
               newCheckInTime = new Date().toISOString();
@@ -337,16 +332,19 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       const updates = {
           attendedRounds: newRounds,
           isCheckedIn: newRounds.length > 0,
-          round: newRounds.length > 0 ? Math.max(...newRounds) : undefined, // Use highest round as display
+          round: newRounds.length > 0 ? Math.max(...newRounds) : undefined,
           checkInTime: newCheckInTime
       };
 
-      const newGuests = guests.map(g => g.id === id ? { ...g, ...updates } : g);
-      setGuests(newGuests);
-      saveToLocal(newGuests);
-
-      if (!db) return;
-      await db.collection("guests").doc(id).update(updates);
+      // CLOUD FIRST
+      if (db && isCloudConnected) {
+          await db.collection("guests").doc(id).update(updates);
+      } else {
+          // Offline Fallback
+          const newGuests = guests.map(g => g.id === id ? { ...g, ...updates } : g);
+          setGuests(newGuests);
+          saveToLocal(newGuests);
+      }
   };
 
   const toggleIntroduced = async (id: string) => {
@@ -354,32 +352,36 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     if (!guest) return;
     const newVal = !guest.isIntroduced;
     
-    const newGuests = guests.map(g => g.id === id ? { ...g, isIntroduced: newVal } : g);
-    setGuests(newGuests);
-    saveToLocal(newGuests);
-
-    if (!db) return;
-    await db.collection("guests").doc(id).update({ isIntroduced: newVal });
+    if (db && isCloudConnected) {
+        await db.collection("guests").doc(id).update({ isIntroduced: newVal });
+    } else {
+        const newGuests = guests.map(g => g.id === id ? { ...g, isIntroduced: newVal } : g);
+        setGuests(newGuests);
+        saveToLocal(newGuests);
+    }
   };
 
   const resetIntroductions = async () => {
     if (confirm('確定要重置所有介紹狀態嗎？')) {
-        const newGuests = guests.map(g => g.isIntroduced ? { ...g, isIntroduced: false } : g);
-        setGuests(newGuests);
-        saveToLocal(newGuests);
-
-        if (!db) return;
-        const batch = db.batch();
-        guests.forEach(g => {
-            if (g.isIntroduced) {
-                batch.update(db.collection("guests").doc(g.id), { isIntroduced: false });
-            }
-        });
-        await batch.commit();
+        if (db && isCloudConnected) {
+            const batch = db.batch();
+            guests.forEach(g => {
+                if (g.isIntroduced) {
+                    batch.update(db.collection("guests").doc(g.id), { isIntroduced: false });
+                }
+            });
+            await batch.commit();
+        } else {
+            const newGuests = guests.map(g => g.isIntroduced ? { ...g, isIntroduced: false } : g);
+            setGuests(newGuests);
+            saveToLocal(newGuests);
+        }
     }
   };
 
   const drawWinner = (mode: DrawMode = 'default'): Guest | null => {
+    // Drawing logic relies on current local state (which is synced) to Pick a Winner
+    // Then writes the result to Cloud.
     const checkedInGuests = guests.filter(g => g.isCheckedIn);
     const currentRound = settings.lotteryRoundCounter;
 
@@ -410,12 +412,13 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         winRound: currentRound
     };
 
-    const newGuests = guests.map(g => g.id === winner.id ? { ...g, ...updates } : g);
-    setGuests(newGuests);
-    saveToLocal(newGuests);
-
-    if (db) {
+    if (db && isCloudConnected) {
         db.collection("guests").doc(winner.id).update(updates);
+    } else {
+        // Offline draw
+        const newGuests = guests.map(g => g.id === winner.id ? { ...g, ...updates } : g);
+        setGuests(newGuests);
+        saveToLocal(newGuests);
     }
 
     return winner;
@@ -423,27 +426,28 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const resetLottery = async () => {
     if (confirm('確定要重置所有抽獎名單嗎？(將清除所有中獎紀錄)')) {
-      const newGuests = guests.map(g => ({ ...g, isWinner: false, winRound: undefined, wonRounds: [] }));
       const newSettings = { ...settings, lotteryRoundCounter: 1 };
       
-      setGuests(newGuests);
-      saveToLocal(newGuests);
-      setSettings(newSettings);
-      saveSettingsToLocal(newSettings);
-
-      if (!db) return;
-      const batch = db.batch();
-      guests.forEach(g => {
-          if (g.isWinner || (g.wonRounds && g.wonRounds.length > 0)) {
-              batch.update(db.collection("guests").doc(g.id), { 
-                  isWinner: false, 
-                  winRound: null as any, 
-                  wonRounds: [] 
-              });
-          }
-      });
-      batch.update(db.collection("config").doc("mainSettings"), { lotteryRoundCounter: 1 });
-      await batch.commit();
+      if (db && isCloudConnected) {
+          const batch = db.batch();
+          guests.forEach(g => {
+              if (g.isWinner || (g.wonRounds && g.wonRounds.length > 0)) {
+                  batch.update(db.collection("guests").doc(g.id), { 
+                      isWinner: false, 
+                      winRound: null as any, 
+                      wonRounds: [] 
+                  });
+              }
+          });
+          batch.update(db.collection("config").doc("mainSettings"), { lotteryRoundCounter: 1 });
+          await batch.commit();
+      } else {
+          const newGuests = guests.map(g => ({ ...g, isWinner: false, winRound: undefined, wonRounds: [] }));
+          setGuests(newGuests);
+          saveToLocal(newGuests);
+          setSettings(newSettings);
+          saveSettingsToLocal(newSettings);
+      }
     }
   };
 
@@ -456,34 +460,35 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const clearAllData = async () => {
-      setGuests([]);
-      saveToLocal([]);
-      setSettings(defaultSettings);
-      saveSettingsToLocal(defaultSettings);
-
-      if (!db) return;
-      
-      try {
-        const chunkSize = 400;
-        for (let i = 0; i < guests.length; i += chunkSize) {
-            const chunk = guests.slice(i, i + chunkSize);
-            const currentBatch = db.batch();
-            chunk.forEach(g => currentBatch.delete(db.collection("guests").doc(g.id)));
-            await currentBatch.commit();
+      if (db && isCloudConnected) {
+        try {
+            const chunkSize = 400;
+            for (let i = 0; i < guests.length; i += chunkSize) {
+                const chunk = guests.slice(i, i + chunkSize);
+                const currentBatch = db.batch();
+                chunk.forEach(g => currentBatch.delete(db.collection("guests").doc(g.id)));
+                await currentBatch.commit();
+            }
+            await db.collection("config").doc("mainSettings").set(defaultSettings);
+        } catch (e) {
+            console.error("Error clearing cloud data:", e);
         }
-        await db.collection("config").doc("mainSettings").set(defaultSettings);
-      } catch (e) {
-        console.error("Error clearing cloud data:", e);
+      } else {
+          setGuests([]);
+          saveToLocal([]);
+          setSettings(defaultSettings);
+          saveSettingsToLocal(defaultSettings);
       }
   }
 
   const deleteGuest = async (id: string) => {
-      const newGuests = guests.filter(g => g.id !== id);
-      setGuests(newGuests);
-      saveToLocal(newGuests);
-
-      if (!db) return;
-      await db.collection("guests").doc(id).delete();
+      if (db && isCloudConnected) {
+          await db.collection("guests").doc(id).delete();
+      } else {
+          const newGuests = guests.filter(g => g.id !== id);
+          setGuests(newGuests);
+          saveToLocal(newGuests);
+      }
   }
 
   return (
