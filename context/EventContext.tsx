@@ -14,6 +14,7 @@ interface EventContextType {
   resetIntroductions: () => Promise<void>;
   drawWinner: (mode?: DrawMode) => Guest | null;
   resetLottery: () => Promise<void>;
+  clearLotteryRound: (round: number) => Promise<void>; // New Function
   nextLotteryRound: () => void;
   jumpToLotteryRound: (round: number) => void; 
   clearAllData: () => Promise<void>;
@@ -462,8 +463,9 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     return winner;
   };
 
+  // Reset ALL lottery data
   const resetLottery = async () => {
-    if (confirm('確定要重置所有抽獎名單嗎？(將清除所有中獎紀錄)')) {
+    if (confirm('確定要重置「所有」抽獎名單嗎？(將清除所有中獎紀錄)')) {
       const newSettings = { ...settings, lotteryRoundCounter: 1 };
       
       const newGuests = guests.map(g => ({ ...g, isWinner: false, winRound: undefined, wonRounds: [] }));
@@ -487,6 +489,53 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           await batch.commit();
       }
     }
+  };
+
+  // Clear specific round data
+  const clearLotteryRound = async (round: number) => {
+      if (!confirm(`⚠️ 確定要清除「第 ${round} 輪」的所有得獎紀錄嗎？\n\n此操作無法復原。`)) return;
+
+      const newGuests = guests.map(g => {
+          if (g.wonRounds && g.wonRounds.includes(round)) {
+              const newWonRounds = g.wonRounds.filter(r => r !== round);
+              const isStillWinner = newWonRounds.length > 0;
+              // If legacy winRound matched this round, we clear it or update to last won round
+              const newWinRound = (g.winRound === round) 
+                  ? (isStillWinner ? newWonRounds[newWonRounds.length - 1] : undefined)
+                  : g.winRound;
+
+              return {
+                  ...g,
+                  wonRounds: newWonRounds,
+                  isWinner: isStillWinner,
+                  winRound: newWinRound
+              };
+          }
+          return g;
+      });
+
+      setGuests(newGuests);
+      saveToLocal(newGuests);
+
+      if (db) {
+          const batch = db.batch();
+          guests.forEach(g => {
+             if (g.wonRounds && g.wonRounds.includes(round)) {
+                  const newWonRounds = g.wonRounds.filter(r => r !== round);
+                  const isStillWinner = newWonRounds.length > 0;
+                  const newWinRound = (g.winRound === round) 
+                      ? (isStillWinner ? newWonRounds[newWonRounds.length - 1] : null)
+                      : g.winRound;
+                  
+                  batch.update(db.collection("guests").doc(g.id), {
+                      wonRounds: newWonRounds,
+                      isWinner: isStillWinner,
+                      winRound: newWinRound
+                  });
+             }
+          });
+          await batch.commit();
+      }
   };
 
   const nextLotteryRound = () => {
@@ -540,6 +589,7 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       resetIntroductions,
       drawWinner,
       resetLottery,
+      clearLotteryRound, // Exported
       nextLotteryRound,
       jumpToLotteryRound,
       clearAllData,
