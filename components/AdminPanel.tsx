@@ -327,8 +327,8 @@ const AdminPanel: React.FC = () => {
   }, [filteredGuests]);
 
   const StatItem = ({ label, current, total, color }: { label: string, current: number, total: number, color: string }) => (
-      <div className="flex flex-col items-center mx-2 min-w-[60px]">
-          <span className="text-xs text-slate-500 font-bold mb-1">{label}</span>
+      <div className="flex flex-col items-center mx-2 min-w-[60px] flex-shrink-0">
+          <span className="text-xs text-slate-500 font-bold mb-1 whitespace-nowrap">{label}</span>
           <div className={`text-lg font-black ${color}`}>{current}<span className="text-xs text-slate-300 font-normal">/{total}</span></div>
       </div>
   )
@@ -626,17 +626,19 @@ const AdminPanel: React.FC = () => {
       {/* List Table */}
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
          {/* Stats Bar */}
-         <div className="flex flex-col md:flex-row justify-between items-center bg-slate-50 px-4 py-3 border-b border-slate-200 gap-4 overflow-x-auto">
-             <div className="flex items-center divide-x divide-slate-200">
-                 <StatItem label="總人數" current={stats.total} total={stats.total} color="text-slate-700" />
-                 <StatItem label="總已到" current={stats.checkedIn} total={stats.total} color="text-indigo-600" />
-                 <StatItem label="特友會OB" current={stats.ob.checkedIn} total={stats.ob.total} color="text-orange-600" />
-                 <StatItem label="會友YB" current={stats.yb.checkedIn} total={stats.yb.total} color="text-yellow-600" />
-                 <StatItem label="貴賓VIP" current={stats.vip.checkedIn} total={stats.vip.total} color="text-blue-500" />
+         <div className="flex flex-col gap-4 bg-slate-50 px-4 py-3 border-b border-slate-200">
+             <div className="w-full overflow-x-auto pb-2 md:pb-0 no-scrollbar">
+                 <div className="flex items-center divide-x divide-slate-200 min-w-max mx-auto md:mx-0">
+                     <StatItem label="總人數" current={stats.total} total={stats.total} color="text-slate-700" />
+                     <StatItem label="總已到" current={stats.checkedIn} total={stats.total} color="text-indigo-600" />
+                     <StatItem label="特友會OB" current={stats.ob.checkedIn} total={stats.ob.total} color="text-orange-600" />
+                     <StatItem label="會友YB" current={stats.yb.checkedIn} total={stats.yb.total} color="text-yellow-600" />
+                     <StatItem label="貴賓VIP" current={stats.vip.checkedIn} total={stats.vip.total} color="text-blue-500" />
+                 </div>
              </div>
              
              {/* Search */}
-             <div className="relative w-full md:w-64">
+             <div className="relative w-full">
                  <input 
                     type="text" 
                     placeholder="搜尋..." 
@@ -648,7 +650,8 @@ const AdminPanel: React.FC = () => {
              </div>
          </div>
 
-         <div className="overflow-x-auto">
+         {/* Desktop Table View - Hidden on Mobile */}
+         <div className="hidden md:block overflow-x-auto">
             <table className="w-full text-sm text-left">
                 <thead className="bg-slate-100 text-slate-500 uppercase text-xs font-bold border-b border-slate-200">
                     <tr>
@@ -718,6 +721,69 @@ const AdminPanel: React.FC = () => {
                     )}
                 </tbody>
             </table>
+         </div>
+
+         {/* Mobile Card View - Visible on Mobile */}
+         <div className="md:hidden divide-y divide-slate-100">
+            {displayGuests.map((g, index) => (
+                <div key={g.id} className={`p-4 ${g.isCheckedIn ? 'bg-white' : 'bg-slate-50/30'}`}>
+                    <div className="flex justify-between items-start mb-2">
+                        <div className="flex items-center gap-2">
+                            <span className="text-xs font-mono text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded">
+                                {g.code || '#'}
+                            </span>
+                            <span className="font-bold text-lg text-slate-800">{g.name}</span>
+                        </div>
+                        <span className={`text-[10px] px-2 py-1 rounded-full whitespace-nowrap
+                             ${g.category === GuestCategory.MEMBER_YB ? 'bg-yellow-100 text-yellow-800' : 
+                               g.category === GuestCategory.MEMBER_OB ? 'bg-orange-100 text-orange-800' : 'bg-slate-100 text-slate-500'}
+                        `}>
+                            {g.category}
+                        </span>
+                    </div>
+
+                    <div className="mb-3 pl-1">
+                        <div className="text-sm text-slate-600">{g.title || '無職稱'}</div>
+                        {g.note && (
+                            <div className="text-xs text-orange-600 mt-1 flex items-center gap-1">
+                                <AlertCircle size={10} /> {g.note}
+                            </div>
+                        )}
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3 mb-3">
+                         <CheckInButton 
+                             isActive={g.attendedRounds?.includes(1) || false}
+                             onClick={() => toggleCheckInRound(g.id, 1)}
+                             theme="blue"
+                         />
+                         <CheckInButton 
+                             isActive={g.attendedRounds?.includes(2) || false}
+                             onClick={() => toggleCheckInRound(g.id, 2)}
+                             theme="purple"
+                         />
+                    </div>
+                    
+                    {isAdmin && (
+                        <div className="flex justify-end gap-4 pt-3 border-t border-slate-100 border-dashed mt-2">
+                             <button onClick={() => setEditingGuest(g)} className="text-xs font-bold text-blue-600 flex items-center gap-1 px-2 py-1 bg-blue-50 rounded">
+                                <Edit size={14}/> 編輯
+                             </button>
+                             <button 
+                                onClick={(e) => handleDeleteClick(e, g.id, g.name)}
+                                className="text-xs font-bold text-red-500 flex items-center gap-1 px-2 py-1 bg-red-50 rounded"
+                            >
+                                <Trash2 size={14}/> 刪除
+                            </button>
+                        </div>
+                    )}
+                </div>
+            ))}
+            {displayGuests.length === 0 && (
+                <div className="p-8 text-center text-slate-400">
+                    無符合資料
+                </div>
+            )}
          </div>
       </div>
 
