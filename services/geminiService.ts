@@ -1,6 +1,6 @@
 import { GoogleGenAI, Type } from "@google/genai";
-import { read, utils } from "xlsx";
-import { GuestCategory, ParsedGuestDraft } from "../types";
+import { read, utils, writeFile } from "xlsx";
+import { GuestCategory, ParsedGuestDraft, Guest } from "../types";
 
 // Helper to determine category from string loosely
 const detectCategory = (str: string = ''): GuestCategory => {
@@ -73,6 +73,63 @@ const INVALID_VALUES_NORMALIZED = [
     '簽名', 'signature', 'sign',
     'r1', 'r2', 'checkin'
 ];
+
+// EXCEL EXPORT FUNCTION
+export const exportToExcel = (guests: Guest[], eventName: string) => {
+    // 1. Check-in Sheet Data
+    const checkInData = guests.map(g => ({
+        '編號': g.code || '',
+        '姓名': g.name,
+        '職稱': g.title,
+        '類別': g.category,
+        '備註': g.note || '',
+        '狀態': g.isCheckedIn ? '已報到' : '未報到',
+        'R1': g.attendedRounds?.includes(1) ? 'V' : '',
+        'R2': g.attendedRounds?.includes(2) ? 'V' : '',
+        '報到時間': g.checkInTime ? new Date(g.checkInTime).toLocaleString('zh-TW') : ''
+    }));
+
+    // 2. Winners Sheet Data
+    const winnersData = guests
+        .filter(g => g.isWinner || (g.wonRounds && g.wonRounds.length > 0))
+        .flatMap(g => {
+            // Determine all rounds won
+            const rounds = g.wonRounds && g.wonRounds.length > 0 
+                ? g.wonRounds 
+                : (g.winRound ? [g.winRound] : []);
+            
+            // Create a row for each win
+            return rounds.map(r => ({
+                '中獎輪次': `第 ${r} 輪`,
+                '姓名': g.name,
+                '職稱': g.title,
+                '類別': g.category,
+                '編號': g.code || ''
+            }));
+        })
+        .sort((a, b) => {
+             // Sort by round, then by name
+             const roundA = parseInt(a['中獎輪次'].replace(/\D/g, '')) || 0;
+             const roundB = parseInt(b['中獎輪次'].replace(/\D/g, '')) || 0;
+             return roundA - roundB;
+        });
+
+    const wb = utils.book_new();
+    const ws1 = utils.json_to_sheet(checkInData);
+    const ws2 = utils.json_to_sheet(winnersData);
+
+    // Set column widths loosely
+    const wscols = [{wch: 10}, {wch: 15}, {wch: 20}, {wch: 15}, {wch: 20}, {wch: 10}, {wch: 5}, {wch: 5}, {wch: 25}];
+    ws1['!cols'] = wscols;
+    ws2['!cols'] = [{wch: 15}, {wch: 15}, {wch: 20}, {wch: 15}, {wch: 10}];
+
+    utils.book_append_sheet(wb, ws1, "報到清單");
+    utils.book_append_sheet(wb, ws2, "中獎名單");
+
+    const dateStr = new Date().toISOString().split('T')[0];
+    const safeName = eventName.replace(/[^\w\s\u4e00-\u9fa5]/gi, '').trim() || 'Event';
+    writeFile(wb, `${safeName}_報到與中獎名單_${dateStr}.xlsx`);
+};
 
 // DIRECT EXCEL PARSER (Local) - Updated to support Multiple Sheets & SPLIT COLUMNS (Left/Right)
 const parseExcelLocally = (base64Data: string): ParsedGuestDraft[] => {
