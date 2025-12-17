@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { useEvent } from '../context/EventContext';
 import { GuestCategory, Guest } from '../types';
-import { CheckCircle2, Circle, RefreshCw, Mic2, Users, ListFilter, ArrowRight, ChevronDown, ChevronUp, Crown, Star, User, Layers, Globe } from 'lucide-react';
+import { CheckCircle2, Circle, RefreshCw, Mic2, Users, ListFilter, ArrowRight, ChevronDown, ChevronUp, Crown, Star, User, Layers, Globe, Landmark, Handshake } from 'lucide-react';
 
 interface VipCardProps {
   guest: Guest;
@@ -74,7 +74,7 @@ const McPanel: React.FC = () => {
 
   // VIP Categories Definition for History (Show ALL categories in history)
   const allHistoryCategories = [
-      GuestCategory.HQ_GUEST, // Added priority to history
+      GuestCategory.HQ_GUEST, 
       GuestCategory.PAST_PRESIDENT,
       GuestCategory.PAST_CHAIRMAN,
       GuestCategory.GOV_OFFICIAL,
@@ -130,6 +130,8 @@ const McPanel: React.FC = () => {
           hq: [] as Guest[], // New HQ Group
           presidents: [] as Guest[],
           chairmen: [] as Guest[],
+          gov: [] as Guest[], // New: Government
+          visiting: [] as Guest[], // New: Visiting Chapters
           vips: [] as Guest[]
       };
 
@@ -160,13 +162,25 @@ const McPanel: React.FC = () => {
           
           // PRIORITY 3: CHAIRMEN
           const isChairman = normalizedTitle.includes('主席') || g.category === GuestCategory.PAST_CHAIRMAN;
-          
+
+          // PRIORITY 4: VISITING CHAPTERS (友會) - MOVED UP and Expanded keywords
+          // Added '分會', '聯誼會' to capture things like "金龍聯誼會代表" or "新竹分會"
+          const isVisiting = g.category === GuestCategory.VISITING_CHAPTER || ['友會', '兄弟會', '姊妹會', '分會', '聯誼會'].some(k => normalizedTitle.includes(k));
+
+          // PRIORITY 5: GOVERNMENT (政府/民代) - MOVED DOWN to allow "聯誼會代表" to be caught by Visiting first
+          // Removed generic '代表' to avoid false positives with "聯誼會代表"
+          const isGov = g.category === GuestCategory.GOV_OFFICIAL || ['政府', '議員', '立委', '市長', '縣長', '局長', '部長', '院長', '總統', '市民代表', '鄉民代表'].some(k => normalizedTitle.includes(k));
+
           if (isHQ) {
               groups.hq.push(g);
           } else if (isPresident) {
               groups.presidents.push(g);
           } else if (isChairman) {
               groups.chairmen.push(g);
+          } else if (isVisiting) { // Visiting Priority Higher than Gov now
+              groups.visiting.push(g);
+          } else if (isGov) {
+              groups.gov.push(g);
           } else {
               // Everyone else goes to VIPs
               groups.vips.push(g);
@@ -182,8 +196,10 @@ const McPanel: React.FC = () => {
       
       // 3. Chairmen: Sort by Title Number (Year) - Ascending
       groups.chairmen.sort(stableSortByTitleNumber);
-      
-      // 4. VIPs: Default sort
+
+      // 4. Gov / Visiting / VIPs: Default sort
+      sortGuests(groups.gov);
+      sortGuests(groups.visiting);
       sortGuests(groups.vips);
 
       return groups;
@@ -335,7 +351,7 @@ const McPanel: React.FC = () => {
         {/* Content Area */}
         {activeTab === 'vip' ? (
              <div className="flex flex-col md:flex-row gap-4 h-[calc(100vh-280px)] min-h-[500px]">
-                {/* LEFT: Unintroduced (Grouped into 4 Categories) */}
+                {/* LEFT: Unintroduced (Grouped into Categories) */}
                 <div className={`${isUnintroExpanded ? 'flex-1' : 'flex-none h-14'} bg-white rounded-xl shadow-sm border border-indigo-200 flex flex-col overflow-hidden transition-all duration-300`}>
                     <div 
                         className="bg-indigo-50 p-3 font-bold text-indigo-900 border-b border-indigo-100 flex justify-between items-center cursor-pointer select-none hover:bg-indigo-100 transition-colors"
@@ -350,11 +366,11 @@ const McPanel: React.FC = () => {
                     {isUnintroExpanded && (
                         <div className="flex-1 overflow-y-auto p-3 custom-scrollbar bg-slate-50/50">
                             
-                            {/* 1. HQ (總會) - Highest Priority */}
+                            {/* 1. HQ (總會長官) - Updated Title */}
                             {groupedUnintroduced.hq.length > 0 && (
                                 <div className="mb-6">
                                     <h3 className="text-sm font-bold text-indigo-800 uppercase mb-3 flex items-center gap-2 border-b border-indigo-100 pb-1">
-                                        <Globe size={16} className="text-blue-500" fill="currentColor"/> 總會長官/貴賓 ({groupedUnintroduced.hq.length})
+                                        <Globe size={16} className="text-blue-500" fill="currentColor"/> 總會長官 ({groupedUnintroduced.hq.length})
                                     </h3>
                                     {groupedUnintroduced.hq.map(g => <VipCard key={g.id} guest={g} side="left" onToggle={toggleIntroduced} />)}
                                 </div>
@@ -380,7 +396,27 @@ const McPanel: React.FC = () => {
                                 </div>
                             )}
 
-                            {/* 4. ALL OTHER VIPS (With Titles) */}
+                            {/* 5. VISITING CHAPTERS (New Priority - Before Gov) */}
+                            {groupedUnintroduced.visiting.length > 0 && (
+                                <div className="mb-6">
+                                    <h3 className="text-sm font-bold text-indigo-800 uppercase mb-3 flex items-center gap-2 border-b border-indigo-100 pb-1">
+                                        <Handshake size={16} className="text-green-500" /> 友會貴賓 ({groupedUnintroduced.visiting.length})
+                                    </h3>
+                                    {groupedUnintroduced.visiting.map(g => <VipCard key={g.id} guest={g} side="left" onToggle={toggleIntroduced} />)}
+                                </div>
+                            )}
+
+                            {/* 4. GOV OFFICIALS (New Priority - After Visiting) */}
+                            {groupedUnintroduced.gov.length > 0 && (
+                                <div className="mb-6">
+                                    <h3 className="text-sm font-bold text-indigo-800 uppercase mb-3 flex items-center gap-2 border-b border-indigo-100 pb-1">
+                                        <Landmark size={16} className="text-red-500" /> 政府長官/貴賓 ({groupedUnintroduced.gov.length})
+                                    </h3>
+                                    {groupedUnintroduced.gov.map(g => <VipCard key={g.id} guest={g} side="left" onToggle={toggleIntroduced} />)}
+                                </div>
+                            )}
+
+                            {/* 6. ALL OTHER VIPS */}
                             {groupedUnintroduced.vips.length > 0 && (
                                 <div className="mb-6">
                                     <h3 className="text-sm font-bold text-indigo-800 uppercase mb-3 flex items-center gap-2 border-b border-indigo-100 pb-1">
