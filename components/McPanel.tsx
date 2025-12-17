@@ -164,8 +164,8 @@ const McPanel: React.FC = () => {
           const isChairman = normalizedTitle.includes('主席') || g.category === GuestCategory.PAST_CHAIRMAN;
 
           // PRIORITY 4: VISITING CHAPTERS (友會) - MOVED UP and Expanded keywords
-          // Added '分會', '聯誼會' to capture things like "金龍聯誼會代表" or "新竹分會"
-          const isVisiting = g.category === GuestCategory.VISITING_CHAPTER || ['友會', '兄弟會', '姊妹會', '分會', '聯誼會'].some(k => normalizedTitle.includes(k));
+          // Added '分會', '聯誼會', '友好會' to capture things like "金龍聯誼會代表", "新竹分會", "沙鹿友好會"
+          const isVisiting = g.category === GuestCategory.VISITING_CHAPTER || ['友會', '兄弟會', '姊妹會', '分會', '聯誼會', '友好會'].some(k => normalizedTitle.includes(k));
 
           // PRIORITY 5: GOVERNMENT (政府/民代) - MOVED DOWN to allow "聯誼會代表" to be caught by Visiting first
           // Removed generic '代表' to avoid false positives with "聯誼會代表"
