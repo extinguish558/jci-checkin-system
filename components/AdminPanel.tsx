@@ -20,7 +20,7 @@ interface ManualEntryRow {
 const AdminPanel: React.FC = () => {
   const { 
       settings, updateSettings, addGuestsFromDraft, updateGuestInfo, guests, deleteGuest, 
-      toggleCheckInRound, isCloudConnected, connectionError, clearAllData, 
+      toggleCheckInRound, clearGuestCheckIn, isCloudConnected, connectionError, clearAllData, 
       isAdmin, loginAdmin, logoutAdmin, uploadAllLocalDataToCloud, usingLocalDataProtection 
   } = useEvent();
 
@@ -701,6 +701,17 @@ const AdminPanel: React.FC = () => {
                                 {/* Only show Edit/Delete if Admin */}
                                 {isAdmin ? (
                                     <>
+                                        {/* New Clear Button */}
+                                        {g.isCheckedIn && (
+                                            <button 
+                                                onClick={(e) => { e.stopPropagation(); clearGuestCheckIn(g.id); }}
+                                                className="flex items-center gap-1 text-slate-500 hover:text-orange-600 bg-white border border-slate-200 hover:border-orange-300 px-3 py-1.5 rounded shadow-sm transition-colors cursor-pointer relative z-10"
+                                                title="清除報到狀態"
+                                            >
+                                                <UserMinus size={14}/> 清除
+                                            </button>
+                                        )}
+
                                         <button onClick={() => setEditingGuest(g)} className="flex items-center gap-1 text-slate-500 hover:text-blue-600 bg-white border border-slate-200 hover:border-blue-300 px-3 py-1.5 rounded shadow-sm transition-colors cursor-pointer relative z-10">
                                             <Edit size={14}/> 編輯
                                         </button>
@@ -771,6 +782,14 @@ const AdminPanel: React.FC = () => {
                     
                     {isAdmin && (
                         <div className="flex justify-end gap-4 pt-3 border-t border-slate-100 border-dashed mt-2">
+                             {g.isCheckedIn && (
+                                <button 
+                                    onClick={(e) => { e.stopPropagation(); clearGuestCheckIn(g.id); }}
+                                    className="text-xs font-bold text-orange-500 flex items-center gap-1 px-2 py-1 bg-orange-50 rounded"
+                                >
+                                    <UserMinus size={14}/> 清除
+                                </button>
+                             )}
                              <button onClick={() => setEditingGuest(g)} className="text-xs font-bold text-blue-600 flex items-center gap-1 px-2 py-1 bg-blue-50 rounded">
                                 <Edit size={14}/> 編輯
                              </button>
