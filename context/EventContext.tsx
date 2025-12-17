@@ -20,6 +20,7 @@ interface EventContextType {
   clearAllData: () => Promise<void>;
   deleteGuest: (id: string) => Promise<void>;
   toggleCheckInRound: (id: string, round: number) => Promise<void>;
+  clearGuestCheckIn: (id: string) => Promise<void>; // New Function
   isCloudConnected: boolean; 
   connectionError: string | null;
   usingLocalDataProtection: boolean; // New Flag
@@ -389,6 +390,46 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       }
   };
 
+  const clearGuestCheckIn = async (id: string) => {
+      const guest = guests.find(g => g.id === id);
+      if (!guest) return;
+
+      const updates: any = {
+          attendedRounds: [],
+          isCheckedIn: false,
+          round: null,
+          checkInTime: null
+      };
+
+      const newGuests = guests.map(g => {
+          if (g.id === id) {
+              return {
+                  ...g,
+                  attendedRounds: [],
+                  isCheckedIn: false,
+                  round: undefined,
+                  checkInTime: undefined
+              };
+          }
+          return g;
+      });
+      setGuests(newGuests);
+      saveToLocal(newGuests);
+
+      if (db) {
+          try {
+              await db.collection("guests").doc(id).update({
+                  attendedRounds: [],
+                  isCheckedIn: false,
+                  round: null,
+                  checkInTime: null
+              });
+          } catch (e) {
+              console.error("Clear check-in failed:", e);
+          }
+      }
+  };
+
   const toggleIntroduced = async (id: string) => {
     const guest = guests.find(g => g.id === id);
     if (!guest) return;
@@ -595,6 +636,7 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       clearAllData,
       deleteGuest,
       toggleCheckInRound,
+      clearGuestCheckIn, // Exported
       isCloudConnected,
       connectionError,
       usingLocalDataProtection, // Export Flag
