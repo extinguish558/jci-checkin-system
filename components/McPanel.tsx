@@ -197,9 +197,31 @@ const McPanel: React.FC = () => {
       // 3. Chairmen: Sort by Title Number (Year) - Ascending
       groups.chairmen.sort(stableSortByTitleNumber);
 
-      // 4. Gov / Visiting / VIPs: Default sort
+      // 4. Gov: Default sort
       sortGuests(groups.gov);
-      sortGuests(groups.visiting);
+
+      // 5. Visiting: Special Sort by Keywords (兄弟會 -> 聯誼會 -> 分會 -> 友好會)
+      groups.visiting.sort((a, b) => {
+          const getPriority = (title: string) => {
+              const t = title || '';
+              if (t.includes('兄弟會')) return 1;
+              if (t.includes('聯誼會')) return 2;
+              if (t.includes('分會')) return 3;
+              if (t.includes('友好會')) return 4;
+              return 99; // Others
+          };
+          
+          const pA = getPriority(a.title);
+          const pB = getPriority(b.title);
+          
+          if (pA !== pB) return pA - pB;
+          
+          // Fallback to default sort logic (Round -> CheckInTime)
+          if ((a.round || 0) !== (b.round || 0)) return (a.round || 0) - (b.round || 0);
+          return (a.checkInTime || '').localeCompare(b.checkInTime || '');
+      });
+
+      // 6. VIPs: Default sort
       sortGuests(groups.vips);
 
       return groups;
