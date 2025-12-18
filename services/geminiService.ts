@@ -106,16 +106,25 @@ export const parseGiftsFromExcel = async (file: File): Promise<GiftItem[]> => {
         const worksheet = workbook.Sheets[firstSheetName];
         const json: any[] = utils.sheet_to_json(worksheet);
         
-        const items: GiftItem[] = json.map((row: any) => ({
-          id: Math.random().toString(36).substr(2, 9),
-          name: (row['禮品名稱'] || row['禮品'] || row['項目'] || row['Name'] || '未命名禮品').toString(),
-          donor: (row['贈送人'] || row['單位'] || row['Donor'] || '未知單位').toString(),
-          recipient: (row['受贈人'] || row['受贈對象'] || row['Recipient'] || '現場嘉賓').toString(),
-          isPresented: false
-        }));
+        const items: GiftItem[] = json.map((row: any) => {
+          // 尋找包含「量」字眼的 Key (如: 數量、單位數量、禮品量)
+          const keys = Object.keys(row);
+          const quantityKey = keys.find(k => k.includes('量')) || '數量';
+          
+          return {
+            id: Math.random().toString(36).substr(2, 9),
+            sequence: (row['序'] || row['序號'] || row['編號'] || '').toString(),
+            name: (row['項目'] || row['禮品'] || row['禮品名稱'] || row['Name'] || '未命名禮品').toString(),
+            quantity: (row[quantityKey] || row['單位數'] || '1').toString(),
+            recipient: (row['受獎人'] || row['受贈人'] || row['得獎者'] || row['Recipient'] || '現場嘉賓').toString(),
+            personInCharge: (row['負責人'] || row['負責'] || row['PIC'] || '').toString(),
+            donor: (row['贈送人'] || row['單位'] || row['Donor'] || '').toString(),
+            isPresented: false
+          };
+        });
         resolve(items);
       } catch (err) {
-        reject(new Error("Excel 解析失敗，請確保標題包含：禮品名稱、贈送人、受贈人。"));
+        reject(new Error("Excel 解析失敗，請確保標題包含：序、項目、數量、受獎人。"));
       }
     };
     reader.onerror = () => reject(new Error("檔案讀取失敗"));
@@ -137,16 +146,31 @@ export const parseMcFlowFromExcel = async (file: File): Promise<McFlowStep[]> =>
         const worksheet = workbook.Sheets[firstSheetName];
         const json: any[] = utils.sheet_to_json(worksheet);
         
-        const steps: McFlowStep[] = json.map((row: any) => ({
-          id: Math.random().toString(36).substr(2, 9),
-          time: (row['時間'] || row['Time'] || '').toString(),
-          title: (row['標題'] || row['項目'] || row['Title'] || '未命名環節').toString(),
-          description: (row['內容'] || row['描述'] || row['備註'] || row['Description'] || '').toString(),
-          isCompleted: false
-        }));
+        const steps: McFlowStep[] = json.map((row: any) => {
+          const sequence = (row['序'] || row['序號'] || row['編號'] || '').toString();
+          const time = (row['時間'] || row['Time'] || '').toString();
+          const script = (row['司儀搞'] || row['司儀稿'] || row['搞子'] || row['內容'] || row['描述'] || '').toString();
+          const slides = (row['簡報頁面'] || row['簡報'] || row['投影片'] || row['PPT'] || row['Slides'] || '').toString();
+          
+          // 如果沒有明確的標題，則優先從簡報內容提取
+          let title = (row['項目'] || row['標題'] || row['標題項目'] || row['Title'] || '').toString();
+          if (!title) {
+            title = slides || (script.split('\n')[0].length < 25 ? script.split('\n')[0] : '流程環節');
+          }
+
+          return {
+            id: Math.random().toString(36).substr(2, 9),
+            sequence,
+            time,
+            title: title || '未命名環節',
+            script,
+            slides,
+            isCompleted: false
+          };
+        });
         resolve(steps);
       } catch (err) {
-        reject(new Error("Excel 解析失敗，請確保標題包含：時間、標題、內容。"));
+        reject(new Error("Excel 解析失敗，請確保標題包含：序、時間、簡報頁面、司儀稿。"));
       }
     };
     reader.onerror = () => reject(new Error("檔案讀取失敗"));

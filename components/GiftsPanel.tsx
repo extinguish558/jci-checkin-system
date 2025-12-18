@@ -2,7 +2,7 @@
 import React, { useState, useRef } from 'react';
 import { useEvent } from '../context/EventContext';
 import { parseGiftsFromExcel } from '../services/geminiService';
-import { Gift, Upload, CheckCircle2, Circle, Loader2, Trash2, User, ArrowRight, Lock, Unlock, X } from 'lucide-react';
+import { Gift, Upload, CheckCircle2, Circle, Loader2, Trash2, UserCheck, Package, Hash, Lock, Unlock, X } from 'lucide-react';
 
 const GiftsPanel: React.FC = () => {
   const { settings, toggleGiftPresented, setGiftItems, isAdmin, loginAdmin, logoutAdmin } = useEvent();
@@ -28,7 +28,6 @@ const GiftsPanel: React.FC = () => {
     setIsProcessing(true);
     try {
       const file = files[0];
-      // 如果是 Excel 格式，使用直接解析
       if (file.name.endsWith('.xlsx') || file.name.endsWith('.xls')) {
         const items = await parseGiftsFromExcel(file);
         await setGiftItems(items);
@@ -47,7 +46,7 @@ const GiftsPanel: React.FC = () => {
   const giftItems = settings.giftItems || [];
 
   return (
-    <div className="p-4 md:p-8 max-w-2xl mx-auto space-y-6 pb-32 animate-in fade-in duration-500">
+    <div className="p-4 md:p-8 max-w-4xl mx-auto space-y-6 pb-32 animate-in fade-in duration-500">
       <input ref={fileInputRef} type="file" className="hidden" onChange={handleFileChange} accept=".xls,.xlsx" />
 
       {/* Header */}
@@ -73,52 +72,74 @@ const GiftsPanel: React.FC = () => {
         </div>
       </div>
 
-      {/* Content Area */}
+      {/* Content Area - Optimized for Recipient Display */}
       <div className="space-y-4">
         {giftItems.length > 0 ? (
-          giftItems.map((item) => (
-            <div 
-              key={item.id} 
-              onClick={() => toggleGiftPresented(item.id)}
-              className={`p-6 rounded-[2rem] border transition-all cursor-pointer relative overflow-hidden group
-                ${item.isPresented 
-                  ? 'bg-gray-100/50 border-transparent opacity-60 grayscale' 
-                  : 'bg-white border-white shadow-[0_8px_30px_rgba(0,0,0,0.03)] hover:shadow-xl active:scale-[0.99]'}
-              `}
-            >
-              <div className="flex items-start gap-5">
-                <div className={`mt-1 shrink-0 ${item.isPresented ? 'text-green-600' : 'text-orange-500'}`}>
-                  {item.isPresented ? <CheckCircle2 size={24} strokeWidth={3} /> : <Circle size={24} strokeWidth={3} />}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <h3 className={`text-xl font-black leading-tight mb-3 ${item.isPresented ? 'text-gray-400 line-through' : 'text-black'}`}>
-                    {item.name}
-                  </h3>
-                  
-                  <div className="flex items-center flex-wrap gap-2 text-sm font-bold">
-                    <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl ${item.isPresented ? 'bg-gray-200 text-gray-400' : 'bg-orange-50 text-orange-600'}`}>
-                       <User size={14} /> {item.donor}
+          <div className="flex flex-col gap-5">
+            {giftItems.map((item) => (
+              <div 
+                key={item.id} 
+                onClick={() => toggleGiftPresented(item.id)}
+                className={`p-6 md:p-8 rounded-[2.5rem] border transition-all cursor-pointer relative overflow-hidden flex flex-col gap-6
+                  ${item.isPresented 
+                    ? 'bg-gray-100/50 border-transparent opacity-60 grayscale' 
+                    : 'bg-white border-white shadow-[0_8px_40px_rgba(0,0,0,0.04)] hover:shadow-xl active:scale-[0.99]'}
+                `}
+              >
+                {/* Status Icon & Meta Tags */}
+                <div className="flex items-start justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className={`shrink-0 ${item.isPresented ? 'text-green-600' : 'text-orange-400'}`}>
+                      {item.isPresented ? <CheckCircle2 size={32} strokeWidth={3} /> : <Circle size={32} strokeWidth={3} />}
                     </div>
-                    <ArrowRight className={item.isPresented ? 'text-gray-300' : 'text-gray-400'} size={14} />
-                    <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl ${item.isPresented ? 'bg-gray-200 text-gray-400' : 'bg-blue-50 text-blue-600'}`}>
-                       <User size={14} /> {item.recipient}
+                    <div className="flex items-center gap-2">
+                      {item.sequence && (
+                        <span className={`text-[11px] font-black px-3 py-1 rounded-full flex items-center gap-1.5 ${item.isPresented ? 'bg-gray-200 text-gray-500' : 'bg-orange-50 text-orange-600'}`}>
+                          <Hash size={12} strokeWidth={3} /> # {item.sequence}
+                        </span>
+                      )}
+                      {item.quantity && (
+                        <span className={`text-[11px] font-black px-3 py-1 rounded-full flex items-center gap-1.5 ${item.isPresented ? 'bg-gray-200 text-gray-500' : 'bg-blue-50 text-[#007AFF]'}`}>
+                          <Package size={12} strokeWidth={3} /> 數量: {item.quantity}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  {item.isPresented && (
+                    <div className="text-[10px] font-black text-gray-300 uppercase tracking-[0.2em]">
+                       Awarded
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex flex-col lg:flex-row gap-6 items-start lg:items-center">
+                  {/* Award Name - Full display */}
+                  <div className="lg:w-1/2">
+                    <h3 className={`text-2xl md:text-3xl font-black leading-tight break-words ${item.isPresented ? 'text-gray-400 line-through' : 'text-slate-900'}`}>
+                      {item.name}
+                    </h3>
+                  </div>
+
+                  {/* Recipient Area - Enlarged & Wrapping */}
+                  <div className="w-full lg:flex-1">
+                    <div className={`p-5 md:p-6 rounded-3xl flex flex-col gap-2 min-h-[80px] justify-center transition-colors ${item.isPresented ? 'bg-gray-100' : 'bg-slate-50/80 border border-slate-100'}`}>
+                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1.5">
+                        <UserCheck size={14} /> 受獎人名單
+                      </span>
+                      <span className={`text-lg md:text-xl font-black leading-relaxed whitespace-normal break-words ${item.isPresented ? 'text-gray-400' : 'text-[#007AFF]'}`}>
+                        {item.recipient}
+                      </span>
                     </div>
                   </div>
                 </div>
               </div>
-              
-              {item.isPresented && (
-                 <div className="absolute top-4 right-6 text-[10px] font-black text-gray-400 uppercase tracking-widest">
-                    Presented
-                 </div>
-              )}
-            </div>
-          ))
+            ))}
+          </div>
         ) : (
           <div className="py-24 flex flex-col items-center justify-center bg-white/50 rounded-[3rem] border border-white border-dashed">
             <Gift size={48} className="text-gray-200 mb-4" />
             <p className="text-gray-400 font-bold italic">尚無禮品頒贈資料</p>
-            {isAdmin && <p className="text-gray-300 text-xs mt-2 font-medium">請點擊上方按鈕匯入 Excel 格式清單</p>}
+            {isAdmin && <p className="text-gray-300 text-xs mt-2 font-medium">請點擊上方按鈕匯入包含「序、項目、數量、受獎人」之 Excel</p>}
           </div>
         )}
       </div>

@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useMemo, useCallback } from 'react';
 import { useEvent } from '../context/EventContext';
 import { exportToExcel, parseCheckInSheet, parseGuestsFromExcel } from '../services/geminiService';
@@ -144,10 +143,31 @@ const AdminPanel: React.FC = () => {
   const getTargetGroup = useCallback((g: Guest): string => {
       const title = g.title || '';
       const category = (g.category || '').toString();
+      const fullInfo = (title + category).toLowerCase();
+      
+      // 1. YB/OB 會友識別 (最優先)
       if (category.includes('YB') || category.includes('會友')) return 'YB';
       if (category.includes('OB') || category.includes('特友')) return 'OB';
+      
+      // 2. 政府官員精確識別 (納入 VIP)
+      // 用戶指定關鍵字：政府、議會、立委、市長、縣長、局長
+      const govKeywords = ['政府', '議會', '立委', '市長', '縣長', '局長'];
+      const isGovStrict = govKeywords.some(k => fullInfo.includes(k));
+      
+      // 如果符合政府關鍵字，且不含總會/分會字眼，則歸為 VIP (長官)
+      if ((category === GuestCategory.GOV_OFFICIAL || isGovStrict) && 
+          !fullInfo.includes('總會') && !fullInfo.includes('分會')) {
+          return 'VIP';
+      }
+
+      // 3. 總會識別
       if (category.includes('總會') || title.includes('總會')) return 'HQ';
-      if (category.includes('友會') || title.includes('會')) return 'VISITING';
+      
+      // 4. 友會/聯誼會識別
+      // 若非政府人員且包含「會」字，例如：聯誼會、友好會、兄弟會、母會
+      if (category.includes('友會') || title.includes('會') || title.includes('聯誼')) return 'VISITING';
+      
+      // 5. 預設歸類為 VIP
       return 'VIP';
   }, []);
 
@@ -378,26 +398,26 @@ const AdminPanel: React.FC = () => {
                <div className="grid grid-cols-2 gap-3">
                   <div className="col-span-1">
                       <label className="text-[10px] font-black text-gray-400 uppercase mb-1 block">姓名</label>
-                      <input required value={editingGuest.name} onChange={e => setEditingGuest({...editingGuest, name: e.target.value})} type="text" className="w-full bg-gray-50 border-none rounded-xl py-3.5 px-4 font-bold outline-none focus:ring-2 focus:ring-blue-500" />
+                      <input required value={editingGuest.name} onChange={setEditingGuest ? e => setEditingGuest({...editingGuest, name: e.target.value}) : undefined} type="text" className="w-full bg-gray-50 border-none rounded-xl py-3.5 px-4 font-bold outline-none focus:ring-2 focus:ring-blue-500" />
                   </div>
                   <div className="col-span-1">
                       <label className="text-[10px] font-black text-gray-400 uppercase mb-1 block">編號 / 代碼</label>
-                      <input value={editingGuest.code || ''} onChange={e => setEditingGuest({...editingGuest, code: e.target.value})} type="text" className="w-full bg-gray-50 border-none rounded-xl py-3.5 px-4 font-bold outline-none focus:ring-2 focus:ring-blue-500" placeholder="選填" />
+                      <input value={editingGuest.code || ''} onChange={setEditingGuest ? e => setEditingGuest({...editingGuest, code: e.target.value}) : undefined} type="text" className="w-full bg-gray-50 border-none rounded-xl py-3.5 px-4 font-bold outline-none focus:ring-2 focus:ring-blue-500" placeholder="選填" />
                   </div>
                </div>
                <div>
                   <label className="text-[10px] font-black text-gray-400 uppercase mb-1 block">職稱</label>
-                  <input value={editingGuest.title} onChange={e => setEditingGuest({...editingGuest, title: e.target.value})} type="text" className="w-full bg-gray-50 border-none rounded-xl py-3.5 px-4 font-bold outline-none focus:ring-2 focus:ring-blue-500" />
+                  <input value={editingGuest.title} onChange={setEditingGuest ? e => setEditingGuest({...editingGuest, title: e.target.value}) : undefined} type="text" className="w-full bg-gray-50 border-none rounded-xl py-3.5 px-4 font-bold outline-none focus:ring-2 focus:ring-blue-500" />
                </div>
                <div>
                   <label className="text-[10px] font-black text-gray-400 uppercase mb-1 block">分類</label>
-                  <select value={editingGuest.category} onChange={e => setEditingGuest({...editingGuest, category: e.target.value as GuestCategory})} className="w-full bg-gray-50 border-none rounded-xl py-3.5 px-4 font-black outline-none focus:ring-2 focus:ring-blue-500">
+                  <select value={editingGuest.category} onChange={setEditingGuest ? e => setEditingGuest({...editingGuest, category: e.target.value as GuestCategory}) : undefined} className="w-full bg-gray-50 border-none rounded-xl py-3.5 px-4 font-black outline-none focus:ring-2 focus:ring-blue-500">
                     {Object.values(GuestCategory).map(cat => <option key={cat} value={cat}>{cat}</option>)}
                   </select>
                </div>
                <div>
                   <label className="text-[10px] font-black text-gray-400 uppercase mb-1 block">備註</label>
-                  <textarea value={editingGuest.note || ''} onChange={e => setEditingGuest({...editingGuest, note: e.target.value})} className="w-full bg-gray-50 border-none rounded-xl py-3.5 px-4 font-bold outline-none focus:ring-2 focus:ring-blue-500 h-20 resize-none" placeholder="輸入備註資訊..."></textarea>
+                  <textarea value={editingGuest.note || ''} onChange={setEditingGuest ? e => setEditingGuest({...editingGuest, note: e.target.value}) : undefined} className="w-full bg-gray-50 border-none rounded-xl py-3.5 px-4 font-bold outline-none focus:ring-2 focus:ring-blue-500 h-20 resize-none" placeholder="輸入備註資訊..."></textarea>
                </div>
 
                <div className="pt-4 flex flex-col gap-3">

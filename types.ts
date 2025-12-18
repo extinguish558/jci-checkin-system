@@ -23,17 +23,22 @@ export interface FlowFile {
 
 export interface McFlowStep {
   id: string;
-  time?: string;
-  title: string;
-  description?: string;
+  sequence?: string;  // 序
+  time?: string;      // 時間
+  title: string;      // 項目 / 標題
+  script?: string;    // 司儀搞
+  slides?: string;    // 簡報
   isCompleted: boolean;
 }
 
 export interface GiftItem {
   id: string;
-  name: string;      // 禮品名稱
-  donor: string;     // 贈送人
-  recipient: string; // 受贈人/單位
+  sequence?: string;  // 序
+  name: string;       // 項目 / 禮品名稱
+  quantity?: string;  // 數量
+  recipient: string;  // 受獎人 / 受贈人
+  personInCharge?: string; // 負責人
+  donor?: string;     // 贈送人 (保留相容性)
   isPresented: boolean;
 }
 

@@ -1,15 +1,20 @@
 
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useRef, useState, useEffect, useMemo } from 'react';
 import { useEvent } from '../context/EventContext';
 import { FlowFile } from '../types';
-import { FileSpreadsheet, FileText, Presentation, Trash2, Settings, Lock, Unlock, Plus, ListTodo, ShieldCheck, Download, Loader2, Info, Eye, Upload, X } from 'lucide-react';
+import { 
+  FileSpreadsheet, FileText, Presentation, Trash2, Settings, Lock, Unlock, 
+  Plus, ListTodo, ShieldCheck, Download, Loader2, Info, Eye, Upload, X, 
+  Activity, CheckCircle2, Mic2, Award, ChevronDown, ChevronUp, Maximize2, Minimize2, PlayCircle
+} from 'lucide-react';
 
 const FlowPanel: React.FC = () => {
-  const { settings, updateSettings, addFlowFile, removeFlowFile, isAdmin, loginAdmin, logoutAdmin } = useEvent();
+  const { settings, updateSettings, addFlowFile, removeFlowFile, isAdmin, loginAdmin, logoutAdmin, guests } = useEvent();
   const [showLoginModal, setShowLoginModal] = useState(false); 
   const [loginPassword, setLoginPassword] = useState("");
   const [isUploading, setIsUploading] = useState(false);
   const [uploadType, setUploadType] = useState<'schedule' | 'gifts' | 'slides' | null>(null);
+  const [isScheduleExpanded, setIsScheduleExpanded] = useState(false);
   
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -24,34 +29,64 @@ const FlowPanel: React.FC = () => {
     }
   };
 
-  // 優化自動高度調整邏輯
+  // 深度進度監控邏輯
+  const liveStats = useMemo(() => {
+    // 1. 司儀流程：找出第一個未完成的步驟
+    const mcSteps = settings.mcFlowSteps || [];
+    const mcCompleted = mcSteps.filter(s => s.isCompleted).length;
+    const currentStep = mcSteps.find(s => !s.isCompleted);
+    const mcPercent = mcSteps.length > 0 ? Math.round((mcCompleted / mcSteps.length) * 100) : 0;
+
+    // 2. 禮品頒贈：找出第一個未頒發的禮品
+    const giftItems = settings.giftItems || [];
+    const giftsPresented = giftItems.filter(i => i.isPresented).length;
+    const nextGift = giftItems.find(i => !i.isPresented);
+    const giftsPercent = giftItems.length > 0 ? Math.round((giftsPresented / giftItems.length) * 100) : 0;
+
+    // 3. 貴賓介紹：計算剩餘待介紹人數
+    const checkedInVips = guests.filter(g => g.isCheckedIn && g.title && !g.title.includes('見習'));
+    const introducedVips = checkedInVips.filter(g => g.isIntroduced).length;
+    const remainingVips = checkedInVips.length - introducedVips;
+    const vipsPercent = checkedInVips.length > 0 ? Math.round((introducedVips / checkedInVips.length) * 100) : 0;
+
+    return {
+      mc: { 
+        current: mcCompleted, 
+        total: mcSteps.length, 
+        percent: mcPercent, 
+        activeTitle: currentStep ? currentStep.title : (mcSteps.length > 0 ? '流程已全部完成' : '尚未匯入流程')
+      },
+      gifts: { 
+        current: giftsPresented, 
+        total: giftItems.length, 
+        percent: giftsPercent,
+        activeTitle: nextGift ? nextGift.name : (giftItems.length > 0 ? '所有禮品已頒發' : '尚未匯入禮品')
+      },
+      vips: { 
+        current: introducedVips, 
+        total: checkedInVips.length, 
+        remaining: remainingVips,
+        percent: vipsPercent 
+      }
+    };
+  }, [settings.mcFlowSteps, settings.giftItems, guests]);
+
   const adjustHeight = () => {
     const textarea = textareaRef.current;
     if (textarea) {
-      textarea.style.height = 'auto'; // 先設回 auto 取得真實內容高度
-      const newHeight = Math.max(120, textarea.scrollHeight);
+      textarea.style.height = 'auto';
+      const newHeight = Math.max(80, textarea.scrollHeight);
       textarea.style.height = `${newHeight}px`; 
     }
   };
 
   useEffect(() => {
-    // 確保組件渲染後或內容變更時重新計算高度
-    const timer = setTimeout(adjustHeight, 100);
-    return () => clearTimeout(timer);
-  }, [settings.briefSchedule]);
-
-  const getTypeLabel = (type: string) => {
-    switch(type) {
-      case 'schedule': return '活動流程表';
-      case 'gifts': return '禮品抽籤清單';
-      case 'slides': return '活動投影片';
-      default: return '檔案';
-    }
-  };
+    adjustHeight();
+  }, [settings.briefSchedule, isScheduleExpanded]);
 
   const triggerUpload = (type: 'schedule' | 'gifts' | 'slides') => {
     if (!isAdmin) {
-      alert("請先點擊右上角鎖定圖標，進入管理模式後再進行上傳。");
+      alert("請先登入管理模式再進行上傳。");
       return;
     }
     setUploadType(type);
@@ -61,161 +96,90 @@ const FlowPanel: React.FC = () => {
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !uploadType) return;
-
-    // 檢查檔案大小是否超過限制 (Firestore 限制約 1MB，建議控制在 800KB 內)
     if (file.size > 800 * 1024) {
-      alert("檔案大小超過 800KB 限制。請嘗試壓縮檔案或上傳較小的文檔，以確保雲端同步正常。");
-      if (fileInputRef.current) fileInputRef.current.value = '';
+      alert("檔案超過 800KB 限制。");
       return;
     }
-
     setIsUploading(true);
     try {
       const reader = new FileReader();
       reader.onload = async () => {
-        try {
-          const base64 = (reader.result as string).split(',')[1];
-          const newFile: FlowFile = {
-            id: Math.random().toString(36).substr(2, 9),
-            name: file.name,
-            type: uploadType,
-            mimeType: file.type,
-            size: file.size,
-            uploadTime: new Date().toISOString(),
-            data: base64
-          };
-          await addFlowFile(newFile);
-          alert(`${getTypeLabel(uploadType)} 上傳成功！`);
-        } catch (err) {
-          alert("儲存檔案失敗，請檢查網路連接。");
-        }
+        const base64 = (reader.result as string).split(',')[1];
+        const newFile: FlowFile = {
+          id: Math.random().toString(36).substr(2, 9),
+          name: file.name,
+          type: uploadType,
+          mimeType: file.type,
+          size: file.size,
+          uploadTime: new Date().toISOString(),
+          data: base64
+        };
+        await addFlowFile(newFile);
       };
-      reader.onerror = () => alert("讀取檔案失敗");
       reader.readAsDataURL(file);
     } catch (err) {
-      alert("處理檔案時發生錯誤");
+      alert("處理失敗");
     } finally {
       setIsUploading(false);
       setUploadType(null);
-      if (fileInputRef.current) fileInputRef.current.value = '';
     }
   };
 
   const handlePreview = (file: FlowFile) => {
-    if (!file.data) {
-      if (file.url) {
-        window.open(file.url, '_blank');
-      } else {
-        alert("目前該檔案無可預覽之數據。");
-      }
-      return;
-    }
-
-    try {
-      const byteCharacters = atob(file.data);
-      const byteNumbers = new Array(byteCharacters.length);
-      for (let i = 0; i < byteCharacters.length; i++) {
-        byteNumbers[i] = byteCharacters.charCodeAt(i);
-      }
-      const byteArray = new Uint8Array(byteNumbers);
-      const blob = new Blob([byteArray], { type: file.mimeType });
-      const blobUrl = window.URL.createObjectURL(blob);
-      
-      // 在新分頁開啟以進行預覽
-      window.open(blobUrl, '_blank');
-    } catch (err) {
-      alert("預覽失敗，數據格式可能有誤。");
-    }
-  };
-
-  const handleDownload = (file: FlowFile) => {
-    if (!file.data) {
-      if (file.url) {
-        window.open(file.url, '_blank');
-      } else {
-        alert("目前該檔案無可下載之數據。");
-      }
-      return;
-    }
-
-    try {
-      const byteCharacters = atob(file.data);
-      const byteNumbers = new Array(byteCharacters.length);
-      for (let i = 0; i < byteCharacters.length; i++) {
-        byteNumbers[i] = byteCharacters.charCodeAt(i);
-      }
-      const byteArray = new Uint8Array(byteNumbers);
-      const blob = new Blob([byteArray], { type: file.mimeType });
-      
-      const blobUrl = window.URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = blobUrl;
-      link.download = file.name;
-      document.body.appendChild(link);
-      link.click();
-      
-      // 清理資源
-      setTimeout(() => {
-        document.body.removeChild(link);
-        window.URL.revokeObjectURL(blobUrl);
-      }, 100);
-    } catch (err) {
-      alert("檔案下載失敗，數據格式可能有誤。");
-    }
+    if (!file.data) return;
+    const byteCharacters = atob(file.data);
+    const byteNumbers = new Array(byteCharacters.length);
+    for (let i = 0; i < byteCharacters.length; i++) byteNumbers[i] = byteCharacters.charCodeAt(i);
+    const blob = new Blob([new Uint8Array(byteNumbers)], { type: file.mimeType });
+    window.open(window.URL.createObjectURL(blob), '_blank');
   };
 
   return (
-    <div className="p-4 md:p-8 max-w-2xl mx-auto space-y-6 animate-in fade-in duration-500 pb-32 bg-[#F2F2F7] min-h-screen">
-      
-      <input 
-        type="file" 
-        ref={fileInputRef} 
-        onChange={handleFileChange} 
-        className="hidden" 
-      />
+    <div className="p-4 md:p-8 max-w-3xl mx-auto space-y-8 pb-40 animate-in fade-in duration-500 bg-[#F2F2F7] min-h-screen">
+      <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" />
 
-      {/* Header Section */}
-      <div className="bg-white rounded-[2rem] p-8 shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-white space-y-8">
+      {/* 活動配置主卡片 - 置頂 */}
+      <div className="bg-white rounded-[2.5rem] p-8 shadow-[0_15px_50px_rgba(0,0,0,0.03)] border border-white space-y-8">
         <div className="flex justify-between items-center">
            <div className="flex items-center gap-2">
-             <div className="w-8 h-8 bg-blue-50 rounded-full flex items-center justify-center">
-               <Settings className="text-blue-500" size={16} />
-             </div>
-             <span className="text-gray-400 font-black uppercase tracking-tight text-xs">活動配置中心</span>
+             <Activity className="text-blue-500" size={18} strokeWidth={3} />
+             <span className="text-gray-400 font-black uppercase tracking-widest text-[10px]">Event Control Center</span>
            </div>
-           <button onClick={() => isAdmin ? logoutAdmin() : setShowLoginModal(true)} className="p-3 bg-[#F2F2F7] rounded-2xl transition-all hover:bg-gray-100 shadow-sm">
+           <button onClick={() => isAdmin ? logoutAdmin() : setShowLoginModal(true)} className="p-3 bg-[#F2F2F7] rounded-2xl transition-all hover:bg-gray-100">
              {isAdmin ? <Unlock size={20} className="text-[#007AFF]"/> : <Lock size={20} className="text-gray-300"/>}
            </button>
         </div>
 
         <div className="space-y-1">
-          <label className="text-[10px] font-black text-gray-300 uppercase tracking-widest ml-1">EVENT THEME</label>
+          <label className="text-[10px] font-black text-gray-300 uppercase tracking-widest ml-1">典禮主題名稱</label>
           <input 
             type="text" 
             value={settings.eventName} 
             onChange={(e) => updateSettings({ eventName: e.target.value })}
-            placeholder="請輸入活動主題名稱..."
-            className="w-full bg-transparent border-none text-2xl md:text-3xl font-black text-black focus:ring-0 p-0 placeholder:text-gray-200"
+            className="w-full bg-transparent border-none text-2xl md:text-4xl font-black text-black focus:ring-0 p-0 placeholder:text-gray-100"
             disabled={!isAdmin}
           />
         </div>
 
-        {/* 精簡流程編輯器 */}
-        <div className="bg-[#F2F2F7] rounded-[1.5rem] p-6 space-y-4 shadow-inner relative overflow-hidden group">
-            <div className="flex justify-between items-center">
+        {/* 精簡流程摘要 - 可縮放樣式 */}
+        <div className={`rounded-[2rem] transition-all duration-500 overflow-hidden relative group border ${isScheduleExpanded ? 'bg-white border-blue-100' : 'bg-[#F2F2F7] border-transparent'}`}>
+            <div className="px-6 py-4 flex justify-between items-center border-b border-transparent group-hover:border-gray-100/50 transition-colors">
                 <div className="flex items-center gap-2">
                     <ListTodo size={16} className="text-blue-500" />
-                    <h3 className="font-black text-[11px] text-gray-400 uppercase tracking-tight">精簡流程 (首頁重點摘要)</h3>
+                    <h3 className="font-black text-[11px] text-gray-400 uppercase tracking-widest">精簡流程摘要</h3>
                 </div>
-                {!isAdmin && (
-                  <div className="flex items-center gap-1 text-gray-300">
-                    <Info size={12} />
-                    <span className="text-[10px] font-bold">唯讀模式</span>
-                  </div>
-                )}
+                <div className="flex items-center gap-2">
+                  {!isAdmin && <span className="text-[9px] font-black text-gray-300 uppercase tracking-widest">Read Only</span>}
+                  <button 
+                    onClick={() => setIsScheduleExpanded(!isScheduleExpanded)}
+                    className="p-2 hover:bg-white rounded-xl text-gray-400 transition-all shadow-sm"
+                  >
+                    {isScheduleExpanded ? <Minimize2 size={16}/> : <Maximize2 size={16}/>}
+                  </button>
+                </div>
             </div>
             
-            <div className="relative min-h-[120px] flex items-start justify-start">
+            <div className={`p-6 transition-all duration-500 ${isScheduleExpanded ? 'max-h-[1000px]' : 'max-h-[140px]'}`}>
               <textarea 
                   ref={textareaRef}
                   value={settings.briefSchedule || ''}
@@ -223,146 +187,162 @@ const FlowPanel: React.FC = () => {
                     updateSettings({ briefSchedule: e.target.value });
                     adjustHeight();
                   }}
-                  placeholder="點擊此處輸入活動流程摘要..."
-                  className={`w-full bg-white rounded-2xl p-6 border-none text-xl md:text-2xl font-light text-black leading-snug placeholder:text-gray-200 transition-all resize-none overflow-hidden text-left shadow-sm focus:ring-2 focus:ring-blue-500/20 ${!isAdmin ? 'cursor-default' : 'cursor-text'}`}
+                  placeholder="點擊此處輸入活動流程重點摘要..."
+                  className={`w-full bg-transparent border-none text-xl md:text-2xl font-light text-black leading-snug placeholder:text-gray-200 focus:ring-0 p-0 resize-none overflow-hidden ${!isAdmin ? 'cursor-default' : 'cursor-text'}`}
                   disabled={!isAdmin}
-                  style={{ minHeight: '120px' }}
               />
-              {!isAdmin && !settings.briefSchedule && (
-                <div className="absolute inset-0 flex items-center justify-center text-gray-300 font-bold italic text-sm">
-                  目前尚無摘要內容
-                </div>
+              {!isScheduleExpanded && settings.briefSchedule && settings.briefSchedule.length > 50 && (
+                <div className="absolute bottom-0 left-0 right-0 h-16 bg-gradient-to-t from-[#F2F2F7] to-transparent pointer-events-none" />
               )}
             </div>
         </div>
       </div>
 
+      {/* 核心監控區 (Monitoring Dashboard) - 移動到中間 */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {/* 司儀流程監控 */}
+        <div className="bg-white rounded-[2rem] p-6 shadow-sm border border-white flex flex-col gap-4 relative overflow-hidden group">
+            <div className="flex justify-between items-center">
+              <div className="w-10 h-10 bg-blue-50 text-blue-500 rounded-xl flex items-center justify-center">
+                <ListTodo size={20} strokeWidth={2.5} />
+              </div>
+              <div className="text-right">
+                 <div className="text-[9px] font-black text-gray-300 uppercase tracking-widest">目前進行</div>
+                 <div className="text-xs font-black text-blue-500 tabular-nums">{liveStats.mc.percent}%</div>
+              </div>
+            </div>
+            <div className="flex-1 space-y-1">
+                <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest">司儀流程</h4>
+                <p className="text-lg font-black text-black leading-tight line-clamp-2">{liveStats.mc.activeTitle}</p>
+            </div>
+            <div className="w-full h-1.5 bg-gray-50 rounded-full overflow-hidden">
+                <div className="h-full bg-blue-500 transition-all duration-1000" style={{ width: `${liveStats.mc.percent}%` }} />
+            </div>
+            <div className="flex justify-between items-center text-[9px] font-bold text-gray-300 uppercase">
+                <span>{liveStats.mc.current} / {liveStats.mc.total} 步</span>
+                <PlayCircle size={14} className="text-blue-100 group-hover:text-blue-200 transition-colors" />
+            </div>
+        </div>
+
+        {/* 禮品頒贈監控 */}
+        <div className="bg-white rounded-[2rem] p-6 shadow-sm border border-white flex flex-col gap-4 relative overflow-hidden group">
+            <div className="flex justify-between items-center">
+              <div className="w-10 h-10 bg-orange-50 text-orange-500 rounded-xl flex items-center justify-center">
+                <Award size={20} strokeWidth={2.5} />
+              </div>
+              <div className="text-right">
+                 <div className="text-[9px] font-black text-gray-300 uppercase tracking-widest">頒發進度</div>
+                 <div className="text-xs font-black text-orange-500 tabular-nums">{liveStats.gifts.percent}%</div>
+              </div>
+            </div>
+            <div className="flex-1 space-y-1">
+                <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest">禮品頒贈</h4>
+                <p className="text-lg font-black text-black leading-tight line-clamp-2">{liveStats.gifts.activeTitle}</p>
+            </div>
+            <div className="w-full h-1.5 bg-gray-50 rounded-full overflow-hidden">
+                <div className="h-full bg-orange-500 transition-all duration-1000" style={{ width: `${liveStats.gifts.percent}%` }} />
+            </div>
+            <div className="flex justify-between items-center text-[9px] font-bold text-gray-300 uppercase">
+                <span>{liveStats.gifts.current} / {liveStats.gifts.total} 件</span>
+                <PlayCircle size={14} className="text-orange-100 group-hover:text-orange-200 transition-colors" />
+            </div>
+        </div>
+
+        {/* 貴賓介紹監控 - 強化剩餘人數顯示 */}
+        <div className="bg-white rounded-[2rem] p-6 shadow-sm border border-white flex flex-col gap-4 relative overflow-hidden group">
+            <div className="flex justify-between items-center">
+              <div className="w-10 h-10 bg-purple-50 text-purple-500 rounded-xl flex items-center justify-center">
+                <Mic2 size={20} strokeWidth={2.5} />
+              </div>
+              <div className="text-right">
+                 <div className="text-[9px] font-black text-gray-300 uppercase tracking-widest">介紹比例</div>
+                 <div className="text-xs font-black text-purple-500 tabular-nums">{liveStats.vips.percent}%</div>
+              </div>
+            </div>
+            <div className="flex-1 space-y-1">
+                <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest">貴賓介紹</h4>
+                <div className="flex items-baseline gap-2">
+                    <p className="text-3xl font-black text-black tabular-nums">{liveStats.vips.remaining}</p>
+                    <p className="text-sm font-black text-gray-300">位貴賓待介紹</p>
+                </div>
+            </div>
+            <div className="w-full h-1.5 bg-gray-50 rounded-full overflow-hidden">
+                <div className="h-full bg-purple-500 transition-all duration-1000" style={{ width: `${liveStats.vips.percent}%` }} />
+            </div>
+            <div className="flex justify-between items-center text-[9px] font-bold text-gray-300 uppercase">
+                <span>現場已報到: {liveStats.vips.total} 位</span>
+                <CheckCircle2 size={14} className="text-purple-100" />
+            </div>
+        </div>
+      </div>
+
       {/* 檔案資源區 */}
-      <div className="space-y-4 pt-4">
-        <h4 className="px-6 text-[11px] font-black text-gray-400 uppercase tracking-widest flex items-center gap-2">
-          檔案資源庫 <span className="w-1 h-1 bg-gray-300 rounded-full"></span>
+      <div className="space-y-4 pt-2">
+        <h4 className="px-6 text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] flex items-center gap-2">
+          檔案資源庫 <div className="h-px flex-1 bg-gray-200 ml-2"></div>
         </h4>
         
         <div className="grid grid-cols-1 gap-3">
           {(['schedule', 'gifts', 'slides'] as const).map((type) => {
             const file = (settings.flowFiles || []).find(f => f.type === type);
+            const labels = { schedule: '活動流程表', gifts: '得獎禮品清單', slides: '大會簡報投影片' };
             return (
               <div 
                 key={type} 
-                className={`bg-white rounded-[1.8rem] p-5 shadow-sm border border-white flex items-center gap-4 transition-all group ${file ? 'active:scale-95 cursor-pointer hover:shadow-md' : isAdmin ? 'cursor-pointer hover:bg-blue-50/30' : 'opacity-80'}`}
-                onClick={() => file ? handlePreview(file) : isAdmin ? triggerUpload(type) : null}
+                className="bg-white rounded-[2rem] p-4 md:p-5 shadow-sm border border-white flex items-center gap-4 transition-all hover:shadow-md cursor-pointer group"
+                onClick={() => file && handlePreview(file)}
               >
-                 <div className={`w-14 h-14 rounded-2xl flex items-center justify-center shrink-0 transition-transform group-hover:scale-110 ${type === 'schedule' ? 'bg-blue-50 text-blue-500' : type === 'gifts' ? 'bg-orange-50 text-orange-500' : 'bg-purple-50 text-purple-500'}`}>
+                 <div className={`w-14 h-14 rounded-2xl flex items-center justify-center shrink-0 ${type === 'schedule' ? 'bg-blue-50 text-blue-500' : type === 'gifts' ? 'bg-orange-50 text-orange-500' : 'bg-purple-50 text-purple-500'}`}>
                     {type === 'schedule' ? <FileText size={24} /> : type === 'gifts' ? <FileSpreadsheet size={24} /> : <Presentation size={24} />}
                  </div>
                  
                  <div className="flex-1 min-w-0">
-                    <h3 className="font-black text-black text-base">{getTypeLabel(type)}</h3>
-                    <div className="text-[11px] text-gray-400 font-bold truncate mt-0.5">
-                      {file ? file.name : isAdmin ? '點擊此處上傳檔案...' : '管理員尚未上傳'}
+                    <h3 className="font-black text-black text-base">{labels[type]}</h3>
+                    <div className="text-[10px] text-gray-400 font-bold truncate mt-0.5">
+                      {file ? file.name : isAdmin ? '等待上傳中...' : '管理員尚未提供'}
                     </div>
                  </div>
 
-                 <div className="flex items-center gap-1">
-                    {file ? (
-                      <div className="flex items-center gap-1">
-                        <button 
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handlePreview(file);
-                          }}
-                          className="p-3 bg-gray-50 rounded-xl text-gray-400 shadow-sm transition-all hover:bg-blue-50 hover:text-blue-500"
-                          title="預覽"
-                        >
-                           <Eye size={20} />
-                        </button>
-                        <button 
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleDownload(file);
-                          }}
-                          className="p-3 bg-blue-50 rounded-xl text-blue-500 shadow-sm transition-all hover:bg-blue-500 hover:text-white"
-                          title="下載"
-                        >
-                           <Download size={20} />
-                        </button>
-                        {isAdmin && (
-                          <div className="flex items-center gap-1">
-                            <button 
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                triggerUpload(type);
-                              }} 
-                              className="p-3 bg-gray-50 rounded-xl text-gray-400 hover:text-blue-500 transition-all ml-1"
-                              title="更新檔案 (覆蓋)"
-                            >
-                              <Upload size={20} />
-                            </button>
-                            <button 
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                if(confirm(`確定要從伺服器刪除「${file.name}」嗎？`)) removeFlowFile(file.id);
-                              }} 
-                              className="p-3 text-gray-200 hover:text-red-500 transition-colors ml-1"
-                              title="刪除"
-                            >
-                              <Trash2 size={20} />
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    ) : isAdmin ? (
-                      <div className="p-3 bg-gray-50 rounded-xl text-gray-300 group-hover:bg-blue-100 group-hover:text-blue-500 transition-all">
-                        {isUploading && uploadType === type ? <Loader2 size={20} className="animate-spin" /> : <Plus size={20} />}
-                      </div>
-                    ) : null}
-                 </div>
+                 {isAdmin ? (
+                   <button 
+                    onClick={(e) => { e.stopPropagation(); triggerUpload(type); }}
+                    className="p-3 bg-gray-50 rounded-xl text-gray-300 hover:text-blue-500 hover:bg-blue-50 transition-all"
+                   >
+                     {isUploading && uploadType === type ? <Loader2 size={20} className="animate-spin" /> : <Upload size={20} />}
+                   </button>
+                 ) : file && (
+                   <div className="p-3 bg-blue-50 rounded-xl text-blue-500">
+                      <Download size={20} />
+                   </div>
+                 )}
               </div>
             );
           })}
         </div>
-        
-        <p className="px-8 text-[10px] text-gray-300 font-bold text-center leading-relaxed italic">
-          提示：點擊卡片中心可直接預覽，點擊右側按鈕可進行下載或管理。
-        </p>
       </div>
 
       {/* Login Modal */}
       {showLoginModal && (
-        <div className="fixed inset-0 ios-blur bg-black/40 z-[250] flex items-center justify-center p-6 animate-in fade-in duration-300">
-          <div className="bg-white rounded-[2.5rem] p-8 max-w-xs w-full shadow-2xl flex flex-col items-center gap-6 border border-white/20">
-            <h3 className="text-xl font-black text-black text-center tracking-tight">管理員授權</h3>
-            <form onSubmit={handleLoginSubmit} className="w-full space-y-4">
+        <div className="fixed inset-0 ios-blur bg-black/40 z-[250] flex items-center justify-center p-6">
+          <div className="bg-white rounded-[3rem] p-10 max-w-xs w-full shadow-2xl flex flex-col items-center gap-8 border border-white/20">
+            <div className="space-y-2 text-center">
+              <h3 className="text-2xl font-black text-black tracking-tight">管理員授權</h3>
+              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Enter Credentials to Edit</p>
+            </div>
+            <form onSubmit={handleLoginSubmit} className="w-full space-y-6">
               <input 
                 type="password" 
-                placeholder="密碼" 
+                placeholder="••••" 
                 value={loginPassword} 
                 onChange={e => setLoginPassword(e.target.value)}
-                className="w-full bg-[#F2F2F7] border-none rounded-2xl py-5 px-4 text-center text-3xl font-black focus:ring-4 focus:ring-blue-500/20 outline-none transition-all"
+                className="w-full bg-[#F2F2F7] border-none rounded-2xl py-6 px-4 text-center text-4xl font-black focus:ring-4 focus:ring-blue-500/20 outline-none transition-all"
                 autoFocus
               />
-              <div className="flex gap-3">
-                <button type="button" onClick={() => setShowLoginModal(false)} className="flex-1 py-4 font-black text-gray-400 hover:text-gray-600">取消</button>
-                <button type="submit" className="flex-1 py-4 bg-blue-600 text-white font-black rounded-2xl shadow-xl shadow-blue-200 active:scale-95 transition-all">確認</button>
+              <div className="flex gap-4">
+                <button type="button" onClick={() => setShowLoginModal(false)} className="flex-1 py-4 font-black text-gray-400">取消</button>
+                <button type="submit" className="flex-1 py-4 bg-blue-600 text-white font-black rounded-[1.2rem] shadow-xl shadow-blue-200 active:scale-95 transition-all">確認</button>
               </div>
             </form>
-          </div>
-        </div>
-      )}
-
-      {/* Uploading Overlay */}
-      {isUploading && (
-        <div className="fixed inset-0 ios-blur bg-white/70 z-[400] flex flex-col items-center justify-center gap-5">
-          <div className="relative w-24 h-24">
-             <div className="absolute inset-0 border-8 border-blue-50 rounded-full"></div>
-             <div className="absolute inset-0 border-8 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-             <div className="absolute inset-0 flex items-center justify-center text-blue-600">
-                <Loader2 size={32} className="animate-spin" />
-             </div>
-          </div>
-          <div className="text-center">
-            <p className="font-black text-black text-xl">正在同步雲端資料...</p>
-            <p className="text-gray-400 font-bold text-xs mt-1">請勿關閉視窗，檔案上傳中</p>
           </div>
         </div>
       )}

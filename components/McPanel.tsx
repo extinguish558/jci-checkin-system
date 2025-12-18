@@ -1,4 +1,3 @@
-
 import React, { useMemo, useState } from 'react';
 import { useEvent } from '../context/EventContext';
 import { GuestCategory, Guest } from '../types';
@@ -55,7 +54,7 @@ const McPanel: React.FC = () => {
   const [filterRound, setFilterRound] = useState<number | 'all'>('all');
 
   const [isUnintroExpanded, setIsUnintroExpanded] = useState(true);
-  const [isIntroExpanded, setIsIntroExpanded] = useState(true); // 預設展開方便看
+  const [isIntroExpanded, setIsIntroExpanded] = useState(true);
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [loginPassword, setLoginPassword] = useState("");
 
@@ -111,20 +110,33 @@ const McPanel: React.FC = () => {
 
           const title = g.title.trim();
           const normalizedTitle = toHalfWidth(title); 
+          const fullInfo = (normalizedTitle + (g.category || '')).toLowerCase();
           
-          const isGov = g.category === GuestCategory.GOV_OFFICIAL || ['政府', '議員', '立委', '市長', '縣長', '局長', '局'].some(k => normalizedTitle.includes(k));
+          // 精確政府關鍵字清單
+          const govKeywords = ['政府', '議會', '立委', '市長', '縣長', '局長'];
+          
+          const isGovStrict = govKeywords.some(k => fullInfo.includes(k));
           const isPresident = normalizedTitle.includes('會長') || g.category === GuestCategory.PAST_PRESIDENT;
           const isChairman = normalizedTitle.includes('主席') || g.category === GuestCategory.PAST_CHAIRMAN;
           const isHQ = normalizedTitle.includes('總會') || g.category === GuestCategory.HQ_GUEST;
           const isVisiting = g.category === GuestCategory.VISITING_CHAPTER || 
-                            ['母會', '友會', '兄弟會', '姊妹會', '分會', '友好會', '聯誼會'].some(k => normalizedTitle.includes(k));
+                            ['母會', '友會', '兄弟會', '姊妹會', '分會', '友好', '聯誼'].some(k => normalizedTitle.includes(k));
           
-          if (isGov) groups.gov.push(g);
-          else if (isPresident) groups.presidents.push(g);
-          else if (isChairman) groups.chairmen.push(g);
-          else if (isHQ) groups.hq.push(g);
-          else if (isVisiting) groups.visiting.push(g);
-          else groups.vips.push(g);
+          // 判定規則：
+          // 1. 符合精確政府關鍵字 且 不屬於青商體系 -> 歸入長官區
+          if (isGovStrict && !normalizedTitle.includes('總會') && !normalizedTitle.includes('分會')) {
+              groups.gov.push(g);
+          } else if (isPresident) {
+              groups.presidents.push(g);
+          } else if (isChairman) {
+              groups.chairmen.push(g);
+          } else if (isHQ) {
+              groups.hq.push(g);
+          } else if (isVisiting) {
+              groups.visiting.push(g);
+          } else {
+              groups.vips.push(g);
+          }
       });
 
       const sortListByTime = (l: Guest[]) => l.sort((a,b) => (a.checkInTime || '').localeCompare(b.checkInTime || ''));
@@ -204,7 +216,7 @@ const McPanel: React.FC = () => {
         {/* Lists Content */}
         {activeTab === 'vip' ? (
             <div className="flex flex-col lg:flex-row gap-6 items-start">
-                {/* 待介紹區域 (較大) */}
+                {/* 待介紹區域 */}
                 <div className="bg-white rounded-[2.5rem] shadow-[0_10px_40px_rgba(0,0,0,0.04)] border border-white overflow-hidden flex-[2] w-full">
                     <div className="bg-[#007AFF] px-6 py-5 flex justify-between items-center cursor-pointer" onClick={() => setIsUnintroExpanded(!isUnintroExpanded)}>
                         <div className="flex items-center gap-3 text-white font-black tracking-tight">
@@ -219,7 +231,7 @@ const McPanel: React.FC = () => {
                         <div className="p-4 md:p-8 bg-gray-50/20">
                             {groupedUnintroduced.gov.length > 0 && (
                                 <div className="mb-8">
-                                    <h3 className="text-[10px] font-black text-red-500 uppercase tracking-widest mb-4 border-b border-red-50 pb-2">長官貴賓</h3>
+                                    <h3 className="text-[10px] font-black text-red-500 uppercase tracking-widest mb-4 border-b border-red-50 pb-2">長官貴賓 (政府機關)</h3>
                                     {groupedUnintroduced.gov.map(g => <VipCard key={g.id} guest={g} side="left" onToggle={toggleIntroduced} />)}
                                 </div>
                             )}
@@ -251,7 +263,7 @@ const McPanel: React.FC = () => {
                             )}
                             {groupedUnintroduced.vips.length > 0 && (
                                 <div className="mb-8">
-                                    <h3 className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-4 border-b border-gray-100 pb-2">其他貴賓</h3>
+                                    <h3 className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-4 border-b border-gray-100 pb-2">其他嘉賓</h3>
                                     {groupedUnintroduced.vips.map(g => <VipCard key={g.id} guest={g} side="left" onToggle={toggleIntroduced} />)}
                                 </div>
                             )}
@@ -260,11 +272,11 @@ const McPanel: React.FC = () => {
                     )}
                 </div>
 
-                {/* 已介紹區域 (移動到右側) */}
+                {/* 已介紹區域 */}
                 <div className="bg-gray-200/50 rounded-[2.5rem] border border-transparent overflow-hidden flex-1 w-full lg:max-w-md sticky top-8">
                     <div className="px-6 py-5 flex justify-between items-center cursor-pointer" onClick={() => setIsIntroExpanded(!isIntroExpanded)}>
                         <div className="flex items-center gap-3 text-gray-400 font-black text-[11px] uppercase tracking-wider">
-                            <CheckCircle2 size={16}/> <span>已完成介紹紀錄</span>
+                            <CheckCircle2 size={16}/> <span>已介紹紀錄</span>
                         </div>
                         <div className="flex items-center gap-3">
                             <span className="text-gray-400 text-[11px] font-black tabular-nums">{vipStats.intro}</span>
@@ -284,7 +296,7 @@ const McPanel: React.FC = () => {
         ) : (
             <div className="bg-white rounded-[2.5rem] shadow-sm border border-white overflow-hidden">
                 <div className="px-8 py-6 border-b border-gray-50 font-black text-black text-xl flex justify-between items-center">
-                    <span>本日報到總覽</span>
+                    <span>報到人員總覽</span>
                     <span className="text-[#007AFF] text-[10px] bg-blue-50 px-3 py-1 rounded-full">{presentGuests.length} 人</span>
                 </div>
                 <div className="p-4 space-y-3 bg-gray-50/30">
@@ -296,7 +308,7 @@ const McPanel: React.FC = () => {
                             </div>
                             <div className="flex items-center gap-3 shrink-0">
                                 <span className="text-[10px] font-black bg-gray-100 text-gray-500 px-3 py-1 rounded-lg">{g.category}</span>
-                                {g.isIntroduced && <span className="text-[10px] font-black text-green-600 bg-green-50 px-2 py-1 rounded-lg">已介</span>}
+                                {g.isIntroduced && <span className="text-[10px] font-black text-green-600 bg-green-50 px-2 py-1 rounded-lg">已播報</span>}
                             </div>
                         </div>
                     ))}

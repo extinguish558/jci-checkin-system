@@ -2,7 +2,7 @@
 import React, { useState, useRef } from 'react';
 import { useEvent } from '../context/EventContext';
 import { parseMcFlowFromExcel } from '../services/geminiService';
-import { ListChecks, Upload, CheckCircle2, Circle, Loader2, Trash2, Lock, Unlock, X } from 'lucide-react';
+import { ListChecks, Upload, CheckCircle2, Circle, Loader2, Trash2, Lock, Unlock, Clock, Hash, Presentation, FileText } from 'lucide-react';
 
 const McFlowPanel: React.FC = () => {
   const { settings, toggleMcFlowStep, setMcFlowSteps, isAdmin, loginAdmin, logoutAdmin } = useEvent();
@@ -46,14 +46,16 @@ const McFlowPanel: React.FC = () => {
   const steps = settings.mcFlowSteps || [];
 
   return (
-    <div className="p-4 md:p-8 max-w-2xl mx-auto space-y-6 pb-32 animate-in fade-in duration-500">
+    <div className="p-4 md:p-8 max-w-[1200px] mx-auto space-y-6 pb-32 animate-in fade-in duration-500">
       <input ref={fileInputRef} type="file" className="hidden" onChange={handleFileChange} accept=".xls,.xlsx" />
 
       {/* Header */}
-      <div className="flex justify-between items-start">
+      <div className="flex justify-between items-start mb-6">
         <div className="flex-1">
-          <h2 className="text-2xl font-black text-black tracking-tight">司儀流程</h2>
-          <p className="text-xs font-bold text-gray-400 mt-1 uppercase tracking-wider">MC PROGRAM FLOW</p>
+          <h2 className="text-3xl font-black text-black tracking-tight flex items-center gap-3">
+             司儀流程模式
+          </h2>
+          <p className="text-xs font-bold text-gray-400 mt-1 uppercase tracking-widest">MC PROFESSIONAL PROGRAM FLOW</p>
         </div>
         <div className="flex items-center gap-2">
           {isAdmin && (
@@ -63,75 +65,128 @@ const McFlowPanel: React.FC = () => {
               className="flex items-center gap-2 bg-white px-4 py-3 rounded-2xl shadow-sm border border-gray-50 hover:shadow-md transition-all active:scale-95 text-blue-600 font-black text-sm"
             >
               {isProcessing ? <Loader2 size={18} className="animate-spin" /> : <Upload size={18} />}
-              <span className="hidden md:inline">匯入流程</span>
+              <span className="hidden md:inline">上傳流程 Excel</span>
             </button>
           )}
-          <button onClick={() => isAdmin ? logoutAdmin() : setShowLoginModal(true)} className="p-3 bg-white rounded-2xl shadow-sm transition-all hover:bg-gray-50">
+          <button onClick={() => isAdmin ? logoutAdmin() : setShowLoginModal(true)} className="p-3 bg-white rounded-2xl shadow-sm transition-all hover:bg-gray-50 border border-gray-50">
             {isAdmin ? <Unlock size={20} className="text-[#007AFF]"/> : <Lock size={20} className="text-gray-300"/>}
           </button>
         </div>
       </div>
 
-      {/* Content Area */}
-      <div className="space-y-4">
+      {/* 流程主區塊 */}
+      <div className="space-y-8">
         {steps.length > 0 ? (
           steps.map((step) => (
             <div 
               key={step.id} 
               onClick={() => toggleMcFlowStep(step.id)}
-              className={`p-6 rounded-[2rem] border transition-all cursor-pointer relative overflow-hidden group
+              className={`rounded-[3rem] border transition-all cursor-pointer relative overflow-hidden flex flex-col
                 ${step.isCompleted 
-                  ? 'bg-gray-100/50 border-transparent opacity-60 grayscale' 
-                  : 'bg-white border-white shadow-[0_8px_30px_rgba(0,0,0,0.03)] hover:shadow-xl active:scale-[0.99]'}
+                  ? 'bg-gray-100/60 border-transparent grayscale' 
+                  : 'bg-white border-white shadow-[0_20px_50px_rgba(0,0,0,0.04)] hover:shadow-2xl active:scale-[0.995]'}
               `}
             >
-              <div className="flex items-start gap-5">
-                <div className={`mt-1 shrink-0 ${step.isCompleted ? 'text-green-600' : 'text-blue-500'}`}>
-                  {step.isCompleted ? <CheckCircle2 size={24} strokeWidth={3} /> : <Circle size={24} strokeWidth={3} />}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex flex-col md:flex-row md:items-center gap-2 mb-1">
-                    {step.time && (
-                      <span className={`text-[11px] font-black px-3 py-1 rounded-full w-fit ${step.isCompleted ? 'bg-gray-200 text-gray-500' : 'bg-blue-50 text-blue-600'}`}>
-                        {step.time}
-                      </span>
-                    )}
-                    <h3 className={`text-xl font-black leading-tight truncate ${step.isCompleted ? 'text-gray-400 line-through' : 'text-black'}`}>
-                      {step.title}
-                    </h3>
-                  </div>
-                  {step.description && (
-                    <p className={`text-sm font-medium leading-relaxed mt-2 ${step.isCompleted ? 'text-gray-300' : 'text-gray-500'}`}>
-                      {step.description}
-                    </p>
-                  )}
-                </div>
-              </div>
-              
-              {/* Completed Overlay Hint */}
-              {step.isCompleted && (
-                 <div className="absolute top-4 right-6 text-[10px] font-black text-gray-400 uppercase tracking-widest">
-                    Done
+              {/* Top Section: Seq & Time (並排佈局) */}
+              <div className={`p-6 md:p-8 flex items-center gap-6 border-b border-gray-100/50 ${step.isCompleted ? 'bg-gray-200/20' : 'bg-slate-50/30'}`}>
+                 {/* 序號方塊 (對應藍色圈選 1) */}
+                 <div className={`w-16 h-16 md:w-20 md:h-20 shrink-0 rounded-[1.5rem] flex items-center justify-center font-black text-3xl md:text-4xl shadow-inner border-2 ${step.isCompleted ? 'bg-gray-200 border-gray-300 text-gray-400' : 'bg-white border-blue-50 text-blue-600'}`}>
+                   {step.sequence || '-'}
                  </div>
-              )}
+
+                 {/* 典禮時間 (對應藍色圈選 16:00~16:30) */}
+                 <div className="flex-1">
+                    <div className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-1">典禮時間</div>
+                    <div className={`text-2xl md:text-4xl font-black tabular-nums tracking-tight ${step.isCompleted ? 'text-gray-400' : 'text-slate-900'}`}>
+                      {step.time || '--:--'}
+                    </div>
+                 </div>
+
+                 {/* 完成狀態勾選 */}
+                 <div className={`shrink-0 ${step.isCompleted ? 'text-green-600' : 'text-blue-100'}`}>
+                    {step.isCompleted ? <CheckCircle2 size={36} strokeWidth={3} /> : <Circle size={36} strokeWidth={3} />}
+                 </div>
+              </div>
+
+              {/* Middle Section: Slides Content (對應藍色圈選 63.64th會長...) */}
+              <div className="px-6 py-8 md:px-10 border-b border-gray-100/50">
+                 <div className="flex items-center gap-2 mb-3">
+                    <Presentation size={16} className={step.isCompleted ? 'text-gray-300' : 'text-purple-400'} />
+                    <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">簡報頁面內容 / 項目項目</span>
+                 </div>
+                 <h3 className={`text-2xl md:text-3xl font-black leading-snug break-words ${step.isCompleted ? 'text-gray-400 line-through' : 'text-slate-900'}`}>
+                    {step.slides || step.title}
+                 </h3>
+              </div>
+
+              {/* Bottom Section: MC Script (司儀稿內容) */}
+              <div className={`p-6 md:p-10 relative ${step.isCompleted ? 'bg-gray-50/50' : 'bg-blue-50/20'}`}>
+                 <div className="flex items-center gap-2 mb-4">
+                    <FileText size={16} className={step.isCompleted ? 'text-gray-300' : 'text-blue-500'} />
+                    <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">司儀稿腳本內容</span>
+                 </div>
+                 <div className={`text-lg md:text-2xl font-bold leading-relaxed whitespace-pre-wrap ${step.isCompleted ? 'text-gray-400' : 'text-slate-700'}`}>
+                    {step.script ? (
+                      <div className="space-y-6">
+                         {step.script.split('\n').map((line, i) => {
+                           const isSpeakerA = /^A:/.test(line);
+                           const isSpeakerB = /^B:/.test(line);
+                           const isTime = /^[0-9][0-9]:[0-9][0-9]/.test(line);
+                           
+                           return (
+                             <div 
+                               key={i} 
+                               className={`
+                                 ${isSpeakerA ? 'text-blue-600 font-black bg-blue-50/50 px-3 py-1 rounded-xl' : ''}
+                                 ${isSpeakerB ? 'text-rose-500 font-black bg-rose-50/50 px-3 py-1 rounded-xl' : ''}
+                                 ${isTime ? 'text-slate-400 text-base md:text-lg mt-6' : ''}
+                               `}
+                             >
+                               {line}
+                             </div>
+                           );
+                         })}
+                      </div>
+                    ) : (
+                      <span className="text-gray-300 italic text-sm">（此環節暫時沒有司儀稿資料）</span>
+                    )}
+                 </div>
+                 {step.isCompleted && (
+                   <div className="absolute bottom-6 right-10 text-[10px] font-black text-gray-300 uppercase italic tracking-widest bg-gray-100 px-3 py-1 rounded-lg">
+                     COMPLETED
+                   </div>
+                 )}
+              </div>
             </div>
           ))
         ) : (
-          <div className="py-24 flex flex-col items-center justify-center bg-white/50 rounded-[3rem] border border-white border-dashed">
-            <ListChecks size={48} className="text-gray-200 mb-4" />
-            <p className="text-gray-400 font-bold italic">尚無流程資料</p>
-            {isAdmin && <p className="text-gray-300 text-xs mt-2 font-medium">請點擊上方按鈕匯入 Excel 流程表</p>}
+          <div className="py-48 flex flex-col items-center justify-center bg-white/50 rounded-[4rem] border-4 border-white border-dashed">
+            <div className="w-24 h-24 bg-blue-50 rounded-full flex items-center justify-center mb-6 shadow-sm">
+              <ListChecks size={48} className="text-blue-200" />
+            </div>
+            <p className="text-gray-400 font-black text-2xl">尚未匯入專業司儀流程</p>
+            <p className="text-gray-300 text-base mt-4 font-bold max-w-md text-center">
+               請準備包含「序、時間、簡報頁面、司儀稿」的 Excel 檔案
+            </p>
+            {isAdmin && (
+               <button 
+                 onClick={() => fileInputRef.current?.click()}
+                 className="mt-10 px-10 py-5 bg-blue-600 text-white rounded-[2rem] font-black text-lg shadow-2xl shadow-blue-100 hover:scale-105 active:scale-95 transition-all"
+               >
+                 開始匯入 Excel
+               </button>
+            )}
           </div>
         )}
       </div>
 
       {isAdmin && steps.length > 0 && (
-        <div className="pt-8 flex justify-center">
+        <div className="pt-16 flex justify-center">
            <button 
             onClick={() => confirm('確定要清空所有流程嗎？') && setMcFlowSteps([])}
-            className="flex items-center gap-2 text-red-500/50 hover:text-red-500 text-xs font-black transition-colors"
+            className="flex items-center gap-2 text-red-500/40 hover:text-red-500 text-sm font-black transition-all hover:bg-red-50 px-8 py-4 rounded-[1.5rem]"
            >
-              <Trash2 size={14} /> 清空所有流程
+              <Trash2 size={18} /> 刪除目前流程清單
            </button>
         </div>
       )}
@@ -160,15 +215,15 @@ const McFlowPanel: React.FC = () => {
       )}
 
       {isProcessing && (
-        <div className="fixed inset-0 ios-blur bg-white/60 z-[400] flex flex-col items-center justify-center gap-4">
-           <div className="relative w-24 h-24">
-              <div className="absolute inset-0 border-8 border-blue-50 rounded-full"></div>
-              <div className="absolute inset-0 border-8 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
-              <div className="absolute inset-0 flex items-center justify-center text-blue-500"><Loader2 size={32} className="animate-spin" /></div>
+        <div className="fixed inset-0 ios-blur bg-white/60 z-[400] flex flex-col items-center justify-center gap-8">
+           <div className="relative w-32 h-32">
+              <div className="absolute inset-0 border-[12px] border-blue-50 rounded-full"></div>
+              <div className="absolute inset-0 border-[12px] border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+              <div className="absolute inset-0 flex items-center justify-center text-blue-600"><Loader2 size={40} className="animate-spin" /></div>
            </div>
            <div className="text-center">
-             <h4 className="text-xl font-black text-black">正在解析流程</h4>
-             <p className="text-gray-400 font-bold text-sm mt-1">讀取 Excel 資料中...</p>
+             <h4 className="text-2xl font-black text-black">正在解析流程結構</h4>
+             <p className="text-gray-400 font-bold text-sm mt-2 tracking-wide">依照您的 Excel 標題自動匹配中...</p>
            </div>
         </div>
       )}
