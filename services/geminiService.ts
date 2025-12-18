@@ -1,3 +1,4 @@
+
 import { GoogleGenAI, Type } from "@google/genai";
 import { read, utils, writeFile } from "xlsx";
 import { GuestCategory, ParsedGuestDraft, Guest } from "../types";
@@ -63,7 +64,6 @@ interface ColumnSection {
 }
 
 // Blocklist for values that look like headers but appear in data rows
-// These are normalized (no spaces, lowercase)
 const INVALID_VALUES_NORMALIZED = [
     '姓名', 'name', 'name(english)', '會員姓名',
     '編號', '序號', 'code', 'id', 'no', 'no.',
@@ -76,94 +76,113 @@ const INVALID_VALUES_NORMALIZED = [
 
 // EXCEL EXPORT FUNCTION
 export const exportToExcel = (guests: Guest[], eventName: string) => {
-    // 1. Check-in Sheet Data
-    const checkInData = guests.map(g => ({
-        '編號': g.code || '',
-        '姓名': g.name,
-        '職稱': g.title,
-        '類別': g.category,
-        '備註': g.note || '',
-        '狀態': g.isCheckedIn ? '已報到' : '未報到',
-        'R1': g.attendedRounds?.includes(1) ? 'V' : '',
-        'R2': g.attendedRounds?.includes(2) ? 'V' : '',
-        '報到時間': g.checkInTime ? new Date(g.checkInTime).toLocaleString('zh-TW') : ''
-    }));
+    const wb = utils.book_new();
+    
+    // 定義 UI 顯示的分組定義
+    const visitingKeywords = ['母會', '兄弟會', '分會', '友好會', '姐妹會', '姊妹會', '聯誼會'];
+    const hqKeywords = ['總會'];
 
-    // 2. Winners Sheet Data
+    const getGroupKey = (g: Guest): string => {
+        const title = g.title || '';
+        const category = g.category;
+        if (category === GuestCategory.MEMBER_YB) return '會友 YB';
+        if (category === GuestCategory.MEMBER_OB) return '特友 OB';
+        if (category === GuestCategory.HQ_GUEST || hqKeywords.some(k => title.includes(k))) return '總會貴賓';
+        if (category === GuestCategory.VISITING_CHAPTER || visitingKeywords.some(k => title.includes(k))) return '友會貴賓';
+        return '貴賓 VIP';
+    };
+
+    // 使用者指定的排序順序
+    const groupOrder = ['會友 YB', '特友 OB', '總會貴賓', '友會貴賓', '貴賓 VIP'];
+
+    // 依據分組進行匯出
+    groupOrder.forEach(groupName => {
+        const groupGuests = guests.filter(g => getGroupKey(g) === groupName);
+        if (groupGuests.length > 0) {
+            // 關鍵更新：分頁內依據編號 (Code) 進行自然排序
+            const sortedGuests = [...groupGuests].sort((a, b) => {
+                const codeA = a.code || '';
+                const codeB = b.code || '';
+                if (codeA || codeB) {
+                    return codeA.localeCompare(codeB, undefined, { numeric: true, sensitivity: 'base' });
+                }
+                return (a.checkInTime || '').localeCompare(b.checkInTime || '');
+            });
+
+            const data = sortedGuests.map(g => ({
+                '編號': g.code || '',
+                '姓名': g.name,
+                '職稱': g.title,
+                '原始類別': g.category,
+                '備註': g.note || '',
+                '狀態': g.isCheckedIn ? '已報到' : '未報到',
+                'R1': g.attendedRounds?.includes(1) ? 'V' : '',
+                'R2': g.attendedRounds?.includes(2) ? 'V' : '',
+                '報到時間': g.checkInTime ? new Date(g.checkInTime).toLocaleString('zh-TW') : ''
+            }));
+
+            const ws = utils.json_to_sheet(data);
+            const wscols = [{wch: 10}, {wch: 15}, {wch: 25}, {wch: 15}, {wch: 20}, {wch: 10}, {wch: 5}, {wch: 5}, {wch: 25}];
+            ws['!cols'] = wscols;
+            
+            utils.book_append_sheet(wb, ws, groupName);
+        }
+    });
+
+    // 2. 中獎名單分頁
     const winnersData = guests
         .filter(g => g.isWinner || (g.wonRounds && g.wonRounds.length > 0))
         .flatMap(g => {
-            // Determine all rounds won
             const rounds = g.wonRounds && g.wonRounds.length > 0 
                 ? g.wonRounds 
                 : (g.winRound ? [g.winRound] : []);
             
-            // Create a row for each win
             return rounds.map(r => ({
                 '中獎輪次': `第 ${r} 輪`,
                 '姓名': g.name,
                 '職稱': g.title,
-                '類別': g.category,
+                '分組': getGroupKey(g),
                 '編號': g.code || ''
             }));
         })
         .sort((a, b) => {
-             // Sort by round, then by name
              const roundA = parseInt(a['中獎輪次'].replace(/\D/g, '')) || 0;
              const roundB = parseInt(b['中獎輪次'].replace(/\D/g, '')) || 0;
-             return roundA - roundB;
+             if (roundA !== roundB) return roundA - roundB;
+             // 同輪次中獎者依編號排序
+             return a['編號'].localeCompare(b['編號'], undefined, { numeric: true });
         });
 
-    const wb = utils.book_new();
-    const ws1 = utils.json_to_sheet(checkInData);
-    const ws2 = utils.json_to_sheet(winnersData);
-
-    // Set column widths loosely
-    const wscols = [{wch: 10}, {wch: 15}, {wch: 20}, {wch: 15}, {wch: 20}, {wch: 10}, {wch: 5}, {wch: 5}, {wch: 25}];
-    ws1['!cols'] = wscols;
-    ws2['!cols'] = [{wch: 15}, {wch: 15}, {wch: 20}, {wch: 15}, {wch: 10}];
-
-    utils.book_append_sheet(wb, ws1, "報到清單");
-    utils.book_append_sheet(wb, ws2, "中獎名單");
+    if (winnersData.length > 0) {
+        const wsWinners = utils.json_to_sheet(winnersData);
+        wsWinners['!cols'] = [{wch: 15}, {wch: 15}, {wch: 25}, {wch: 15}, {wch: 10}];
+        utils.book_append_sheet(wb, wsWinners, "中獎名單紀錄");
+    }
 
     const dateStr = new Date().toISOString().split('T')[0];
     const safeName = eventName.replace(/[^\w\s\u4e00-\u9fa5]/gi, '').trim() || 'Event';
-    writeFile(wb, `${safeName}_報到與中獎名單_${dateStr}.xlsx`);
+    writeFile(wb, `${safeName}_分組報到明細_${dateStr}.xlsx`);
 };
 
-// DIRECT EXCEL PARSER (Local) - Updated to support Multiple Sheets & SPLIT COLUMNS (Left/Right)
+// DIRECT EXCEL PARSER (Local)
 const parseExcelLocally = (base64Data: string): ParsedGuestDraft[] => {
     try {
         const workbook = read(base64Data, { type: 'base64' });
         const allDrafts: ParsedGuestDraft[] = [];
 
-        console.log(`Excel loaded. Found ${workbook.SheetNames.length} sheets:`, workbook.SheetNames);
-
-        // Store the column structure from the previous sheet to use as fallback
-        let globalSections: ColumnSection[] | null = null;
-
-        // Iterate through ALL sheets
         for (const sheetName of workbook.SheetNames) {
             const worksheet = workbook.Sheets[sheetName];
-            
-            // Convert to JSON array of arrays (header: 1 means raw array)
             const jsonData = utils.sheet_to_json<any[]>(worksheet, { header: 1 });
             
-            if (jsonData.length === 0) {
-                console.log(`Sheet "${sheetName}" is empty, skipping.`);
-                continue;
-            }
+            if (jsonData.length === 0) continue;
 
             let headerRowIndex = -1;
             let currentSections: ColumnSection[] = [];
             
-            // 1. Scan for headers in this sheet
-            // We look for ANY cell containing "姓名" or "Name"
             for (let i = 0; i < Math.min(jsonData.length, 50); i++) {
                 const row = jsonData[i];
                 if (!row) continue;
                 
-                // Find all indices where 'Name' appears (handling split layouts)
                 const nameIndices: number[] = [];
                 row.forEach((cell: any, idx: number) => {
                     const txt = String(cell || '').trim();
@@ -174,117 +193,53 @@ const parseExcelLocally = (base64Data: string): ParsedGuestDraft[] => {
 
                 if (nameIndices.length > 0) {
                     headerRowIndex = i;
-                    
-                    // For EACH "Name" column found, identify its surrounding columns (Code, Title, etc.)
-                    // We look in a LARGER window around the Name column (e.g. +/- 10 columns) to catch far-away IDs
                     currentSections = nameIndices.map(nameIdx => {
-                        const section: ColumnSection = {
-                            nameIdx: nameIdx,
-                            codeIdx: -1,
-                            titleIdx: -1,
-                            noteIdx: -1,
-                            categoryIdx: -1
-                        };
-
-                        // Search window: 5 columns left, 8 columns right (Widened)
+                        const section: ColumnSection = { nameIdx: nameIdx, codeIdx: -1, titleIdx: -1, noteIdx: -1, categoryIdx: -1 };
                         const start = Math.max(0, nameIdx - 5);
                         const end = Math.min(row.length, nameIdx + 8);
-
                         for (let c = start; c < end; c++) {
-                            if (c === nameIdx) continue; // Skip self
-                            
+                            if (c === nameIdx) continue;
                             const txt = String(row[c] || '').trim();
                             const txtLower = txt.toLowerCase();
-
-                            if (txt.includes('編號') || txt.includes('序號') || /^(code|id|no\.?)$/i.test(txt)) {
-                                section.codeIdx = c;
-                            }
+                            if (txt.includes('編號') || txt.includes('序號') || /^(code|id|no\.?)$/i.test(txt)) section.codeIdx = c;
                             else if (txt.includes('職稱') || /title/i.test(txtLower)) section.titleIdx = c;
                             else if (txt.includes('備註') || /note/i.test(txtLower)) section.noteIdx = c;
                             else if (txt.includes('類別') || /category/i.test(txtLower)) section.categoryIdx = c;
                         }
-                        
                         return section;
                     });
-                    
-                    // Update global fallback
-                    globalSections = currentSections;
                     break;
                 }
             }
 
-            // 2. Logic to determine start row and structure
-            let startRow = 0;
-            let finalSections: ColumnSection[] = [];
+            if (headerRowIndex === -1) continue;
 
-            if (headerRowIndex !== -1 && currentSections.length > 0) {
-                // Headers found in this sheet
-                console.log(`[Sheet: ${sheetName}] Headers found at row ${headerRowIndex}. Layout has ${currentSections.length} sections.`);
-                startRow = headerRowIndex + 1;
-                finalSections = currentSections;
-            } else if (globalSections) {
-                // Use previous sheet's structure
-                console.log(`[Sheet: ${sheetName}] No headers found. Inheriting structure (${globalSections.length} sections) from previous sheet.`);
-                startRow = 0;
-                finalSections = globalSections;
-            } else {
-                console.warn(`[Sheet: ${sheetName}] Skipping - No headers found.`);
-                continue;
-            }
-
-            // 3. Process data rows
-            let sheetCount = 0;
-            for (let i = startRow; i < jsonData.length; i++) {
+            for (let i = headerRowIndex + 1; i < jsonData.length; i++) {
                 const row = jsonData[i];
                 if (!row || row.length === 0) continue;
 
-                // Iterate through each SECTION (Left side, Right side, etc.)
-                for (const section of finalSections) {
+                for (const section of currentSections) {
                     const rawName = String(row[section.nameIdx] || '').trim();
-                    
-                    // VALIDATION LOGIC ENHANCED:
                     if (!rawName) continue;
                     
-                    // Normalize the name (remove spaces, lowercase) to strictly filter headers
                     const normalizedName = rawName.replace(/\s+/g, '').toLowerCase();
-
-                    // Check strictly against normalized blacklist
                     if (INVALID_VALUES_NORMALIZED.includes(normalizedName)) continue;
-
-                    // Name shouldn't be just symbols (optional, but good for cleanup)
-                    if (rawName.length < 2 && !/^[\u4e00-\u9fa5a-zA-Z0-9]+$/.test(rawName)) continue;
 
                     const code = section.codeIdx !== -1 ? String(row[section.codeIdx] || '').trim() : '';
                     const title = section.titleIdx !== -1 ? String(row[section.titleIdx] || '').trim() : '';
                     const note = section.noteIdx !== -1 ? String(row[section.noteIdx] || '').trim() : '';
                     
-                    // Category logic
                     let category = GuestCategory.OTHER;
                     if (section.categoryIdx !== -1 && row[section.categoryIdx]) {
                         category = detectCategory(String(row[section.categoryIdx]));
                     } else {
-                        // Auto-detect from Title, Note, or Sheet Name?
-                        // If no explicit category column, check text.
-                        // Also check if Sheet Name implies category (User often separates sheets by category)
-                        const combinedInfo = `${title} ${note} ${sheetName}`; 
-                        category = detectCategory(combinedInfo);
+                        category = detectCategory(`${title} ${note} ${sheetName}`);
                     }
 
-                    allDrafts.push({
-                        code,
-                        name: rawName,
-                        title,
-                        category,
-                        note,
-                        hasSignature: false
-                    });
-                    sheetCount++;
+                    allDrafts.push({ code, name: rawName, title, category, note, hasSignature: false });
                 }
             }
-            console.log(`[Sheet: ${sheetName}] Parsed ${sheetCount} records.`);
         }
-        
-        console.log(`Total parsed records from all sheets: ${allDrafts.length}`);
         return allDrafts;
     } catch (e) {
         console.error("Local Excel Parse Error:", e);
@@ -298,11 +253,9 @@ export const parseCheckInSheet = async (
 ): Promise<ParsedGuestDraft[]> => {
   try {
     if (files.length === 0) return [];
-
     const results: ParsedGuestDraft[] = [];
     const aiParts: any[] = [];
 
-    // Separate Excel files for local processing vs Images for AI processing
     for (const file of files) {
         const isSpreadsheet = 
             file.mimeType === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
@@ -310,36 +263,18 @@ export const parseCheckInSheet = async (
             file.mimeType === 'text/csv';
 
         if (isSpreadsheet) {
-            // STRATEGY CHANGE: Parse Excel LOCALLY to handle large datasets (200+ rows) reliably
-            console.log("Parsing spreadsheet locally...");
             const localDrafts = parseExcelLocally(file.data);
             results.push(...localDrafts);
         } else {
-            // Collect images/PDFs for AI
-            aiParts.push({
-                inlineData: {
-                    mimeType: file.mimeType,
-                    data: file.data
-                }
-            });
+            aiParts.push({ inlineData: { mimeType: file.mimeType, data: file.data } });
         }
     }
 
-    // If we have images, send them to Gemini
     if (aiParts.length > 0) {
-        if (!ai) {
-             throw new Error("Missing API Key for Image Recognition");
-        }
-        
-        // Add instruction
-        aiParts.push({
-            text: mode === 'ROSTER' 
-                ? "Extract ALL names from these documents. Ignore signatures." 
-                : SYSTEM_INSTRUCTION_CHECKIN
-        });
-
+        if (!ai) throw new Error("Missing API Key for Image Recognition");
+        aiParts.push({ text: mode === 'ROSTER' ? "Extract ALL names from these documents. Ignore signatures." : SYSTEM_INSTRUCTION_CHECKIN });
         const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash',
+            model: 'gemini-3-flash-preview',
             contents: { parts: aiParts },
             config: {
                 responseMimeType: "application/json",
@@ -360,19 +295,15 @@ export const parseCheckInSheet = async (
                 }
             }
         });
-
         const text = response.text;
         if (text) {
             const aiDrafts = JSON.parse(text) as ParsedGuestDraft[];
             results.push(...aiDrafts);
         }
     }
-
     return results;
   } catch (error) {
     console.error("Parsing Error:", error);
-    // If partial results exist (e.g. from Excel), return them instead of failing completely
-    // But if logic failed, throw friendly error
     throw new Error("處理檔案失敗。如果是大量文字資料，請確認使用 Excel 格式上傳會更穩定。");
   }
 };

@@ -1,14 +1,14 @@
-import React, { useState, useRef, useMemo, useEffect } from 'react';
+
+import React, { useState, useRef, useMemo, useEffect, useCallback } from 'react';
 import { useEvent } from '../context/EventContext';
 import { parseCheckInSheet, ParseMode, FileInput, exportToExcel } from '../services/geminiService';
 import { ParsedGuestDraft, GuestCategory, Guest } from '../types';
-import { Camera, RefreshCcw, Save, Plus, UserPlus, FileCheck, Type, Users, UserX, Clock, Settings, Trash2, PenLine, FileText, UploadCloud, ChevronRight, CheckSquare, X, Edit, AlertCircle, UserMinus, Search, Hash, Cloud, CloudOff, AlertTriangle, Lock, Unlock, Circle, Upload, Shield, Download } from 'lucide-react';
+import { Camera, RefreshCcw, Save, Plus, UserPlus, FileCheck, Type, Users, UserX, Clock, Settings, Trash2, PenLine, FileText, UploadCloud, ChevronRight, CheckSquare, X, Edit, AlertCircle, UserMinus, Search, Hash, Cloud, CloudOff, AlertTriangle, Lock, Unlock, Circle, Upload, Shield, Download, ChevronDown, ChevronUp, LayoutGrid, Globe, Handshake, RotateCcw, Loader2 } from 'lucide-react';
 
 interface ReviewGuest extends ParsedGuestDraft {
   isSelected: boolean;
 }
 
-// For manual entry
 interface ManualEntryRow {
   code: string;
   name: string;
@@ -21,44 +21,29 @@ const AdminPanel: React.FC = () => {
   const { 
       settings, updateSettings, addGuestsFromDraft, updateGuestInfo, guests, deleteGuest, 
       toggleCheckInRound, clearGuestCheckIn, isCloudConnected, connectionError, clearAllData, 
-      isAdmin, loginAdmin, logoutAdmin, uploadAllLocalDataToCloud, usingLocalDataProtection 
+      isAdmin, loginAdmin, logoutAdmin, uploadAllLocalDataToCloud, usingLocalDataProtection,
+      clearAllCheckIns, clearCheckInsForIds
   } = useEvent();
 
   const [isProcessing, setIsProcessing] = useState(false);
+  const [isResetting, setIsResetting] = useState(false);
   const [draftGuests, setDraftGuests] = useState<ReviewGuest[]>([]);
   const [importMode, setImportMode] = useState<ParseMode>('CHECK_IN'); 
   const [progressMsg, setProgressMsg] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [currentTime, setCurrentTime] = useState(new Date());
-  
-  // Login Modal State
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [loginPassword, setLoginPassword] = useState("");
-
-  // Edit Modal State
   const [editingGuest, setEditingGuest] = useState<Guest | null>(null);
   
-  // Custom Confirm Modal State
-  const [confirmModal, setConfirmModal] = useState<{
-      isOpen: boolean;
-      type: 'DELETE_ONE' | 'CLEAR_ALL' | 'FORCE_SYNC';
-      step: 1 | 2; 
-      data?: { id: string; name: string };
-  }>({ isOpen: false, type: 'DELETE_ONE', step: 1 });
-  
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [activeTab, setActiveTab] = useState<string>('YB');
 
-  // Manual Entry State
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [isManualEntryOpen, setIsManualEntryOpen] = useState(false);
   const [manualEntries, setManualEntries] = useState<ManualEntryRow[]>([
-    { code: '', name: '', title: '', category: GuestCategory.OTHER, note: '' },
-    { code: '', name: '', title: '', category: GuestCategory.OTHER, note: '' },
     { code: '', name: '', title: '', category: GuestCategory.OTHER, note: '' }
   ]);
-  // 0: None, 1: R1, 2: R2
-  const [manualCheckInTarget, setManualCheckInTarget] = useState<number>(0);
 
-  // Live Clock Effect
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
     return () => clearInterval(timer);
@@ -74,31 +59,14 @@ const AdminPanel: React.FC = () => {
       }
   };
 
-  const mergeGuests = (currentList: ReviewGuest[], newList: ReviewGuest[]): ReviewGuest[] => {
-    const map = new Map<string, ReviewGuest>();
-    currentList.forEach(guest => { if (guest.name) map.set(guest.name.trim(), guest); });
-    newList.forEach(guest => {
-        const key = guest.name.trim();
-        if (!key) return;
-        const existing = map.get(key);
-        if (existing) {
-            // Keep existing signature if true, otherwise take new
-            map.set(key, { ...existing, ...guest, hasSignature: existing.hasSignature || guest.hasSignature });
-        } else {
-            map.set(key, guest);
-        }
-    });
-    return Array.from(map.values());
-  };
-
   const triggerFileUpload = (mode: ParseMode) => {
       if (!isAdmin && mode === 'ROSTER') {
-          alert("請先登入管理員權限以執行此操作。");
+          alert("請先登入管理員權限以執行名單匯入。");
           return;
       }
       setImportMode(mode);
       if (fileInputRef.current) {
-          fileInputRef.current.value = ''; // Reset input to allow same file selection
+          fileInputRef.current.value = '';
           fileInputRef.current.click();
       }
   }
@@ -111,933 +79,502 @@ const AdminPanel: React.FC = () => {
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
-
     setIsProcessing(true);
-    setProgressMsg('準備檔案中...');
-    setDraftGuests([]); 
-    const newDrafts: ReviewGuest[] = [];
-
-    const readFileAsBase64 = (file: File): Promise<FileInput> => {
-      return new Promise((resolve) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve({
-            data: (reader.result as string).split(',')[1],
-            mimeType: file.type || 'application/octet-stream' // Fallback
+    setProgressMsg('正在解析檔案...');
+    try {
+      const readFileAsBase64 = (file: File): Promise<FileInput> => {
+        return new Promise((resolve) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve({
+              data: (reader.result as string).split(',')[1],
+              mimeType: file.type || 'application/octet-stream'
+          });
+          reader.readAsDataURL(file);
         });
-        reader.readAsDataURL(file);
-      });
-    };
-
-    try {
+      };
       const fileDataList = await Promise.all(Array.from(files).map(readFileAsBase64));
-
-      const BATCH_SIZE = 5;
-      const totalBatches = Math.ceil(fileDataList.length / BATCH_SIZE);
-
-      for (let i = 0; i < fileDataList.length; i += BATCH_SIZE) {
-          const batchIndex = Math.floor(i / BATCH_SIZE) + 1;
-          setProgressMsg(`正在分析第 ${batchIndex} / ${totalBatches} 批檔案 (AI 處理中)...`);
-          
-          const batch = fileDataList.slice(i, i + BATCH_SIZE);
-          
-          try {
-              const results = await parseCheckInSheet(batch, importMode);
-              const mapped = results.map(d => ({ ...d, isSelected: true }));
-              newDrafts.push(...mapped);
-          } catch (error) {
-              console.error(`Error processing batch ${batchIndex}:`, error);
-          }
-      }
-
-      if (newDrafts.length > 0) {
-          setDraftGuests(prev => mergeGuests(prev, newDrafts)); 
+      const results = await parseCheckInSheet(fileDataList, importMode);
+      if (results.length > 0) {
+          const mapped = results.map(d => ({ ...d, isSelected: true }));
+          setDraftGuests(mapped);
       } else {
-          alert("未能辨識出任何資料。\n\n可能原因：\n1. 圖片模糊或無文字\n2. Excel 檔案缺少「姓名」欄位\n3. AI 無法讀取內容 (請確認 API Key 設定)");
+          alert("未能辨識出任何資料。");
       }
-
-    } catch (err: any) {
-      console.error(err);
-      alert(`處理檔案時發生錯誤：\n${err.message || '未知錯誤'}\n\n如果您剛設定 API Key，請記得在 Vercel 點擊 Redeploy。`);
-    } finally {
+    } catch (err: any) { alert(`錯誤：${err.message}`); } finally {
       setIsProcessing(false);
-      setProgressMsg('');
-      if (fileInputRef.current) fileInputRef.current.value = '';
     }
   };
 
-  const handleConfirmDraft = async () => {
-    const selectedDrafts = draftGuests.filter(d => d.isSelected);
-    if (selectedDrafts.length === 0) return alert("請至少勾選一位");
-    if (selectedDrafts.some(d => !d.name.trim())) return alert("請輸入姓名");
-    
-    // Use current time
-    const checkInDate = new Date();
-    
-    setIsProcessing(true);
-    setProgressMsg("正在匯入名單...");
+  const getTargetGroup = useCallback((g: Guest): string => {
+      const title = g.title || '';
+      const category = (g.category || '').toString();
+      const visitingKeywords = ['母會', '兄弟會', '分會', '友好會', '姐妹會', '姊妹會', '聯誼會'];
+      const hqKeywords = ['總會'];
+      
+      if (category.includes('YB') || category.includes('會友')) return 'YB';
+      if (category.includes('OB') || category.includes('特友')) return 'OB';
+      if (category.includes('總會貴賓') || hqKeywords.some(k => title.includes(k))) return 'HQ';
+      if (category.includes('友會') || visitingKeywords.some(k => title.includes(k))) return 'VISITING';
+      return 'VIP';
+  }, []);
 
-    try {
-        await addGuestsFromDraft(selectedDrafts, checkInDate);
-        setDraftGuests([]);
-        alert(`成功匯入 ${selectedDrafts.length} 筆資料`);
-    } catch (e: any) {
-        alert("匯入發生錯誤：" + e.message);
-    } finally {
-        setIsProcessing(false);
-        setProgressMsg("");
-    }
-  };
+  const groupedData = useMemo(() => {
+      const search = searchTerm.trim().toLowerCase();
+      const filtered = guests.filter(g => 
+          g.name.toLowerCase().includes(search) || 
+          g.title.toLowerCase().includes(search) || 
+          (g.code && g.code.toLowerCase().includes(search))
+      );
 
-  // Enhanced CheckInButton
-  const CheckInButton = ({ isActive, onClick, theme }: { isActive: boolean, onClick: () => void, theme: 'blue' | 'purple' }) => {
-    const isBlue = theme === 'blue';
-    const activeClass = isBlue 
-        ? 'bg-blue-600 border-blue-600 text-white' 
-        : 'bg-purple-600 border-purple-600 text-white';
-    
-    const inactiveClass = isBlue
-        ? 'bg-blue-50/50 border-blue-200 text-blue-400 hover:bg-blue-100 hover:text-blue-600 hover:border-blue-400'
-        : 'bg-purple-50/50 border-purple-200 text-purple-400 hover:bg-purple-100 hover:text-purple-600 hover:border-purple-400';
+      const groupConfig = [
+        { key: 'YB', title: '會友 YB', color: 'text-yellow-600', bgColor: 'bg-yellow-50', icon: LayoutGrid },
+        { key: 'OB', title: '特友 OB', color: 'text-orange-600', bgColor: 'bg-orange-50', icon: Clock },
+        { key: 'HQ', title: '總會貴賓', color: 'text-indigo-600', bgColor: 'bg-indigo-50', icon: Globe },
+        { key: 'VISITING', title: '友會貴賓', color: 'text-emerald-600', bgColor: 'bg-emerald-50', icon: Handshake },
+        { key: 'VIP', title: '貴賓 VIP', color: 'text-blue-600', bgColor: 'bg-blue-50', icon: Shield },
+      ];
 
+      return groupConfig.map(config => {
+          const list = filtered.filter(g => getTargetGroup(g) === config.key);
+          const sortedList = [...list].sort((a, b) => {
+              const codeA = a.code || '';
+              const codeB = b.code || '';
+              if (codeA || codeB) {
+                  return codeA.localeCompare(codeB, undefined, { numeric: true, sensitivity: 'base' });
+              }
+              return (a.checkInTime || '').localeCompare(b.checkInTime || '');
+          });
+          return {
+              ...config,
+              list: sortedList,
+              checkedCount: sortedList.filter(g => g.isCheckedIn).length,
+              totalCount: sortedList.length
+          };
+      });
+  }, [guests, searchTerm, getTargetGroup]);
+
+  const CheckInButton = ({ isActive, onClick, theme, round }: { isActive: boolean, onClick: () => void, theme: 'blue' | 'purple', round: number }) => {
+    const activeClass = theme === 'blue' ? 'bg-blue-600 text-white border-blue-600' : 'bg-purple-600 text-white border-purple-600';
     return (
         <button 
-            onClick={(e) => { e.stopPropagation(); onClick(); }}
-            className={`
-                w-full py-2 px-1 rounded-lg font-bold text-sm transition-all border-2
-                flex items-center justify-center gap-1 shadow-sm
-                ${isActive 
-                    ? `${activeClass} scale-105 shadow-md` 
-                    : inactiveClass}
-            `}
+          onClick={(e) => { e.stopPropagation(); onClick(); }} 
+          className={`w-full py-1.5 md:py-4 px-0.5 md:px-2 rounded-lg md:rounded-xl font-black text-[8px] md:text-sm transition-all border-2 flex items-center justify-center gap-0.5 md:gap-2 ${isActive ? activeClass : 'bg-white text-slate-300 border-slate-100 hover:border-slate-200 shadow-sm'}`}
         >
-            {isActive ? (
-                <>
-                    <CheckSquare size={18} className="stroke-[3px]" /> 已到
-                </>
-            ) : (
-                <>
-                    <div className={`w-4 h-4 rounded border-2 border-current opacity-60`}></div> 未到
-                </>
-            )}
+            {isActive ? <CheckSquare size={10} className="md:w-4 md:h-4" /> : <div className="w-2.5 h-2.5 md:w-4 md:h-4 rounded-sm md:rounded-md border-2 border-current opacity-30"></div>}
+            <span className="whitespace-nowrap">{isActive ? '已到' : '未到'}</span>
         </button>
     );
   };
 
-  const handleSaveEdit = () => {
-      if (!editingGuest) return;
-      if (!editingGuest.name.trim()) return alert("姓名不能為空");
-      
-      updateGuestInfo(editingGuest.id, {
-          code: editingGuest.code,
-          name: editingGuest.name,
-          title: editingGuest.title,
-          category: editingGuest.category,
-          note: editingGuest.note
-      });
-      setEditingGuest(null);
+  const handleDownloadExcel = () => exportToExcel(guests, settings.eventName);
+
+  const handleResetCurrentTab = async () => {
+    if (isResetting) return;
+    const currentTabTitle = groupedData.find(g => g.key === activeTab)?.title || activeTab;
+    const idsToReset = guests.filter(g => getTargetGroup(g) === activeTab).map(g => g.id);
+    if (idsToReset.length === 0) {
+        alert(`目前的「${currentTabTitle}」分頁中沒有任何人員。`);
+        return;
+    }
+    if (confirm(`確定要重置「${currentTabTitle}」共 ${idsToReset.length} 位人員的報到狀態嗎？\n\n人員名單會保留，但 R1/R2 的報到紀錄將被清空。`)) {
+        setIsResetting(true);
+        try {
+            await clearCheckInsForIds(idsToReset);
+            alert("已完成重置。");
+        } catch (e: any) {
+            alert("重置失敗: " + e.message);
+        } finally {
+            setIsResetting(false);
+        }
+    }
   };
 
-  const updateManualEntry = (index: number, field: keyof ManualEntryRow, value: string) => {
-      const newEntries = [...manualEntries];
-      newEntries[index] = { ...newEntries[index], [field]: value };
-      setManualEntries(newEntries);
+  const handleResetCheckIn = async () => {
+    if (isResetting) return;
+    if (confirm("⚠️ 警告：確定要重置「所有分頁」的人員報到狀態嗎？\n\n此操作會清空全體人員的 R1/R2 報到紀錄。")) {
+        setIsResetting(true);
+        try {
+            await clearAllCheckIns();
+            alert("已完成全體重置。");
+        } catch (e: any) {
+            alert("重置失敗: " + e.message);
+        } finally {
+            setIsResetting(false);
+        }
+    }
   };
 
-  const addManualRow = () => {
-      setManualEntries([...manualEntries, { code: '', name: '', title: '', category: GuestCategory.OTHER, note: '' }]);
-  };
-
-  const removeManualRow = (index: number) => {
-      setManualEntries(manualEntries.filter((_, i) => i !== index));
-  };
-
-  const submitManualEntries = async () => {
-      const validEntries = manualEntries.filter(e => e.name.trim() !== '');
-      if (validEntries.length === 0) return alert('請至少輸入一位人員姓名');
-
-      const checkInDate = new Date();
-
-      const drafts: ParsedGuestDraft[] = validEntries.map(e => ({
-          code: e.code.trim(),
-          name: e.name.trim(),
-          title: e.title.trim(),
-          category: e.category,
-          note: e.note.trim(),
-          hasSignature: manualCheckInTarget !== 0,
-          forcedRound: manualCheckInTarget !== 0 ? manualCheckInTarget : undefined
-      }));
-      
-      setIsProcessing(true);
-      try {
-          await addGuestsFromDraft(drafts, checkInDate);
-          setManualEntries([{ code: '', name: '', title: '', category: GuestCategory.OTHER, note: '' }]);
-          alert(`已新增 ${validEntries.length} 位人員`);
-      } catch (e: any) {
-          alert("新增失敗: " + e.message);
-      } finally {
-          setIsProcessing(false);
-      }
-  };
-
-  const handleDownloadExcel = () => {
-      if (guests.length === 0) return alert("目前沒有資料可以下載");
-      exportToExcel(guests, settings.eventName);
-  }
-
-  // List Data
-  const stats = useMemo(() => {
-    const total = guests.length;
-    const checkedIn = guests.filter(g => g.isCheckedIn).length;
-    
-    // Categorized Stats
-    const obGuests = guests.filter(g => g.category === GuestCategory.MEMBER_OB);
-    const ybGuests = guests.filter(g => g.category === GuestCategory.MEMBER_YB);
-    const vipGuests = guests.filter(g => g.category !== GuestCategory.MEMBER_OB && g.category !== GuestCategory.MEMBER_YB);
-
-    return { 
-        total, 
-        checkedIn, 
-        absent: total - checkedIn,
-        ob: { total: obGuests.length, checkedIn: obGuests.filter(g => g.isCheckedIn).length },
-        yb: { total: ybGuests.length, checkedIn: ybGuests.filter(g => g.isCheckedIn).length },
-        vip: { total: vipGuests.length, checkedIn: vipGuests.filter(g => g.isCheckedIn).length },
-    };
-  }, [guests]);
-
-  const filteredGuests = useMemo(() => {
-    return guests.filter(g => 
-        g.name.includes(searchTerm) || 
-        g.title.includes(searchTerm) || 
-        (g.code && g.code.includes(searchTerm)) ||
-        (g.note && g.note.includes(searchTerm))
-    );
-  }, [guests, searchTerm]);
-
-  const displayGuests = useMemo(() => {
-    const sorted = [...filteredGuests].sort((a, b) => {
-        const getPrio = (cat: GuestCategory) => {
-            if (cat === GuestCategory.MEMBER_OB) return 1;
-            if (cat === GuestCategory.MEMBER_YB) return 2;
-            return 3;
-        };
-        const prioA = getPrio(a.category);
-        const prioB = getPrio(b.category);
-        if (prioA !== prioB) return prioA - prioB;
-        
-        const codeA = a.code || '';
-        const codeB = b.code || '';
-        return codeA.localeCompare(codeB, undefined, { numeric: true, sensitivity: 'base' });
-    });
-    return sorted;
-  }, [filteredGuests]);
-
-  const StatItem = ({ label, current, total, color }: { label: string, current: number, total: number, color: string }) => (
-      <div className="flex flex-col items-center mx-2 min-w-[60px] flex-shrink-0">
-          <span className="text-xs text-slate-500 font-bold mb-1 whitespace-nowrap">{label}</span>
-          <div className={`text-lg font-black ${color}`}>{current}<span className="text-xs text-slate-300 font-normal">/{total}</span></div>
-      </div>
-  )
-
-  const handleDeleteClick = (e: React.MouseEvent, id: string, name: string) => {
-      e.stopPropagation();
-      e.preventDefault();
-      setConfirmModal({
-          isOpen: true,
-          type: 'DELETE_ONE',
-          step: 1,
-          data: { id, name }
-      });
-  };
-
-  const handleClearAllClick = (e: React.MouseEvent) => {
-      e.stopPropagation();
-      e.preventDefault();
-      setConfirmModal({
-          isOpen: true,
-          type: 'CLEAR_ALL',
-          step: 1
-      });
-  };
-
-  const handleForceSyncClick = (e: React.MouseEvent) => {
-      e.stopPropagation();
-      
-      // Warn if offline, but allow proceeding
-      if (!isCloudConnected) {
-          if (!confirm("⚠️ 目前系統顯示「未連線」。\n\n強制寫入後，資料會先存在瀏覽器中，等待網路連線恢復後自動上傳至 Firebase。\n\n確定要執行嗎？")) {
-              return;
-          }
-      }
-
-      setConfirmModal({
-          isOpen: true,
-          type: 'FORCE_SYNC',
-          step: 1
-      });
-  }
-
-  const executeConfirmAction = async () => {
-      if (confirmModal.type === 'DELETE_ONE' && confirmModal.data) {
-          deleteGuest(confirmModal.data.id);
-          setConfirmModal({ ...confirmModal, isOpen: false });
-      } else if (confirmModal.type === 'CLEAR_ALL') {
-          if (confirmModal.step === 1) {
-              setConfirmModal({ ...confirmModal, step: 2 });
-              return;
-          }
-          clearAllData();
-          setConfirmModal({ ...confirmModal, isOpen: false });
-      } else if (confirmModal.type === 'FORCE_SYNC') {
-          setIsProcessing(true);
-          setProgressMsg("正在將資料上傳至雲端...");
-          try {
-              await uploadAllLocalDataToCloud();
-              alert("同步指令已送出！\n(若目前離線，資料將在網路恢復後自動同步)");
-          } catch (e: any) {
-              alert("同步失敗：" + e.message);
-          } finally {
-              setIsProcessing(false);
-              setConfirmModal({ ...confirmModal, isOpen: false });
-          }
-      }
-  };
-
-  const handleConnectionClick = () => {
-      if (!isCloudConnected) {
-          alert(`連線狀態錯誤：\n${connectionError || '未知錯誤'}\n\n建議排除方式：\n1. 請試著「重新整理」網頁。\n2. 確認 Firebase 專案已建立並選擇「測試模式」。\n3. 檢查網路連線。`);
-      }
+  const handleAddManualGuests = async () => {
+    const validEntries = manualEntries.filter(e => e.name.trim());
+    if (validEntries.length === 0) return;
+    const drafts: ParsedGuestDraft[] = validEntries.map(e => ({
+        ...e,
+        hasSignature: false
+    }));
+    await addGuestsFromDraft(drafts, new Date());
+    setIsManualEntryOpen(false);
+    setManualEntries([{ code: '', name: '', title: '', category: GuestCategory.OTHER, note: '' }]);
   };
 
   return (
-    <div className="p-4 max-w-6xl mx-auto pb-24">
-      {/* Hidden File Input */}
-      <input 
-        ref={fileInputRef} 
-        type="file" 
-        accept="image/*,application/pdf,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv,.xlsx,.xls,.csv" 
-        multiple 
-        className="hidden" 
-        onChange={handleFileUpload} 
-      />
+    <div className="p-3 md:p-6 lg:p-8 max-w-7xl mx-auto pb-24 overflow-x-hidden flex flex-col gap-4 md:gap-8">
+      <input ref={fileInputRef} type="file" multiple className="hidden" onChange={handleFileUpload} />
 
       {/* Header */}
-      <div className="flex flex-col gap-4 mb-6">
+      <div className="flex flex-col gap-4">
           <div className="flex flex-col md:flex-row justify-between md:items-end border-b border-slate-200 pb-4 gap-4">
-              <div className="flex items-center gap-3">
-                   <h2 className="text-2xl font-bold flex items-center gap-2 text-slate-800">
-                    <Settings className="w-6 h-6" /> 後台管理
+              <div className="flex flex-col md:flex-row items-start md:items-center gap-2 md:gap-4">
+                   <h2 className="text-2xl md:text-3xl font-black flex items-center gap-2 text-slate-800">
+                    <Settings className="w-6 h-6 md:w-8 md:h-8 text-indigo-500" /> 報到管理
                    </h2>
-                   
-                   {/* Sync Status Badge */}
-                   {usingLocalDataProtection ? (
-                       <span className="flex items-center gap-1 text-xs bg-orange-100 text-orange-700 px-2 py-1 rounded border border-orange-200 animate-pulse">
-                           <Shield size={12}/> 保護模式：使用本機資料
-                       </span>
-                   ) : (
-                       isCloudConnected && (
-                           <span className="flex items-center gap-1 text-xs bg-indigo-50 text-indigo-600 px-2 py-1 rounded border border-indigo-100">
-                               <Cloud size={12}/> 雲端同步中
-                           </span>
-                       )
-                   )}
+                   <div className="flex items-center gap-2">
+                       {isCloudConnected && <span className="text-[10px] md:text-xs bg-indigo-50 text-indigo-600 px-2 py-0.5 rounded-lg border border-indigo-100 flex items-center gap-1 font-bold shadow-sm"><Cloud size={12}/> 雲端同步</span>}
+                       <button onClick={() => isAdmin ? logoutAdmin() : setShowLoginModal(true)} className="flex items-center gap-1 px-3 py-1 rounded-full text-[10px] md:text-xs font-black border bg-slate-100 text-slate-500 border-transparent">
+                          {isAdmin ? <Unlock size={12} /> : <Lock size={12} />} {isAdmin ? '管理員解鎖' : '管理員鎖定'}
+                       </button>
+                   </div>
               </div>
-              <div className="flex flex-wrap items-center gap-4">
-                  {/* Admin Login Button */}
-                  <button 
-                      onClick={() => isAdmin ? logoutAdmin() : setShowLoginModal(true)}
-                      className={`flex items-center gap-2 px-3 py-1 rounded-full text-xs font-bold border transition-colors ${isAdmin ? 'bg-red-50 text-red-600 border-red-200' : 'bg-slate-100 text-slate-500 border-slate-300'}`}
-                  >
-                      {isAdmin ? <Unlock size={14} /> : <Lock size={14} />}
-                      {isAdmin ? '已解鎖' : '已鎖定'}
-                  </button>
-                  
-                  {/* Force Sync Button - ALWAYS SHOW IF ADMIN, IGNORE CONNECTION STATE */}
-                  {isAdmin && (
-                      <button 
-                          onClick={handleForceSyncClick}
-                          className="flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold border bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100 transition-colors"
-                          title="將這台電腦的資料強制上傳到雲端，解決不同步問題"
-                      >
-                          <Upload size={14} /> 強制上傳本機資料
-                      </button>
-                  )}
-
-                  <div 
-                      className={`flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold border cursor-pointer ${isCloudConnected ? 'bg-green-100 text-green-700 border-green-200' : 'bg-red-100 text-red-700 border-red-200'}`}
-                      onClick={handleConnectionClick}
-                      title={connectionError || (isCloudConnected ? "連線正常" : "點擊查看錯誤")}
-                  >
-                      {isCloudConnected ? <Cloud size={14} /> : <CloudOff size={14} />}
-                      {isCloudConnected ? '雲端連線中' : '未連線'}
-                  </div>
-                  <div className="text-xl font-mono font-bold text-slate-500 flex items-center gap-2">
-                     <Clock size={20} />
-                     {currentTime.toLocaleTimeString('zh-TW', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+              <div className="text-right">
+                  <div className="text-lg md:text-xl font-mono font-black text-slate-500 flex items-center justify-end gap-2 bg-slate-100/50 px-4 py-1.5 rounded-xl border border-slate-200 shadow-inner">
+                    <Clock size={18} className="text-indigo-400" />
+                    {currentTime.toLocaleTimeString('zh-TW', { hour12: false, hour: '2-digit', minute: '2-digit' })}
                   </div>
               </div>
           </div>
-          
-          <div className="flex justify-between items-end">
-              <div className="flex-1">
-                  <label className="block text-sm font-bold text-slate-500 mb-1">活動名稱 (Event Name)</label>
-                  <input 
-                      type="text" 
-                      className="w-full text-3xl font-bold p-2 border-b-2 border-slate-200 focus:border-blue-500 outline-none bg-transparent text-slate-900 placeholder:text-slate-300" 
-                      value={settings.eventName} 
-                      onChange={e => updateSettings({eventName: e.target.value})}
-                      placeholder="請輸入活動名稱"
-                      disabled={!isAdmin} 
-                    />
-              </div>
-               {/* Danger Zone: Clear Data - ONLY SHOW IF ADMIN */}
-               {isAdmin && (
-                   <button 
-                      onClick={handleClearAllClick}
-                      className="ml-4 flex items-center gap-2 text-sm text-red-400 hover:text-red-600 border border-red-200 hover:bg-red-50 p-2 rounded transition-colors cursor-pointer relative z-10"
-                      title="清空所有資料"
-                   >
-                       <Trash2 size={16} /> <span className="hidden md:inline font-bold">清空所有資料</span>
-                   </button>
-               )}
-          </div>
+          <h1 className="text-xl md:text-2xl font-black text-indigo-900 leading-tight truncate drop-shadow-sm">{settings.eventName}</h1>
       </div>
 
-      {/* Actions Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-          {/* Roster Upload - Disabled if not admin */}
-          <button 
-              onClick={() => triggerFileUpload('ROSTER')} 
-              className={`border p-6 rounded-xl flex flex-col items-center justify-center gap-2 transition-colors shadow-sm h-full
-                  ${isAdmin 
-                      ? 'bg-white hover:bg-orange-50 text-slate-700 hover:text-orange-700 border-slate-200 hover:border-orange-200 cursor-pointer' 
-                      : 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed opacity-60'}
-              `}
-              disabled={isProcessing}
-          >
-              {isProcessing && importMode === 'ROSTER' ? <RefreshCcw className="animate-spin text-orange-500" size={32} /> : <FileText size={32} className={isAdmin ? "text-orange-500" : "text-slate-400"}/>}
-              <div className="font-bold text-lg">{isAdmin ? "建立/匯入 名單" : "匯入名單 (權限鎖定)"}</div>
-              <div className="text-xs opacity-60">Step 1: 上傳總名單 (Excel/PDF)</div>
+      {/* 功能卡片 */}
+      <div className="grid grid-cols-3 md:grid-cols-4 gap-2 md:gap-6">
+          <button onClick={() => triggerFileUpload('ROSTER')} className="bg-white border border-slate-100 p-3 md:p-6 rounded-2xl md:rounded-3xl flex flex-col items-center justify-center gap-1.5 md:gap-2 shadow-sm hover:shadow-md hover:border-orange-100 transition-all group min-h-[90px] md:min-h-[140px]">
+              <div className={`p-2.5 md:p-4 rounded-xl md:rounded-2xl transition-all duration-300 group-hover:scale-110 ${isAdmin ? 'bg-orange-50' : 'bg-slate-100 grayscale opacity-50'}`}>
+                <FileText size={20} className="text-orange-500 md:w-6 md:h-6" />
+              </div>
+              <div className="font-black text-slate-700 text-[10px] md:text-base leading-tight">匯入名單</div>
+          </button>
+          
+          <button onClick={() => setIsManualEntryOpen(true)} className="bg-white border border-slate-100 p-3 md:p-6 rounded-2xl md:rounded-3xl flex flex-col items-center justify-center gap-1.5 md:gap-2 shadow-sm hover:shadow-md hover:border-indigo-100 transition-all group min-h-[90px] md:min-h-[140px]">
+               <div className="p-2.5 md:p-4 rounded-xl md:rounded-2xl transition-all duration-300 group-hover:scale-110 bg-indigo-50">
+                <PenLine size={20} className="text-indigo-600 md:w-6 md:h-6" />
+               </div>
+               <div className="font-black text-slate-700 text-[10px] md:text-base leading-tight">手動新增</div>
           </button>
 
-           {/* Check-in Upload */}
-           <div className="bg-white p-2 rounded-xl shadow-sm border border-slate-200 flex flex-col gap-1">
-               <div className="text-center text-slate-400 text-xs font-bold py-1 flex items-center justify-center gap-1">
-                   <Camera size={14}/> 簽到表辨識 (Step 2)
+          <div className="col-span-1 md:col-span-2 bg-white p-2.5 md:p-6 rounded-2xl md:rounded-3xl shadow-sm border border-slate-100 flex flex-col gap-2 md:gap-3 min-h-[90px] md:min-h-[140px]">
+               <div className="text-slate-400 text-[8px] md:text-xs font-black uppercase tracking-wider flex items-center justify-center md:justify-start gap-1 md:gap-2">
+                 <Camera size={12} className="md:w-3.5 md:h-3.5"/> 
+                 <span className="hidden xs:inline">OCR 掃描</span>
                </div>
-               <div className="flex gap-2 flex-1">
-                   <button 
-                      onClick={() => handleCheckInUpload(1)} 
-                      className="flex-1 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-lg p-3 flex flex-col items-center justify-center transition-colors relative overflow-hidden group"
-                      disabled={isProcessing}
-                  >
-                      {isProcessing && importMode === 'CHECK_IN' && settings.currentCheckInRound === 1 ? (
-                          <RefreshCcw className="animate-spin mb-1" size={24} />
-                      ) : (
-                          <div className="bg-blue-200 p-2 rounded-full mb-1 group-hover:scale-110 transition-transform"><Camera size={20} /></div>
-                      )}
-                      <span className="font-black text-xl">R1</span>
-                      <span className="text-xs font-bold">第一梯次辨識</span>
+               <div className="flex flex-col md:flex-row gap-1 md:gap-2 flex-1 h-full">
+                   <button onClick={() => handleCheckInUpload(1)} className="flex-1 bg-blue-50 text-blue-700 border border-blue-100 rounded-xl md:rounded-2xl py-1 md:py-2 flex flex-col items-center justify-center hover:bg-blue-100 transition-all group">
+                      <span className="font-black text-sm md:text-xl leading-none">R1</span>
+                      <span className="hidden sm:inline text-[9px] md:text-[10px] font-bold opacity-60">第一輪</span>
                   </button>
-                  
-                  <button 
-                      onClick={() => handleCheckInUpload(2)} 
-                      className="flex-1 bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 rounded-lg p-3 flex flex-col items-center justify-center transition-colors relative overflow-hidden group"
-                      disabled={isProcessing}
-                  >
-                      {isProcessing && importMode === 'CHECK_IN' && settings.currentCheckInRound === 2 ? (
-                          <RefreshCcw className="animate-spin mb-1" size={24} />
-                      ) : (
-                          <div className="bg-purple-200 p-2 rounded-full mb-1 group-hover:scale-110 transition-transform"><Camera size={20} /></div>
-                      )}
-                      <span className="font-black text-xl">R2</span>
-                      <span className="text-xs font-bold">第二梯次辨識</span>
+                  <button onClick={() => handleCheckInUpload(2)} className="flex-1 bg-purple-50 text-purple-700 border border-purple-100 rounded-xl md:rounded-2xl py-1 md:py-2 flex flex-col items-center justify-center hover:bg-purple-100 transition-all group">
+                      <span className="font-black text-sm md:text-xl leading-none">R2</span>
+                      <span className="hidden sm:inline text-[9px] md:text-[10px] font-bold opacity-60">第二輪</span>
                   </button>
                </div>
-           </div>
-      </div>
-
-       {/* Manual Entry Toggle */}
-       <div className="mb-6">
-            <button 
-                onClick={() => setIsManualEntryOpen(!isManualEntryOpen)}
-                className="w-full py-3 flex items-center justify-center gap-2 text-sm font-bold text-slate-500 hover:text-blue-600 bg-white border border-slate-200 rounded-lg hover:bg-blue-50 transition-colors"
-            >
-                <PenLine size={16} /> 手動輸入 / 新增人員
-            </button>
-            
-            {isManualEntryOpen && (
-                <div className="mt-4 p-4 bg-white rounded-xl border border-blue-100 shadow-sm animate-in slide-in-from-top-2">
-                    <div className="mb-3 flex flex-col md:flex-row gap-4 items-start md:items-center">
-                        <span className="text-sm font-bold text-slate-700">新增人員報到狀態：</span>
-                        <div className="flex gap-4">
-                            <label className="flex items-center gap-2 cursor-pointer">
-                                <input 
-                                    type="radio" 
-                                    name="manualCheckIn"
-                                    checked={manualCheckInTarget === 0} 
-                                    onChange={() => setManualCheckInTarget(0)}
-                                    className="w-4 h-4 text-slate-600 focus:ring-slate-500"
-                                />
-                                <span className={`text-sm font-bold ${manualCheckInTarget === 0 ? 'text-slate-800' : 'text-slate-500'}`}>不報到 (預設)</span>
-                            </label>
-
-                            <label className="flex items-center gap-2 cursor-pointer">
-                                <input 
-                                    type="radio" 
-                                    name="manualCheckIn"
-                                    checked={manualCheckInTarget === 1} 
-                                    onChange={() => setManualCheckInTarget(1)}
-                                    className="w-4 h-4 text-blue-600 focus:ring-blue-500"
-                                />
-                                <span className={`text-sm font-bold ${manualCheckInTarget === 1 ? 'text-blue-700' : 'text-slate-500'}`}>R1 報到</span>
-                            </label>
-
-                            <label className="flex items-center gap-2 cursor-pointer">
-                                <input 
-                                    type="radio" 
-                                    name="manualCheckIn"
-                                    checked={manualCheckInTarget === 2} 
-                                    onChange={() => setManualCheckInTarget(2)}
-                                    className="w-4 h-4 text-purple-600 focus:ring-purple-500"
-                                />
-                                <span className={`text-sm font-bold ${manualCheckInTarget === 2 ? 'text-purple-700' : 'text-slate-500'}`}>R2 報到</span>
-                            </label>
-                        </div>
-                  </div>
-                  <div className="space-y-2 mt-2">
-                      {manualEntries.map((entry, idx) => (
-                          <div key={idx} className="flex flex-col md:flex-row gap-2 items-start md:items-center p-2 bg-slate-50 rounded border border-slate-200">
-                              <input placeholder="編號" value={entry.code} onChange={e => updateManualEntry(idx, 'code', e.target.value)} className="p-2 border rounded w-full md:w-1/6" />
-                              <input placeholder="姓名" value={entry.name} onChange={e => updateManualEntry(idx, 'name', e.target.value)} className="p-2 border rounded w-full md:w-1/4" />
-                              <input placeholder="職稱" value={entry.title} onChange={e => updateManualEntry(idx, 'title', e.target.value)} className="p-2 border rounded w-full md:w-1/4" />
-                               <input placeholder="備註" value={entry.note} onChange={e => updateManualEntry(idx, 'note', e.target.value)} className="p-2 border rounded w-full md:w-1/5" />
-                              <select value={entry.category} onChange={e => updateManualEntry(idx, 'category', e.target.value as GuestCategory)} className="p-2 border rounded w-full md:w-1/4">
-                                  {Object.values(GuestCategory).map(c => <option key={c} value={c}>{c}</option>)}
-                              </select>
-                              <button onClick={() => removeManualRow(idx)} className="text-slate-400 hover:text-red-500 p-2"><Trash2 size={18}/></button>
-                          </div>
-                      ))}
-                  </div>
-                  <div className="flex gap-2 mt-4">
-                      <button onClick={addManualRow} className="flex items-center gap-1 text-blue-600 font-bold text-sm px-3 py-2 border border-blue-200 rounded hover:bg-blue-50"><Plus size={16}/> 新增</button>
-                      <button onClick={submitManualEntries} className="flex-1 bg-blue-600 text-white font-bold py-2 rounded hover:bg-blue-700 shadow-sm" disabled={isProcessing}>
-                          {isProcessing ? '處理中...' : '確認新增'}
-                      </button>
-                  </div>
-                </div>
-            )}
-       </div>
-
-      {/* List Table */}
-      <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden mb-6">
-         {/* Stats Bar */}
-         <div className="flex flex-col gap-4 bg-slate-50 px-4 py-3 border-b border-slate-200">
-             <div className="w-full overflow-x-auto pb-2 md:pb-0 no-scrollbar">
-                 <div className="flex items-center divide-x divide-slate-200 min-w-max mx-auto md:mx-0">
-                     <StatItem label="總人數" current={stats.total} total={stats.total} color="text-slate-700" />
-                     <StatItem label="總已到" current={stats.checkedIn} total={stats.total} color="text-indigo-600" />
-                     <StatItem label="特友會OB" current={stats.ob.checkedIn} total={stats.ob.total} color="text-orange-600" />
-                     <StatItem label="會友YB" current={stats.yb.checkedIn} total={stats.yb.total} color="text-yellow-600" />
-                     <StatItem label="貴賓VIP" current={stats.vip.checkedIn} total={stats.vip.total} color="text-blue-500" />
-                 </div>
-             </div>
-             
-             {/* Search */}
-             <div className="relative w-full">
-                 <input 
-                    type="text" 
-                    placeholder="搜尋..." 
-                    value={searchTerm}
-                    onChange={e => setSearchTerm(e.target.value)}
-                    className="w-full pl-9 pr-3 py-2 border border-slate-300 rounded-full text-sm focus:border-indigo-500 outline-none transition-shadow focus:shadow-sm"
-                 />
-                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16}/>
-             </div>
-         </div>
-
-         {/* Desktop Table View - Hidden on Mobile */}
-         <div className="hidden md:block overflow-x-auto">
-            <table className="w-full text-sm text-left">
-                <thead className="bg-slate-100 text-slate-500 uppercase text-xs font-bold border-b border-slate-200">
-                    <tr>
-                        <th className="p-3 w-16 text-center">編號</th>
-                        <th className="p-3 w-[15%]">姓名</th>
-                        <th className="p-3 w-[15%]">職稱</th>
-                        <th className="p-3 w-[15%]">備註</th>
-                        <th className="p-3 w-[10%]">類別</th>
-                        <th className="p-3 text-center w-[10%] bg-blue-50 text-blue-800">R1</th>
-                        <th className="p-3 text-center w-[10%] bg-purple-50 text-purple-800">R2</th>
-                        <th className="p-3 w-[15%] text-center">操作</th>
-                    </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                    {displayGuests.map((g, index) => (
-                        <tr key={g.id} className={`hover:bg-slate-50 transition-colors ${g.isCheckedIn ? 'bg-white' : 'bg-slate-50/50'}`}>
-                            <td className="p-3 text-center font-mono text-slate-500 font-bold">{g.code || '-'}</td>
-                            <td className="p-3 font-bold text-slate-800 text-base">{g.name}</td>
-                            <td className="p-3 text-slate-500">{g.title}</td>
-                            <td className="p-3 text-slate-500 truncate max-w-[150px]">{g.note}</td>
-                            <td className="p-3"><span className="bg-slate-200 text-slate-600 px-2 py-1 rounded text-xs whitespace-nowrap">{g.category}</span></td>
-                            
-                            {/* R1 Toggle */}
-                            <td className="p-3 text-center bg-blue-50/30">
-                                <CheckInButton 
-                                    isActive={g.attendedRounds?.includes(1) || false}
-                                    onClick={() => toggleCheckInRound(g.id, 1)}
-                                    theme="blue"
-                                />
-                            </td>
-
-                            {/* R2 Toggle */}
-                            <td className="p-3 text-center bg-purple-50/30">
-                                <CheckInButton 
-                                    isActive={g.attendedRounds?.includes(2) || false}
-                                    onClick={() => toggleCheckInRound(g.id, 2)}
-                                    theme="purple"
-                                />
-                            </td>
-
-                            <td className="p-3 text-center flex justify-center gap-2 items-center">
-                                {/* Only show Edit/Delete if Admin */}
-                                {isAdmin ? (
-                                    <>
-                                        {/* New Clear Button */}
-                                        {g.isCheckedIn && (
-                                            <button 
-                                                onClick={(e) => { e.stopPropagation(); clearGuestCheckIn(g.id); }}
-                                                className="flex items-center gap-1 text-slate-500 hover:text-orange-600 bg-white border border-slate-200 hover:border-orange-300 px-3 py-1.5 rounded shadow-sm transition-colors cursor-pointer relative z-10"
-                                                title="清除報到狀態"
-                                            >
-                                                <UserMinus size={14}/> 清除
-                                            </button>
-                                        )}
-
-                                        <button onClick={() => setEditingGuest(g)} className="flex items-center gap-1 text-slate-500 hover:text-blue-600 bg-white border border-slate-200 hover:border-blue-300 px-3 py-1.5 rounded shadow-sm transition-colors cursor-pointer relative z-10">
-                                            <Edit size={14}/> 編輯
-                                        </button>
-                                        <button 
-                                            onClick={(e) => handleDeleteClick(e, g.id, g.name)}
-                                            className="flex items-center gap-1 text-slate-500 hover:text-red-600 bg-white border border-slate-200 hover:border-red-300 px-3 py-1.5 rounded shadow-sm transition-colors cursor-pointer relative z-10"
-                                        >
-                                            <Trash2 size={14}/> 刪除
-                                        </button>
-                                    </>
-                                ) : (
-                                    <span className="text-xs text-slate-300 italic">權限鎖定</span>
-                                )}
-                            </td>
-                        </tr>
-                    ))}
-                    {displayGuests.length === 0 && (
-                        <tr>
-                            <td colSpan={8} className="p-8 text-center text-slate-400">
-                                無符合資料
-                            </td>
-                        </tr>
-                    )}
-                </tbody>
-            </table>
-         </div>
-
-         {/* Mobile Card View - Visible on Mobile */}
-         <div className="md:hidden divide-y divide-slate-100">
-            {displayGuests.map((g, index) => (
-                <div key={g.id} className={`p-4 ${g.isCheckedIn ? 'bg-white' : 'bg-slate-50/30'}`}>
-                    <div className="flex justify-between items-start mb-2">
-                        <div className="flex items-center gap-2">
-                            <span className="text-xs font-mono text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded">
-                                {g.code || '#'}
-                            </span>
-                            <span className="font-bold text-lg text-slate-800">{g.name}</span>
-                        </div>
-                        <span className={`text-[10px] px-2 py-1 rounded-full whitespace-nowrap
-                             ${g.category === GuestCategory.MEMBER_YB ? 'bg-yellow-100 text-yellow-800' : 
-                               g.category === GuestCategory.MEMBER_OB ? 'bg-orange-100 text-orange-800' : 'bg-slate-100 text-slate-500'}
-                        `}>
-                            {g.category}
-                        </span>
-                    </div>
-
-                    <div className="mb-3 pl-1">
-                        <div className="text-sm text-slate-600">{g.title || '無職稱'}</div>
-                        {g.note && (
-                            <div className="text-xs text-orange-600 mt-1 flex items-center gap-1">
-                                <AlertCircle size={10} /> {g.note}
-                            </div>
-                        )}
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-3 mb-3">
-                         <CheckInButton 
-                             isActive={g.attendedRounds?.includes(1) || false}
-                             onClick={() => toggleCheckInRound(g.id, 1)}
-                             theme="blue"
-                         />
-                         <CheckInButton 
-                             isActive={g.attendedRounds?.includes(2) || false}
-                             onClick={() => toggleCheckInRound(g.id, 2)}
-                             theme="purple"
-                         />
-                    </div>
-                    
-                    {isAdmin && (
-                        <div className="flex justify-end gap-4 pt-3 border-t border-slate-100 border-dashed mt-2">
-                             {g.isCheckedIn && (
-                                <button 
-                                    onClick={(e) => { e.stopPropagation(); clearGuestCheckIn(g.id); }}
-                                    className="text-xs font-bold text-orange-500 flex items-center gap-1 px-2 py-1 bg-orange-50 rounded"
-                                >
-                                    <UserMinus size={14}/> 清除
-                                </button>
-                             )}
-                             <button onClick={() => setEditingGuest(g)} className="text-xs font-bold text-blue-600 flex items-center gap-1 px-2 py-1 bg-blue-50 rounded">
-                                <Edit size={14}/> 編輯
-                             </button>
-                             <button 
-                                onClick={(e) => handleDeleteClick(e, g.id, g.name)}
-                                className="text-xs font-bold text-red-500 flex items-center gap-1 px-2 py-1 bg-red-50 rounded"
-                            >
-                                <Trash2 size={14}/> 刪除
-                            </button>
-                        </div>
-                    )}
-                </div>
-            ))}
-            {displayGuests.length === 0 && (
-                <div className="p-8 text-center text-slate-400">
-                    無符合資料
-                </div>
-            )}
-         </div>
-      </div>
-      
-      {/* Download Excel Button */}
-      {isAdmin && (
-          <div className="flex justify-center mb-6">
-              <button 
-                  onClick={handleDownloadExcel}
-                  className="bg-green-600 text-white font-bold py-3 px-6 rounded-full shadow-md hover:bg-green-700 hover:shadow-lg transition-all flex items-center gap-2"
-              >
-                  <Download size={20} /> 下載報到與中獎名單 (Excel)
-              </button>
           </div>
-      )}
+      </div>
 
-       {/* LOGIN MODAL */}
-       {showLoginModal && (
-           <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm animate-in fade-in duration-200">
-               <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm p-6">
-                   <h3 className="text-xl font-bold text-slate-800 mb-4 flex items-center gap-2">
-                       <Lock className="text-indigo-600" size={24} /> 管理員登入
-                   </h3>
-                   <form onSubmit={handleLoginSubmit}>
-                       <label className="block text-sm font-bold text-slate-500 mb-1">請輸入密碼</label>
-                       <input 
-                           type="password" 
-                           autoFocus
-                           className="w-full p-3 border border-slate-300 rounded-lg mb-4 text-lg focus:border-indigo-500 outline-none"
-                           value={loginPassword}
-                           onChange={e => setLoginPassword(e.target.value)}
-                           placeholder="預設: 8888"
-                       />
-                       <div className="flex gap-2">
-                           <button 
-                               type="button" 
-                               onClick={() => setShowLoginModal(false)}
-                               className="flex-1 py-2 rounded-lg text-slate-500 font-bold hover:bg-slate-100"
-                           >
-                               取消
-                           </button>
-                           <button 
-                               type="submit" 
-                               className="flex-1 py-2 rounded-lg bg-indigo-600 text-white font-bold hover:bg-indigo-700"
-                           >
-                               解鎖
-                           </button>
-                       </div>
-                   </form>
-               </div>
-           </div>
-       )}
-
-       {/* CUSTOM CONFIRM MODAL */}
-       {confirmModal.isOpen && (
-            <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm animate-in fade-in duration-200">
-                <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm p-6 transform transition-all scale-100">
-                    <div className="flex flex-col items-center text-center">
-                        <div className={`rounded-full p-4 mb-4 ${confirmModal.type === 'CLEAR_ALL' ? 'bg-red-100 text-red-600' : (confirmModal.type === 'FORCE_SYNC' ? 'bg-blue-100 text-blue-600' : 'bg-slate-100 text-slate-600')}`}>
-                            {confirmModal.type === 'FORCE_SYNC' ? <UploadCloud size={32}/> : <AlertTriangle size={32} />}
-                        </div>
-                        
-                        <h3 className="text-xl font-bold text-slate-800 mb-2">
-                            {confirmModal.type === 'CLEAR_ALL' 
-                                ? (confirmModal.step === 1 ? "警告：刪除所有資料？" : "再次確認：真的要清空嗎？")
-                                : (confirmModal.type === 'FORCE_SYNC' ? "確認上傳本機資料？" : "確認刪除資料")
-                            }
-                        </h3>
-                        
-                        <p className="text-slate-500 mb-6">
-                            {confirmModal.type === 'CLEAR_ALL' 
-                                ? (confirmModal.step === 1 ? "此操作將刪除「所有」報到、名單與抽獎紀錄，且無法復原。" : "所有資料將會立即消失，請確認您已備份或無需保留。")
-                                : (confirmModal.type === 'FORCE_SYNC' 
-                                    ? "此操作會將您這台電腦的所有名單資料強制寫入雲端資料庫。請確認這是最新資料。" 
-                                    : <span>確定要刪除「<span className="font-bold text-slate-800">{confirmModal.data?.name}</span>」嗎？</span>
-                                  )
-                            }
-                        </p>
-
-                        <div className="flex gap-3 w-full">
-                            <button 
-                                onClick={() => setConfirmModal({ ...confirmModal, isOpen: false, step: 1 })}
-                                className="flex-1 py-3 px-4 rounded-lg font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-colors"
-                            >
-                                取消
-                            </button>
-                            <button 
-                                onClick={executeConfirmAction}
-                                className={`flex-1 py-3 px-4 rounded-lg font-bold text-white shadow-md transition-colors ${confirmModal.type === 'CLEAR_ALL' ? 'bg-red-600 hover:bg-red-700' : (confirmModal.type === 'FORCE_SYNC' ? 'bg-blue-600 hover:bg-blue-700' : 'bg-slate-800 hover:bg-slate-900')}`}
-                            >
-                                {confirmModal.type === 'CLEAR_ALL' 
-                                    ? (confirmModal.step === 1 ? "下一步 (確認)" : "確認清空")
-                                    : (confirmModal.type === 'FORCE_SYNC' ? "確認上傳" : "確認刪除")
-                                }
-                            </button>
-                        </div>
-                    </div>
-                </div>
+      {/* 搜尋與重置 */}
+      <div className="flex flex-col md:flex-row gap-3 items-center">
+          <div className="relative flex-1 w-full">
+              <input type="text" placeholder="搜尋姓名、職稱或編號..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="w-full pl-12 pr-6 py-3 md:py-4 bg-white border border-slate-200 rounded-2xl text-sm md:text-base outline-none focus:ring-4 ring-indigo-500/10 focus:border-indigo-500 shadow-sm transition-all" />
+              <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={20}/>
+          </div>
+          
+          {isAdmin && (
+            <div className="flex flex-wrap sm:flex-nowrap gap-2 w-full md:w-auto">
+                <button disabled={isResetting} onClick={handleResetCurrentTab} className="flex-1 py-3 md:py-4 px-4 bg-orange-50 text-orange-600 font-black rounded-2xl flex items-center justify-center gap-2 hover:bg-orange-100 border border-orange-100 transition-all active:scale-95 text-xs md:text-sm whitespace-nowrap shadow-sm disabled:opacity-50">
+                    {isResetting ? <Loader2 size={16} className="animate-spin" /> : <RefreshCcw size={16}/>} 重置本分頁
+                </button>
+                <button disabled={isResetting} onClick={handleResetCheckIn} className="flex-1 py-3 md:py-4 px-4 bg-red-50 text-red-600 font-black rounded-2xl flex items-center justify-center gap-2 hover:bg-red-100 border border-red-100 transition-all active:scale-95 text-xs md:text-sm whitespace-nowrap shadow-sm disabled:opacity-50">
+                    {isResetting ? <Loader2 size={16} className="animate-spin" /> : <RotateCcw size={16}/>} 重置全體
+                </button>
+                <button onClick={handleDownloadExcel} className="w-full sm:w-auto py-3 md:py-4 px-6 bg-green-600 text-white font-black rounded-2xl flex items-center justify-center gap-2 hover:bg-green-700 shadow-lg transition-all active:scale-95 text-sm md:text-base whitespace-nowrap">
+                    <Download size={20}/> 匯出 Excel
+                </button>
             </div>
-       )}
+          )}
+      </div>
 
-       {/* DRAFT CONFIRMATION DIALOG */}
-       {draftGuests.length > 0 && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
-                 <div className="bg-white p-6 rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col animate-in zoom-in-95">
-                    <div className="flex justify-between items-center mb-4 border-b pb-4">
-                        <div>
-                            <h4 className="font-bold text-xl flex items-center gap-2 text-slate-800">
-                                {importMode === 'ROSTER' ? '名單辨識結果' : '簽到表辨識結果'}
-                            </h4>
-                            <span className="text-sm text-slate-500 font-bold bg-yellow-100 px-2 py-1 rounded text-yellow-800 mt-1 inline-block">
-                                目標梯次: R{settings.currentCheckInRound}
-                            </span>
-                        </div>
-                        <div className="flex gap-2">
-                            <button onClick={() => setDraftGuests([])} className="px-4 py-2 rounded text-slate-500 hover:bg-slate-100 font-bold">取消</button>
-                            {/* Wait for processing */}
-                            <button onClick={handleConfirmDraft} disabled={isProcessing} className="bg-green-600 text-white px-6 py-2 rounded-lg text-sm font-bold shadow-md hover:bg-green-700 flex items-center gap-2 disabled:opacity-50">
-                                {isProcessing ? <RefreshCcw className="animate-spin" size={16}/> : <CheckSquare size={16} />} 
-                                {isProcessing ? "處理中..." : "確認匯入"}
-                            </button>
-                        </div>
+      {/* 頁籤導覽 */}
+      <div className="bg-slate-100/50 p-1.5 rounded-3xl border border-slate-200 shadow-inner">
+          <div className="grid grid-cols-3 md:flex md:flex-wrap lg:flex-nowrap gap-1 md:gap-2">
+              {groupedData.map(group => (
+                  <button key={group.key} onClick={() => setActiveTab(group.key)} className={`py-2 md:py-4 px-2 md:px-6 rounded-2xl font-black text-[10px] md:text-base transition-all duration-300 flex flex-row items-center justify-center gap-1.5 md:gap-3 flex-1 ${activeTab === group.key ? 'bg-white text-indigo-600 shadow-md ring-1 ring-black/5' : 'text-slate-400 hover:text-slate-600 hover:bg-white/40'}`}>
+                    <group.icon size={14} className={`md:w-5 md:h-5 ${activeTab === group.key ? group.color : ''}`} />
+                    <span className="whitespace-nowrap">{group.title}</span>
+                    <div className={`hidden sm:block px-2 py-0.5 rounded-full text-[9px] md:text-xs font-bold ${activeTab === group.key ? 'bg-indigo-50 text-indigo-500' : 'bg-slate-200 text-slate-400'}`}>
+                        {group.checkedCount}/{group.totalCount}
                     </div>
-                    
-                    <div className="flex-1 overflow-y-auto p-4 bg-slate-50 rounded-lg border border-slate-200 custom-scrollbar grid grid-cols-1 gap-2">
-                        {/* Header for Draft List */}
-                        <div className="flex gap-2 px-3 text-xs font-bold text-slate-400 mb-1">
-                             <div className="w-8"></div>
-                             <div className="w-20">編號</div>
-                             <div className="w-24 md:w-32">姓名</div>
-                             <div className="w-24">職稱</div>
-                             <div className="w-20">類別</div>
-                        </div>
+                  </button>
+              ))}
+          </div>
+      </div>
 
-                        {draftGuests.map((d, i) => (
-                            <div key={i} className={`flex flex-wrap gap-2 items-center p-3 rounded-lg border shadow-sm transition-colors ${d.isSelected ? 'bg-white border-indigo-200' : 'bg-slate-100 opacity-60'}`}>
-                                <input type="checkbox" checked={d.isSelected} onChange={() => {
-                                    const n = [...draftGuests]; n[i].isSelected = !n[i].isSelected; setDraftGuests(n);
-                                }} className="w-5 h-5 accent-indigo-500 cursor-pointer" />
-
-                                <input value={d.code || ''} onChange={e => {
-                                    const n = [...draftGuests]; n[i].code = e.target.value; setDraftGuests(n);
-                                }} className="border border-slate-300 p-2 rounded w-20 font-mono text-sm focus:border-indigo-400 outline-none" placeholder="編號" />
-                                
-                                <input value={d.name} onChange={e => {
-                                    const n = [...draftGuests]; n[i].name = e.target.value; setDraftGuests(n);
-                                }} className="border border-slate-300 p-2 rounded w-24 md:w-32 font-bold focus:border-indigo-400 outline-none" placeholder="姓名" />
-                                
-                                <input value={d.title} onChange={e => {
-                                    const n = [...draftGuests]; n[i].title = e.target.value; setDraftGuests(n);
-                                }} className="border border-slate-300 p-2 rounded w-24 text-sm focus:border-indigo-400 outline-none" placeholder="職稱" />
-                                
-                                <span className="text-xs bg-slate-200 px-2 py-1 rounded">{d.category}</span>
-                                
-                                <button 
-                                    onClick={() => {
-                                        const n = [...draftGuests]; n[i].hasSignature = !n[i].hasSignature; setDraftGuests(n);
-                                    }}
-                                    className={`ml-auto flex items-center gap-1 px-3 py-1.5 rounded text-xs font-bold border ${d.hasSignature ? 'bg-green-100 text-green-700 border-green-300' : 'bg-slate-100 text-slate-400 border-slate-200'}`}
-                                >
-                                    {d.hasSignature ? `R${settings.currentCheckInRound} 已簽` : "未簽"}
-                                </button>
-                            </div>
-                        ))}
-                    </div>
-                 </div>
-            </div>
-      )}
-
-      {/* EDIT MODAL */}
-      {editingGuest && (
-          <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-              <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6 animate-in zoom-in-95">
-                  <div className="flex justify-between items-center mb-4">
-                      <h3 className="text-xl font-bold text-slate-800 flex items-center gap-2"><Edit size={20}/> 編輯人員資料</h3>
-                      <button onClick={() => setEditingGuest(null)} className="text-slate-400 hover:text-slate-600"><X size={24}/></button>
+      {/* 人員名單表格 - 手機版優化佈局 */}
+      <div className="space-y-6">
+          {groupedData.filter(g => g.key === activeTab).map(group => (
+              <div key={group.key} className="bg-white rounded-3xl shadow-xl border border-slate-200 overflow-hidden animate-in fade-in duration-500">
+                  <div className={`px-6 py-4 border-b flex items-center justify-between ${group.bgColor}`}>
+                      <h3 className={`text-lg md:text-xl font-black ${group.color} flex items-center gap-2`}>
+                          <group.icon size={20} /> {group.title} 名單
+                      </h3>
+                      <div className="text-right">
+                        <div className={`text-lg md:text-2xl font-black ${group.color}`}>{group.checkedCount} <span className="text-xs opacity-50 font-bold">/ {group.totalCount}</span></div>
+                      </div>
                   </div>
-                  
-                  <div className="space-y-4">
-                      <div>
-                          <label className="block text-sm font-bold text-slate-600 mb-1">編號</label>
-                          <input 
-                              value={editingGuest.code || ''} 
-                              onChange={e => setEditingGuest({ ...editingGuest, code: e.target.value })}
-                              className="w-full p-2 border rounded font-mono"
-                          />
-                      </div>
-                      <div>
-                          <label className="block text-sm font-bold text-slate-600 mb-1">姓名</label>
-                          <input 
-                              value={editingGuest.name} 
-                              onChange={e => setEditingGuest({ ...editingGuest, name: e.target.value })}
-                              className="w-full p-2 border rounded"
-                          />
-                      </div>
-                      <div className="flex gap-2">
-                           <div className="flex-1">
-                                <label className="block text-sm font-bold text-slate-600 mb-1">職稱</label>
-                                <input 
-                                    value={editingGuest.title} 
-                                    onChange={e => setEditingGuest({ ...editingGuest, title: e.target.value })}
-                                    className="w-full p-2 border rounded"
-                                />
-                           </div>
-                           <div className="flex-1">
-                                <label className="block text-sm font-bold text-slate-600 mb-1">類別</label>
-                                <select 
-                                    value={editingGuest.category} 
-                                    onChange={e => setEditingGuest({ ...editingGuest, category: e.target.value as GuestCategory })}
-                                    className="w-full p-2 border rounded"
-                                >
-                                    {Object.values(GuestCategory).map(c => <option key={c} value={c}>{c}</option>)}
-                                </select>
-                           </div>
-                      </div>
-                      
-                      <div>
-                          <label className="block text-sm font-bold text-slate-600 mb-1">備註</label>
-                          <input 
-                              value={editingGuest.note || ''} 
-                              onChange={e => setEditingGuest({ ...editingGuest, note: e.target.value })}
-                              className="w-full p-2 border rounded"
-                          />
-                      </div>
-                      
-                      <button onClick={handleSaveEdit} className="w-full bg-blue-600 text-white font-bold py-3 rounded-lg hover:bg-blue-700 shadow-md mt-2">
-                          儲存變更
-                      </button>
+
+                  <div className="w-full overflow-x-hidden">
+                      <table className="w-full text-left border-collapse table-fixed">
+                          <thead className="bg-slate-50 text-slate-400 uppercase text-[8px] md:text-xs font-black border-b">
+                              <tr>
+                                  <th className="py-4 px-2 w-8 md:w-16 text-center">#</th>
+                                  <th className="py-4 px-2 w-[22%] md:w-[20%]">姓名</th>
+                                  <th className="py-4 px-2 w-[35%] md:w-auto">職稱 / 備註</th>
+                                  <th className="py-4 px-1 text-center w-[55px] md:w-[110px] bg-blue-50/20">R1 報到</th>
+                                  <th className="py-4 px-1 text-center w-[55px] md:w-[110px] bg-purple-50/20">R2 報到</th>
+                                  <th className="py-4 px-2 text-center w-8 md:w-16"></th>
+                              </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-50">
+                              {group.list.length === 0 ? (
+                                  <tr><td colSpan={6} className="py-24 text-center text-slate-300 font-bold text-lg md:text-xl">尚無相符資料</td></tr>
+                              ) : (
+                                  group.list.map((g, idx) => (
+                                      <tr key={g.id} className={`hover:bg-slate-50/80 transition-all ${g.isCheckedIn ? 'bg-white' : 'bg-slate-50/20'}`}>
+                                          <td className="py-4 md:py-6 px-1 text-center">
+                                              {g.isCheckedIn ? (
+                                                  <div className={`w-6 h-6 md:w-10 md:h-10 flex items-center justify-center rounded-lg font-mono font-black text-[10px] md:text-lg shadow-sm mx-auto bg-white border ${group.color} border-current`}>
+                                                      {group.list.filter(x => x.isCheckedIn).indexOf(g) + 1}
+                                                  </div>
+                                              ) : (
+                                                  <span className="text-slate-300 font-mono text-[8px] md:text-sm font-bold italic">#{g.code || (idx + 1)}</span>
+                                              )}
+                                          </td>
+                                          <td className="py-4 md:py-6 px-2">
+                                              <div className="font-black text-slate-800 text-xs md:text-xl leading-none mb-1 md:mb-2 truncate">{g.name}</div>
+                                              <div className="hidden md:flex items-center gap-1.5 flex-wrap">
+                                                <div className="text-[8px] md:text-[9px] text-indigo-500 font-black bg-indigo-50 px-1 py-0.5 rounded border border-indigo-100 whitespace-nowrap uppercase">{g.category.substring(0, 4)}</div>
+                                              </div>
+                                          </td>
+                                          <td className="py-4 md:py-6 px-2">
+                                              <div className="text-slate-600 font-black text-[10px] md:text-lg leading-tight break-words">
+                                                  {g.title || <span className="text-slate-200 font-normal italic">未設定職稱</span>}
+                                              </div>
+                                              {g.note && (
+                                                <div className="text-[8px] md:text-sm text-orange-500 font-black mt-1 flex items-center gap-1">
+                                                    <AlertCircle size={10} className="shrink-0"/> {g.note}
+                                                </div>
+                                              )}
+                                          </td>
+                                          <td className="py-4 md:py-6 px-0.5 text-center bg-blue-50/5">
+                                              <CheckInButton isActive={g.attendedRounds?.includes(1)} onClick={() => toggleCheckInRound(g.id, 1)} theme="blue" round={1} />
+                                          </td>
+                                          <td className="py-4 md:py-6 px-0.5 text-center bg-purple-50/5">
+                                              <CheckInButton isActive={g.attendedRounds?.includes(2)} onClick={() => toggleCheckInRound(g.id, 2)} theme="purple" round={2} />
+                                          </td>
+                                          <td className="py-4 md:py-6 px-1 text-center">
+                                              {isAdmin && (
+                                                <button onClick={() => setEditingGuest(g)} className="p-1 text-slate-300 hover:text-indigo-600 hover:bg-white rounded-lg transition-all">
+                                                    <Edit size={14} className="md:w-5 md:h-5"/>
+                                                </button>
+                                              )}
+                                          </td>
+                                      </tr>
+                                  ))
+                              )}
+                          </tbody>
+                      </table>
                   </div>
               </div>
+          ))}
+      </div>
+
+      {/* 手動新增彈窗 */}
+      {isManualEntryOpen && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[150] flex items-center justify-center p-4">
+          <div className="bg-white rounded-[2rem] p-6 md:p-10 max-w-2xl w-full shadow-2xl animate-in zoom-in duration-300 overflow-y-auto max-h-[90vh]">
+            <h3 className="text-2xl font-black text-slate-800 mb-6 flex items-center gap-3"><Plus className="text-indigo-600" /> 手動新增人員</h3>
+            <div className="space-y-4">
+              {manualEntries.map((entry, idx) => (
+                <div key={idx} className="p-4 bg-slate-50 rounded-2xl border border-slate-100 space-y-3 relative">
+                  <div className="grid grid-cols-2 gap-3">
+                    <input placeholder="姓名" className="p-3 rounded-xl border-2 border-white focus:border-indigo-500 outline-none font-bold shadow-sm" value={entry.name} onChange={e => {
+                      const next = [...manualEntries];
+                      next[idx].name = e.target.value;
+                      setManualEntries(next);
+                    }} />
+                    <input placeholder="編號 (選填)" className="p-3 rounded-xl border-2 border-white focus:border-indigo-500 outline-none font-bold shadow-sm" value={entry.code} onChange={e => {
+                      const next = [...manualEntries];
+                      next[idx].code = e.target.value;
+                      setManualEntries(next);
+                    }} />
+                  </div>
+                  <input placeholder="職稱" className="w-full p-3 rounded-xl border-2 border-white focus:border-indigo-500 outline-none font-bold shadow-sm" value={entry.title} onChange={e => {
+                    const next = [...manualEntries];
+                    next[idx].title = e.target.value;
+                    setManualEntries(next);
+                  }} />
+                  <select className="w-full p-3 rounded-xl border-2 border-white focus:border-indigo-500 outline-none font-bold shadow-sm appearance-none" value={entry.category} onChange={e => {
+                    const next = [...manualEntries];
+                    next[idx].category = e.target.value as GuestCategory;
+                    setManualEntries(next);
+                  }}>
+                    {Object.values(GuestCategory).map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                  </select>
+                </div>
+              ))}
+              <button onClick={() => setManualEntries([...manualEntries, { code: '', name: '', title: '', category: GuestCategory.OTHER, note: '' }])} className="w-full py-3 border-2 border-dashed border-slate-200 rounded-xl text-slate-400 font-bold hover:border-indigo-300 hover:text-indigo-400 transition-all flex items-center justify-center gap-2">
+                <Plus size={18}/> 繼續新增下一位
+              </button>
+            </div>
+            <div className="flex gap-3 mt-8">
+              <button onClick={() => setIsManualEntryOpen(false)} className="flex-1 bg-slate-100 py-4 rounded-2xl font-black text-slate-500">取消</button>
+              <button onClick={handleAddManualGuests} className="flex-[2] bg-indigo-600 text-white py-4 rounded-2xl font-black shadow-lg shadow-indigo-200">確認加入名單</button>
+            </div>
           </div>
+        </div>
+      )}
+
+      {/* 編輯人員彈窗 */}
+      {editingGuest && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[150] flex items-center justify-center p-4">
+          <div className="bg-white rounded-[2rem] p-6 md:p-10 max-w-md w-full shadow-2xl animate-in zoom-in duration-300">
+            <h3 className="text-xl font-black text-slate-800 mb-6 flex items-center gap-3"><Edit className="text-indigo-600" /> 編輯人員資訊</h3>
+            <div className="space-y-4">
+              <div>
+                <label className="text-xs font-black text-slate-400 mb-1 block">姓名</label>
+                <input className="w-full p-3 bg-slate-50 rounded-xl border-2 border-transparent focus:border-indigo-500 outline-none font-bold" value={editingGuest.name} onChange={e => setEditingGuest({...editingGuest, name: e.target.value})} />
+              </div>
+              <div>
+                <label className="text-xs font-black text-slate-400 mb-1 block">職稱</label>
+                <input className="w-full p-3 bg-slate-50 rounded-xl border-2 border-transparent focus:border-indigo-500 outline-none font-bold" value={editingGuest.title || ''} onChange={e => setEditingGuest({...editingGuest, title: e.target.value})} />
+              </div>
+              <div>
+                <label className="text-xs font-black text-slate-400 mb-1 block">類別</label>
+                <select className="w-full p-3 bg-slate-50 rounded-xl border-2 border-transparent focus:border-indigo-500 outline-none font-bold" value={editingGuest.category} onChange={e => setEditingGuest({...editingGuest, category: e.target.value as GuestCategory})}>
+                  {Object.values(GuestCategory).map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="text-xs font-black text-slate-400 mb-1 block">備註</label>
+                <input className="w-full p-3 bg-slate-50 rounded-xl border-2 border-transparent focus:border-indigo-500 outline-none font-bold" value={editingGuest.note || ''} onChange={e => setEditingGuest({...editingGuest, note: e.target.value})} />
+              </div>
+              <div className="pt-4 flex flex-col gap-2">
+                <button onClick={() => { updateGuestInfo(editingGuest.id, editingGuest); setEditingGuest(null); }} className="w-full bg-indigo-600 text-white font-black py-4 rounded-xl shadow-lg">儲存修改</button>
+                <button onClick={() => { if(confirm('確定要刪除此人嗎？')) { deleteGuest(editingGuest.id); setEditingGuest(null); } }} className="w-full bg-red-50 text-red-500 font-black py-3 rounded-xl flex items-center justify-center gap-2 mt-2"><Trash2 size={16}/> 刪除此人員</button>
+                <button onClick={() => setEditingGuest(null)} className="w-full text-slate-400 font-bold py-2 mt-2">取消並關閉</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 管理員登入彈窗 */}
+      {showLoginModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[190] flex items-center justify-center p-4">
+          <div className="bg-white rounded-[2.5rem] p-10 max-w-sm w-full shadow-2xl">
+            <form onSubmit={handleLoginSubmit} className="space-y-6 text-center">
+              <h3 className="text-xl font-black text-slate-800">管理員登入</h3>
+              <input type="password" placeholder="管理密碼" className="w-full p-4 bg-slate-100 rounded-2xl text-center text-3xl font-mono outline-none border-2 border-indigo-500 shadow-inner" value={loginPassword} onChange={e => setLoginPassword(e.target.value)} autoFocus />
+              <div className="flex gap-3">
+                <button type="button" onClick={() => { setShowLoginModal(false); setLoginPassword(""); }} className="flex-1 bg-slate-100 text-slate-500 font-black py-4 rounded-2xl text-lg">取消</button>
+                <button type="submit" className="flex-[2] bg-indigo-600 text-white font-black py-4 rounded-2xl text-lg shadow-lg">解鎖</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* OCR 辨識審核 */}
+      {draftGuests.length > 0 && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-[200] flex items-center justify-center p-2 md:p-6 overflow-hidden animate-in fade-in duration-300">
+          <div className="bg-white rounded-[2rem] md:rounded-[3rem] w-full max-w-5xl h-[95vh] md:h-[90vh] flex flex-col shadow-2xl border border-white/20 overflow-hidden scale-95 md:scale-100 transition-transform">
+            <div className="p-6 md:p-10 border-b flex justify-between items-center bg-slate-50">
+              <div className="flex items-center gap-4">
+                <div className="p-3 bg-indigo-600 text-white rounded-2xl shadow-lg shadow-indigo-100"><FileCheck size={28}/></div>
+                <div>
+                  <h3 className="text-xl md:text-3xl font-black text-slate-800">OCR 辨識結果審核</h3>
+                  <p className="text-slate-400 font-bold text-xs md:text-sm">請確認以下資料，點擊「確認匯入」完成報到流程</p>
+                </div>
+              </div>
+              <button onClick={() => setDraftGuests([])} className="p-3 hover:bg-slate-200 rounded-full text-slate-400 transition-colors"><X size={28}/></button>
+            </div>
+            
+            <div className="flex-1 overflow-y-auto p-4 md:p-10 space-y-4 custom-scrollbar">
+              {draftGuests.map((dg, idx) => (
+                <div key={idx} className={`group p-4 md:p-6 rounded-3xl border-2 transition-all flex flex-col md:flex-row items-start md:items-center gap-4 md:gap-6 ${dg.isSelected ? 'border-indigo-500 bg-indigo-50/30' : 'border-slate-100 bg-slate-50 opacity-40'}`}>
+                  <button onClick={() => {
+                    const next = [...draftGuests];
+                    next[idx].isSelected = !next[idx].isSelected;
+                    setDraftGuests(next);
+                  }} className={`w-8 h-8 md:w-10 md:h-10 rounded-full flex items-center justify-center transition-all shadow-sm ${dg.isSelected ? 'bg-indigo-600 text-white' : 'bg-white text-slate-300'}`}><CheckSquare size={20}/></button>
+                  <div className="flex-1 grid grid-cols-1 md:grid-cols-4 gap-4 w-full">
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-black text-indigo-400 uppercase tracking-widest">姓名</label>
+                      <input className="w-full bg-white px-4 py-2 rounded-xl border border-transparent focus:border-indigo-400 outline-none font-bold text-slate-700 shadow-sm" value={dg.name} onChange={e => {
+                        const next = [...draftGuests];
+                        next[idx].name = e.target.value;
+                        setDraftGuests(next);
+                      }} />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-black text-indigo-400 uppercase tracking-widest">職稱</label>
+                      <input className="w-full bg-white px-4 py-2 rounded-xl border border-transparent focus:border-indigo-400 outline-none font-bold text-slate-700 shadow-sm" value={dg.title || ''} onChange={e => {
+                        const next = [...draftGuests];
+                        next[idx].title = e.target.value;
+                        setDraftGuests(next);
+                      }} />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-black text-indigo-400 uppercase tracking-widest">類別</label>
+                      <select className="w-full bg-white px-4 py-2 rounded-xl border border-transparent focus:border-indigo-400 outline-none font-bold text-slate-700 shadow-sm" value={dg.category} onChange={e => {
+                        const next = [...draftGuests];
+                        next[idx].category = e.target.value as GuestCategory;
+                        setDraftGuests(next);
+                      }}>{Object.values(GuestCategory).map(cat => <option key={cat} value={cat}>{cat}</option>)}</select>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <div className="flex-1 space-y-1">
+                        <label className="text-[10px] font-black text-indigo-400 uppercase tracking-widest">簽名狀態</label>
+                        <div className={`px-4 py-2 rounded-xl font-bold text-center text-sm ${dg.hasSignature ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>{dg.hasSignature ? '偵測到簽名' : '未簽名'}</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="p-6 md:p-10 border-t bg-slate-50 flex gap-4 md:gap-6">
+              <button onClick={() => setDraftGuests([])} className="flex-1 bg-white border-2 border-slate-200 py-4 rounded-2xl font-black text-slate-400 hover:bg-slate-100 transition-all text-sm md:text-lg">取消匯入</button>
+              <button onClick={async () => {
+                const selected = draftGuests.filter(d => d.isSelected);
+                if (selected.length > 0) {
+                  await addGuestsFromDraft(selected, new Date());
+                  alert(`成功處理 ${selected.length} 筆資料！`);
+                }
+                setDraftGuests([]);
+              }} className="flex-[2] bg-indigo-600 text-white py-4 rounded-2xl font-black shadow-xl shadow-indigo-100 hover:bg-indigo-700 transition-all transform active:scale-95 text-sm md:text-lg flex items-center justify-center gap-3"><Cloud size={24}/> 確認匯入雲端名單</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Loading */}
+      {isProcessing && (
+        <div className="fixed inset-0 bg-white/80 backdrop-blur-md z-[300] flex flex-col items-center justify-center animate-in fade-in duration-300">
+           <div className="bg-white p-10 rounded-3xl shadow-2xl border border-slate-100 flex flex-col items-center gap-6 max-w-xs w-full text-center">
+              <Loader2 size={64} className="text-indigo-600 animate-spin" />
+              <div className="space-y-2">
+                <h3 className="text-xl font-black text-slate-800">{progressMsg}</h3>
+                <p className="text-sm font-bold text-slate-400">正在處理文件，請勿離開畫面...</p>
+              </div>
+           </div>
+        </div>
       )}
     </div>
   );
