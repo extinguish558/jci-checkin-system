@@ -181,12 +181,46 @@ const FlowPanel: React.FC = () => {
     }
   };
 
+  const getBlobUrl = (base64: string, mime: string) => {
+    const byteCharacters = atob(base64);
+    const byteNumbers = new Array(byteCharacters.length);
+    for (let i = 0; i < byteCharacters.length; i++) {
+        byteNumbers[i] = byteCharacters.charCodeAt(i);
+    }
+    const byteArray = new Uint8Array(byteNumbers);
+    const blob = new Blob([byteArray], { type: mime });
+    return URL.createObjectURL(blob);
+  };
+
   const handlePreview = (file: FlowFile) => {
     if (file.url) {
       window.open(file.url, '_blank');
       return;
     }
-    alert("預覽功能受刻，請點擊下載查看內容。");
+    if (file.data) {
+        // PDF 與圖片在行動裝置瀏覽器通常可直接預覽，Excel 等格式則會觸發下載
+        const url = getBlobUrl(file.data, file.mimeType);
+        window.open(url, '_blank');
+    } else {
+        alert("預覽失敗：無檔案內容。");
+    }
+  };
+
+  const handleDownload = (file: FlowFile) => {
+    if (file.url) {
+        window.open(file.url, '_blank');
+        return;
+    }
+    if (file.data) {
+        const url = getBlobUrl(file.data, file.mimeType);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = file.name;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        setTimeout(() => URL.revokeObjectURL(url), 100);
+    }
   };
 
   return (
@@ -316,6 +350,10 @@ const FlowPanel: React.FC = () => {
                                 <Eye size={16} className="md:w-5 md:h-5" />
                                 <span className="hidden md:inline font-black">預覽</span>
                             </button>
+                            <button onClick={() => handleDownload(file)} className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg flex items-center gap-1 group transition-all">
+                                <Download size={16} className="md:w-5 md:h-5" />
+                                <span className="hidden md:inline font-black">下載</span>
+                            </button>
                             {isAdmin && (
                                 <button onClick={() => removeFlowFile(file.id)} className="p-2 text-red-300 hover:text-red-500 rounded-lg">
                                     <Trash2 size={16} className="md:w-5 md:h-5" />
@@ -392,3 +430,4 @@ const FlowPanel: React.FC = () => {
 };
 
 export default FlowPanel;
+
