@@ -1,6 +1,6 @@
 
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { Guest, SystemSettings, GuestCategory, ParsedGuestDraft, FlowFile } from '../types';
+import { Guest, SystemSettings, GuestCategory, ParsedGuestDraft, FlowFile, McFlowStep, GiftItem } from '../types';
 import { db, isFirebaseReady } from '../services/firebase';
 
 export type DrawMode = 'default' | 'all' | 'winners_only';
@@ -10,12 +10,14 @@ interface EventContextType {
   settings: SystemSettings;
   updateSettings: (newSettings: Partial<SystemSettings>) => void;
   addGuestsFromDraft: (drafts: ParsedGuestDraft[], checkInTimestamp: Date) => Promise<void>;
+  overwriteGuestsFromDraft: (drafts: ParsedGuestDraft[], checkInTimestamp: Date) => Promise<void>;
   updateGuestInfo: (id: string, updates: Partial<Guest>) => Promise<void>;
   toggleIntroduced: (id: string) => Promise<void>;
   resetIntroductions: () => Promise<void>;
   drawWinner: (mode?: DrawMode) => Guest | null;
   resetLottery: () => Promise<void>;
   clearLotteryRound: (round: number) => Promise<void>;
+  removeWinnerFromRound: (guestId: string, round: number) => Promise<void>;
   nextLotteryRound: () => void;
   jumpToLotteryRound: (round: number) => void; 
   clearAllData: () => Promise<void>;
@@ -26,6 +28,10 @@ interface EventContextType {
   clearCheckInsForIds: (ids: string[]) => Promise<void>;
   addFlowFile: (file: FlowFile) => Promise<void>;
   removeFlowFile: (id: string) => Promise<void>;
+  toggleMcFlowStep: (id: string) => Promise<void>;
+  setMcFlowSteps: (steps: McFlowStep[]) => Promise<void>;
+  toggleGiftPresented: (id: string) => Promise<void>;
+  setGiftItems: (items: GiftItem[]) => Promise<void>;
   isCloudConnected: boolean; 
   connectionError: string | null;
   usingLocalDataProtection: boolean;
@@ -41,7 +47,9 @@ const defaultSettings: SystemSettings = {
   currentCheckInRound: 1,
   lotteryRoundCounter: 1,
   totalRounds: 2,
-  flowFiles: []
+  flowFiles: [],
+  mcFlowSteps: [],
+  giftItems: []
 };
 
 const generateId = () => {
@@ -94,7 +102,6 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       localStorage.setItem('event_settings', JSON.stringify(newSettings));
   }
 
-  // 初始化時載入本地資料
   useEffect(() => {
       try {
           const localG = localStorage.getItem('event_guests');
@@ -158,10 +165,28 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   };
 
+  const toggleMcFlowStep = async (id: string) => {
+    const currentSteps = settings.mcFlowSteps || [];
+    const newSteps = currentSteps.map(step => step.id === id ? { ...step, isCompleted: !step.isCompleted } : step);
+    await updateSettings({ mcFlowSteps: newSteps });
+  };
+
+  const setMcFlowSteps = async (steps: McFlowStep[]) => {
+    await updateSettings({ mcFlowSteps: steps });
+  };
+
+  const toggleGiftPresented = async (id: string) => {
+    const currentItems = settings.giftItems || [];
+    const newItems = currentItems.map(item => item.id === id ? { ...item, isPresented: !item.isPresented } : item);
+    await updateSettings({ giftItems: newItems });
+  };
+
+  const setGiftItems = async (items: GiftItem[]) => {
+    await updateSettings({ giftItems: items });
+  };
+
   const clearCheckInsForIds = useCallback(async (ids: string[]) => {
     if (!ids || ids.length === 0) return;
-
-    // 1. 本地狀態優先
     setGuests(prev => {
         const updated = prev.map(g => ids.includes(g.id) ? {
             ...g,
@@ -174,8 +199,6 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         saveToLocal(updated);
         return updated;
     });
-
-    // 2. 雲端同步 (分批處理)
     if (db) {
         try {
             const MAX_BATCH_SIZE = 450;
@@ -208,7 +231,6 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const addFlowFile = async (file: FlowFile) => {
     const currentFiles = settings.flowFiles || [];
-    // 每個類別只留一個
     const filteredFiles = currentFiles.filter(f => f.type !== file.type);
     const newFiles = [...filteredFiles, file];
     await updateSettings({ flowFiles: newFiles });
@@ -236,13 +258,11 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const globalRound = settings.currentCheckInRound;
     const BLACKLIST = ['姓名', '職稱', '備註'];
     let newDocs: any[] = [];
-
     setGuests(prevGuests => {
         const currentGuests = [...prevGuests];
         const existingNames = new Map<string, number>(); 
         currentGuests.forEach((g, idx) => existingNames.set(g.name, idx));
         const offlineGuestList = [...currentGuests];
-        
         drafts.forEach(draft => {
             if (!draft.name || !draft.name.trim()) return;
             const cleanName = draft.name.trim();
@@ -250,7 +270,6 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             const shouldAddRound = draft.hasSignature;
             const targetRound = draft.forcedRound !== undefined ? draft.forcedRound : globalRound;
             const exists = existingNames.has(cleanName);
-            
             if (exists) {
                 const idx = existingNames.get(cleanName)!;
                 const existing = offlineGuestList[idx];
@@ -296,7 +315,6 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         saveToLocal(offlineGuestList);
         return offlineGuestList;
     });
-
     if (db) {
         try {
             const batch = db.batch();
@@ -305,10 +323,25 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                 batch.set(ref, op.data, { merge: true });
             });
             await batch.commit();
-        } catch (e: any) {
-            alert("匯入雲端失敗: " + e.message);
-        }
+        } catch (e: any) { alert("匯入雲端失敗: " + e.message); }
     }
+  };
+
+  const overwriteGuestsFromDraft = async (drafts: ParsedGuestDraft[], checkInTimestamp: Date) => {
+    if (!confirm('此操作將會「清空所有現有名單」並替換為新檔案，確定要執行嗎？')) return;
+    
+    // 1. 清空雲端與本地資料
+    if (db) {
+        const snapshot = await db.collection("guests").get();
+        const batch = db.batch();
+        snapshot.forEach((doc: any) => batch.delete(doc.ref));
+        await batch.commit();
+    }
+    setGuests([]);
+    saveToLocal([]);
+
+    // 2. 呼叫 addGuestsFromDraft 加入新名單
+    await addGuestsFromDraft(drafts, checkInTimestamp);
   };
 
   const updateGuestInfo = async (id: string, updates: Partial<Guest>) => {
@@ -320,9 +353,7 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       if (db) {
           try {
               await db.collection("guests").doc(id).set(updates, { merge: true });
-          } catch (e: any) {
-              alert("更新失敗: " + e.message);
-          }
+          } catch (e: any) { alert("更新失敗: " + e.message); }
       }
   };
 
@@ -332,7 +363,6 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       const currentRounds = guest.attendedRounds || [];
       const isAttendingTarget = currentRounds.includes(targetRound);
       let newRounds = isAttendingTarget ? [] : [targetRound];
-      
       const updates = {
           attendedRounds: newRounds,
           isCheckedIn: newRounds.length > 0,
@@ -340,7 +370,6 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           checkInTime: newRounds.length > 0 ? (guest.checkInTime || new Date().toISOString()) : null,
           isIntroduced: newRounds.length > 0 ? guest.isIntroduced : false 
       };
-      
       updateGuestInfo(id, updates);
   };
 
@@ -352,8 +381,7 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const toggleIntroduced = async (id: string) => {
     const guest = guests.find(g => g.id === id);
     if (!guest) return;
-    const newVal = !guest.isIntroduced;
-    updateGuestInfo(id, { isIntroduced: newVal });
+    updateGuestInfo(id, { isIntroduced: !guest.isIntroduced });
   };
 
   const resetIntroductions = async () => {
@@ -370,9 +398,7 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                 const batch = db.batch();
                 ids.forEach(id => batch.set(db.collection("guests").doc(id), { isIntroduced: false }, { merge: true }));
                 await batch.commit();
-            } catch (e: any) {
-                alert("重置介紹失敗: " + e.message);
-            }
+            } catch (e: any) { alert("重置介紹失敗: " + e.message); }
         }
     }
   };
@@ -402,9 +428,7 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
               const batch = db.batch();
               guests.forEach(g => batch.set(db.collection("guests").doc(g.id), { isWinner: false, winRound: null, wonRounds: [] }, { merge: true }));
               await batch.commit();
-          } catch (e: any) {
-              alert("重置抽獎失敗: " + e.message);
-          }
+          } catch (e: any) { alert("重置抽獎失敗: " + e.message); }
       }
     }
   };
@@ -432,10 +456,20 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                   }
               });
               await batch.commit();
-          } catch (e: any) {
-              alert("清除失敗: " + e.message);
-          }
+          } catch (e: any) { alert("清除失敗: " + e.message); }
       }
+  };
+
+  const removeWinnerFromRound = async (guestId: string, round: number) => {
+      const guest = guests.find(g => g.id === guestId);
+      if (!guest) return;
+      const newWonRounds = (guest.wonRounds || []).filter(r => r !== round);
+      const isWinner = newWonRounds.length > 0;
+      await updateGuestInfo(guestId, {
+          wonRounds: newWonRounds,
+          isWinner: isWinner,
+          winRound: isWinner ? Math.max(...newWonRounds) : undefined
+      });
   };
 
   const nextLotteryRound = () => updateSettings({ lotteryRoundCounter: settings.lotteryRoundCounter + 1 });
@@ -455,13 +489,11 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             snapshot.forEach((doc: any) => batch.delete(doc.ref));
             batch.set(db.collection("config").doc("mainSettings"), newSettings);
             await batch.commit();
-        } catch (e: any) {
-            alert("刪除全域資料失敗: " + e.message);
-        }
+        } catch (e: any) { alert("刪除全域資料失敗: " + e.message); }
       }
   }
 
-  const deleteGuest = async (id: string) => {
+  const deleteGuest = async (id) => {
       setGuests(prev => {
           const next = prev.filter(g => g.id !== id);
           saveToLocal(next);
@@ -470,18 +502,17 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       if (db) {
           try {
               await db.collection("guests").doc(id).delete();
-          } catch (e: any) {
-              alert("刪除失敗: " + e.message);
-          }
+          } catch (e: any) { alert("刪除失敗: " + e.message); }
       }
   }
 
   return (
     <EventContext.Provider value={{
-      guests, settings, updateSettings, addGuestsFromDraft, updateGuestInfo, toggleIntroduced,
-      resetIntroductions, drawWinner, resetLottery, clearLotteryRound, nextLotteryRound,
+      guests, settings, updateSettings, addGuestsFromDraft, overwriteGuestsFromDraft, updateGuestInfo, toggleIntroduced,
+      resetIntroductions, drawWinner, resetLottery, clearLotteryRound, removeWinnerFromRound, nextLotteryRound,
       jumpToLotteryRound, clearAllData, deleteGuest, toggleCheckInRound, clearGuestCheckIn,
-      clearAllCheckIns, clearCheckInsForIds, addFlowFile, removeFlowFile, isCloudConnected, connectionError,
+      clearAllCheckIns, clearCheckInsForIds, addFlowFile, removeFlowFile, toggleMcFlowStep, setMcFlowSteps, 
+      toggleGiftPresented, setGiftItems, isCloudConnected, connectionError,
       usingLocalDataProtection, uploadAllLocalDataToCloud, isAdmin, loginAdmin, logoutAdmin
     }}>
       {children}

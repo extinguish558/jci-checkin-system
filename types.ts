@@ -21,6 +21,22 @@ export interface FlowFile {
   url?: string;  // 外部連結網址 (用於大型簡報檔案)
 }
 
+export interface McFlowStep {
+  id: string;
+  time?: string;
+  title: string;
+  description?: string;
+  isCompleted: boolean;
+}
+
+export interface GiftItem {
+  id: string;
+  name: string;      // 禮品名稱
+  donor: string;     // 贈送人
+  recipient: string; // 受贈人/單位
+  isPresented: boolean;
+}
+
 export interface Guest {
   id: string;
   code?: string;
@@ -45,6 +61,8 @@ export interface SystemSettings {
   lotteryRoundCounter: number;
   totalRounds: number;
   flowFiles?: FlowFile[]; 
+  mcFlowSteps?: McFlowStep[];
+  giftItems?: GiftItem[];
 }
 
 export interface ParsedGuestDraft {

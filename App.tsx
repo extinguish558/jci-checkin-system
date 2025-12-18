@@ -1,116 +1,73 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { EventProvider } from './context/EventContext';
 import AdminPanel from './components/AdminPanel';
 import McPanel from './components/McPanel';
 import LotteryPanel from './components/LotteryPanel';
 import FlowPanel from './components/FlowPanel';
-import { ClipboardList, Mic2, Gift, ScrollText, ChevronDown, ChevronUp } from 'lucide-react';
+import McFlowPanel from './components/McFlowPanel';
+import GiftsPanel from './components/GiftsPanel';
+import { ClipboardList, Mic2, Gift, ScrollText, ChevronUp, ListChecks, Award } from 'lucide-react';
 
 const App: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'flow' | 'admin' | 'mc' | 'lottery'>('flow');
+  const [activeTab, setActiveTab] = useState<'flow' | 'admin' | 'mc' | 'lottery' | 'mcflow' | 'gifts'>('flow');
   const [isNavHidden, setIsNavHidden] = useState(false);
-
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const viewParam = params.get('view');
-
-    if (viewParam) {
-      if (viewParam === 'mc') {
-        setActiveTab('mc');
-        setIsNavHidden(true);
-      } else if (viewParam === 'lottery') {
-        setActiveTab('lottery');
-        setIsNavHidden(true);
-      } else if (viewParam === 'flow') {
-        setActiveTab('flow');
-        setIsNavHidden(true);
-      } else if (viewParam === 'admin') {
-        setActiveTab('admin');
-      }
-    }
-  }, []);
 
   return (
     <EventProvider>
-      {/* 使用 fixed inset-0 鎖定整體高度，避免導覽列被內容推走 */}
-      <div className="fixed inset-0 flex flex-col bg-slate-50 font-sans overflow-hidden">
+      <div className="fixed inset-0 flex flex-col bg-[#F2F2F7] overflow-hidden">
         
-        {/* 主要內容區域：獨立捲動 */}
-        <main className="flex-1 w-full overflow-y-auto relative custom-scrollbar">
+        <main className="flex-1 w-full overflow-y-auto relative custom-scrollbar smooth-scroll">
           {activeTab === 'flow' && <FlowPanel />}
           {activeTab === 'admin' && <AdminPanel />}
+          {activeTab === 'gifts' && <GiftsPanel />}
+          {activeTab === 'mcflow' && <McFlowPanel />}
           {activeTab === 'mc' && <McPanel />}
           {activeTab === 'lottery' && <LotteryPanel />}
         </main>
 
-        {/* 底部導覽列容器 - 具備動態過渡 */}
-        <div className={`relative shrink-0 transition-transform duration-500 ease-in-out z-[100] ${isNavHidden ? 'translate-y-full' : 'translate-y-0'}`}>
-          
-          {/* 抽屜隱藏拉環 - 位於導覽列正中央上方 */}
-          <div className="absolute left-1/2 -translate-x-1/2 -top-6 h-6 w-16 md:w-20 bg-white/95 backdrop-blur-md border-t border-l border-r border-slate-200 rounded-t-xl flex items-center justify-center cursor-pointer shadow-[0_-5px_15px_rgba(0,0,0,0.05)] active:bg-slate-50 transition-colors"
-               onClick={() => setIsNavHidden(!isNavHidden)}>
-            {isNavHidden ? (
-              <ChevronUp size={20} className="text-indigo-600 animate-bounce" />
-            ) : (
-              <ChevronDown size={20} className="text-slate-400 hover:text-indigo-600" />
-            )}
+        {/* iOS Style Floating Tab Bar */}
+        <div className={`fixed bottom-0 left-0 right-0 transition-all duration-500 ease-in-out z-[100] px-4 md:px-6 pb-6 md:pb-8 pt-2 ${isNavHidden ? 'translate-y-32 opacity-0' : 'translate-y-0 opacity-100'}`}>
+          <div className="max-w-2xl mx-auto pb-safe">
+            <nav className="ios-blur bg-black/85 text-white shadow-[0_25px_60px_rgba(0,0,0,0.4)] rounded-[2.5rem] h-20 md:h-22 flex justify-around items-center px-2 md:px-4 border border-white/10 ring-1 ring-white/5">
+              <button onClick={() => setActiveTab('flow')} className={`flex flex-col items-center gap-1.5 transition-all flex-1 ${activeTab === 'flow' ? 'text-[#007AFF]' : 'text-gray-400'}`}>
+                <ScrollText size={activeTab === 'flow' ? 24 : 22} className={`transition-transform ${activeTab === 'flow' ? 'scale-110 drop-shadow-[0_0_8px_rgba(0,122,255,0.5)]' : ''}`} />
+                <span className="text-[10px] font-black tracking-tighter">流程看板</span>
+              </button>
+              <button onClick={() => setActiveTab('admin')} className={`flex flex-col items-center gap-1.5 transition-all flex-1 ${activeTab === 'admin' ? 'text-[#007AFF]' : 'text-gray-400'}`}>
+                <ClipboardList size={activeTab === 'admin' ? 24 : 22} className={`transition-transform ${activeTab === 'admin' ? 'scale-110 drop-shadow-[0_0_8px_rgba(0,122,255,0.5)]' : ''}`} />
+                <span className="text-[10px] font-black tracking-tighter">報到管理</span>
+              </button>
+              
+              {/* 新增：禮品頒贈 */}
+              <button onClick={() => setActiveTab('gifts')} className={`flex flex-col items-center gap-1.5 transition-all flex-1 ${activeTab === 'gifts' ? 'text-[#007AFF]' : 'text-gray-400'}`}>
+                <Award size={activeTab === 'gifts' ? 24 : 22} className={`transition-transform ${activeTab === 'gifts' ? 'scale-110 drop-shadow-[0_0_8px_rgba(0,122,255,0.5)]' : ''}`} />
+                <span className="text-[10px] font-black tracking-tighter">禮品頒贈</span>
+              </button>
+
+              <button onClick={() => setActiveTab('mcflow')} className={`flex flex-col items-center gap-1.5 transition-all flex-1 ${activeTab === 'mcflow' ? 'text-[#007AFF]' : 'text-gray-400'}`}>
+                <ListChecks size={activeTab === 'mcflow' ? 24 : 22} className={`transition-transform ${activeTab === 'mcflow' ? 'scale-110 drop-shadow-[0_0_8px_rgba(0,122,255,0.5)]' : ''}`} />
+                <span className="text-[10px] font-black tracking-tighter">司儀流程</span>
+              </button>
+              <button onClick={() => setActiveTab('mc')} className={`flex flex-col items-center gap-1.5 transition-all flex-1 ${activeTab === 'mc' ? 'text-[#007AFF]' : 'text-gray-400'}`}>
+                <Mic2 size={activeTab === 'mc' ? 24 : 22} className={`transition-transform ${activeTab === 'mc' ? 'scale-110 drop-shadow-[0_0_8px_rgba(0,122,255,0.5)]' : ''}`} />
+                <span className="text-[10px] font-black tracking-tighter">貴賓介紹</span>
+              </button>
+              <button onClick={() => setActiveTab('lottery')} className={`flex flex-col items-center gap-1.5 transition-all flex-1 ${activeTab === 'lottery' ? 'text-[#007AFF]' : 'text-gray-400'}`}>
+                <Gift size={activeTab === 'lottery' ? 24 : 22} className={`transition-transform ${activeTab === 'lottery' ? 'scale-110 drop-shadow-[0_0_8px_rgba(0,122,255,0.5)]' : ''}`} />
+                <span className="text-[10px] font-black tracking-tighter">抽獎儀表</span>
+              </button>
+            </nav>
           </div>
-
-          <nav className="w-full bg-white/95 backdrop-blur-xl border-t border-slate-200 shadow-[0_-10px_40px_rgba(0,0,0,0.08)]">
-            <div className="flex justify-around items-center h-16 md:h-20 max-w-5xl mx-auto px-2 md:px-4">
-              <button 
-                onClick={() => setActiveTab('flow')}
-                className={`flex flex-col items-center justify-center w-full h-full transition-all active:scale-90 ${activeTab === 'flow' ? 'text-indigo-600' : 'text-slate-400'}`}
-              >
-                <div className={`p-1.5 rounded-xl transition-colors ${activeTab === 'flow' ? 'bg-indigo-50' : ''}`}>
-                  <ScrollText size={activeTab === 'flow' ? 24 : 22} strokeWidth={activeTab === 'flow' ? 2.5 : 2} />
-                </div>
-                <span className={`text-[10px] md:text-xs mt-1 font-black tracking-tight ${activeTab === 'flow' ? 'opacity-100' : 'opacity-60'}`}>活動流程</span>
-              </button>
-
-              <button 
-                onClick={() => setActiveTab('admin')}
-                className={`flex flex-col items-center justify-center w-full h-full transition-all active:scale-90 ${activeTab === 'admin' ? 'text-blue-600' : 'text-slate-400'}`}
-              >
-                <div className={`p-1.5 rounded-xl transition-colors ${activeTab === 'admin' ? 'bg-blue-50' : ''}`}>
-                  <ClipboardList size={activeTab === 'admin' ? 24 : 22} strokeWidth={activeTab === 'admin' ? 2.5 : 2} />
-                </div>
-                <span className={`text-[10px] md:text-xs mt-1 font-black tracking-tight ${activeTab === 'admin' ? 'opacity-100' : 'opacity-60'}`}>報到管理</span>
-              </button>
-              
-              <button 
-                onClick={() => setActiveTab('mc')}
-                className={`flex flex-col items-center justify-center w-full h-full transition-all active:scale-90 ${activeTab === 'mc' ? 'text-indigo-600' : 'text-slate-400'}`}
-              >
-                <div className={`p-1.5 rounded-xl transition-colors ${activeTab === 'mc' ? 'bg-indigo-50' : ''}`}>
-                  <Mic2 size={activeTab === 'mc' ? 24 : 22} strokeWidth={activeTab === 'mc' ? 2.5 : 2} />
-                </div>
-                <span className={`text-[10px] md:text-xs mt-1 font-black tracking-tight ${activeTab === 'mc' ? 'opacity-100' : 'opacity-60'}`}>司儀模式</span>
-              </button>
-              
-              <button 
-                onClick={() => setActiveTab('lottery')}
-                className={`flex flex-col items-center justify-center w-full h-full transition-all active:scale-90 ${activeTab === 'lottery' ? 'text-purple-600' : 'text-slate-400'}`}
-              >
-                <div className={`p-1.5 rounded-xl transition-colors ${activeTab === 'lottery' ? 'bg-purple-50' : ''}`}>
-                  <Gift size={activeTab === 'lottery' ? 24 : 22} strokeWidth={activeTab === 'lottery' ? 2.5 : 2} />
-                </div>
-                <span className={`text-[10px] md:text-xs mt-1 font-black tracking-tight ${activeTab === 'lottery' ? 'opacity-100' : 'opacity-60'}`}>現場抽獎</span>
-              </button>
-            </div>
-            {/* 適配所有行動裝置底部安全區 */}
-            <div className="h-[env(safe-area-inset-bottom,0px)] bg-white"></div>
-          </nav>
         </div>
 
-        {/* 隱藏狀態下的浮動拉環提示 (位於畫面最底部，僅在隱藏時出現) */}
-        {isNavHidden && (
-           <div className="fixed bottom-0 left-1/2 -translate-x-1/2 h-6 w-16 md:w-20 bg-indigo-600/10 backdrop-blur-sm border-t border-l border-r border-indigo-200 rounded-t-xl flex items-center justify-center cursor-pointer z-[110] hover:bg-indigo-600/20 transition-all animate-pulse"
-                onClick={() => setIsNavHidden(false)}>
-             <ChevronUp size={20} className="text-indigo-600" />
-           </div>
-        )}
+        {/* Restore nav button */}
+        <button 
+          onClick={() => setIsNavHidden(!isNavHidden)}
+          className={`fixed bottom-10 right-6 w-12 h-12 bg-black/90 text-white rounded-full flex items-center justify-center shadow-2xl transition-all z-[110] border border-white/20 ios-blur ${isNavHidden ? 'translate-y-0 opacity-100 scale-100' : 'translate-y-32 opacity-0 scale-50'}`}
+        >
+          <ChevronUp size={24} />
+        </button>
       </div>
     </EventProvider>
   );

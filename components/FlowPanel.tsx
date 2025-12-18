@@ -1,427 +1,378 @@
 
-import React, { useRef, useState, useMemo } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import { useEvent } from '../context/EventContext';
 import { FlowFile } from '../types';
-import * as XLSX from 'xlsx';
-import { ScrollText, FileSpreadsheet, FileText, Presentation, Trash2, Clock, Calendar, Download, Plus, Settings, Lock, Unlock, X, Loader2, UploadCloud, Database, AlertTriangle, Link as LinkIcon, ExternalLink, Info, Eye, Maximize2, ShieldCheck, Key, ListTodo } from 'lucide-react';
+import { FileSpreadsheet, FileText, Presentation, Trash2, Settings, Lock, Unlock, Plus, ListTodo, ShieldCheck, Download, Loader2, Info, Eye, Upload } from 'lucide-react';
 
 const FlowPanel: React.FC = () => {
   const { settings, updateSettings, addFlowFile, removeFlowFile, isAdmin, loginAdmin, logoutAdmin } = useEvent();
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const currentTypeRef = useRef<'schedule' | 'gifts' | 'slides'>('schedule');
-  
-  // 權限相關狀態
   const [showLoginModal, setShowLoginModal] = useState(false); 
-  const [showUploadAuthModal, setShowUploadAuthModal] = useState(false); 
-  const [hasUploadPermission, setHasUploadPermission] = useState(false); 
   const [loginPassword, setLoginPassword] = useState("");
-  const [workPassword, setWorkPassword] = useState("");
-  const [pendingAction, setPendingAction] = useState<'file' | 'link' | null>(null);
-  
   const [isUploading, setIsUploading] = useState(false);
-  const [uploadStatus, setUploadStatus] = useState("");
+  const [uploadType, setUploadType] = useState<'schedule' | 'gifts' | 'slides' | null>(null);
   
-  const [showLinkModal, setShowLinkModal] = useState(false);
-  const [linkInput, setLinkInput] = useState({ name: '', url: '' });
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const UPLOAD_WORK_PASSWORD = "0000";
+  // 優化自動高度調整邏輯
+  const adjustHeight = () => {
+    const textarea = textareaRef.current;
+    if (textarea) {
+      textarea.style.height = 'auto'; // 先設回 auto 取得真實內容高度
+      const newHeight = Math.max(120, textarea.scrollHeight);
+      textarea.style.height = `${newHeight}px`; 
+    }
+  };
 
-  const MAX_STORAGE_BYTES = 1048576; 
-  
-  const storageStats = useMemo(() => {
-    const files = settings.flowFiles || [];
-    const totalBase64Length = files.reduce((acc, f) => acc + (f.data?.length || 0), 0);
-    const otherSettingsSize = JSON.stringify({ ...settings, flowFiles: [] }).length;
-    const totalUsed = totalBase64Length + otherSettingsSize;
-    const usagePercent = Math.min(Math.round((totalUsed / MAX_STORAGE_BYTES) * 100), 100);
-    
-    return {
-        totalUsed,
-        usagePercent,
-        isNearLimit: usagePercent > 80,
-        isFull: usagePercent >= 98
-    };
-  }, [settings]);
+  useEffect(() => {
+    // 確保組件渲染後或內容變更時重新計算高度
+    const timer = setTimeout(adjustHeight, 100);
+    return () => clearTimeout(timer);
+  }, [settings.briefSchedule]);
 
   const handleAdminLogin = (e: React.FormEvent) => {
     e.preventDefault();
     if (loginAdmin(loginPassword)) {
         setShowLoginModal(false);
         setLoginPassword("");
-        setHasUploadPermission(true);
     } else {
-        alert("管理員密碼錯誤 (預設 8888)");
+        alert("密碼錯誤");
     }
-  };
-
-  const handleWorkAuthSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (workPassword === UPLOAD_WORK_PASSWORD) {
-        setHasUploadPermission(true);
-        setShowUploadAuthModal(false);
-        setWorkPassword("");
-        
-        setTimeout(() => {
-            if (pendingAction === 'file') {
-                fileInputRef.current?.click();
-            } else if (pendingAction === 'link') {
-                setShowLinkModal(true);
-            }
-            setPendingAction(null);
-        }, 100);
-    } else if (workPassword === "8888") {
-        if (loginAdmin("8888")) {
-            setHasUploadPermission(true);
-            setShowUploadAuthModal(false);
-            setWorkPassword("");
-        }
-    } else {
-        alert("工作密碼錯誤 (預設 0000)");
-    }
-  };
-
-  const triggerUpload = (type: 'schedule' | 'gifts' | 'slides') => {
-    currentTypeRef.current = type;
-    if (isAdmin || hasUploadPermission) {
-        if (storageStats.isFull) return alert("雲端儲存空間已滿，請先刪除不必要的舊檔。");
-        if (fileInputRef.current) fileInputRef.current.value = '';
-        fileInputRef.current?.click();
-    } else {
-        setPendingAction('file');
-        setShowUploadAuthModal(true);
-    }
-  };
-
-  const openLinkModal = (type: 'schedule' | 'gifts' | 'slides') => {
-    currentTypeRef.current = type;
-    if (isAdmin || hasUploadPermission) {
-        setLinkInput({ name: '', url: '' });
-        setShowLinkModal(true);
-    } else {
-        setPendingAction('link');
-        setShowUploadAuthModal(true);
-    }
-  };
-
-  const handleAddLink = async () => {
-    if (!linkInput.name || !linkInput.url) return alert("請輸入名稱與網址");
-    setIsUploading(true);
-    setUploadStatus("正在更新雲端連結...");
-    try {
-        const newLinkFile: FlowFile = {
-            id: Math.random().toString(36).substr(2, 9),
-            name: linkInput.name,
-            type: currentTypeRef.current,
-            mimeType: 'text/html',
-            size: 0,
-            uploadTime: new Date().toISOString(),
-            url: linkInput.url
-        };
-        await addFlowFile(newLinkFile);
-        setShowLinkModal(false);
-    } catch (e: any) {
-        alert("儲存連結失敗: " + e.message);
-    } finally {
-        setIsUploading(false);
-    }
-  };
-
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files || files.length === 0) return;
-    const file = files[0];
-    const estimatedNewSize = file.size * 1.35;
-    if (estimatedNewSize > MAX_STORAGE_BYTES * 0.9) {
-        alert(`檔案過大 (${(file.size/1024).toFixed(1)} KB)！\n由於雲端文件有 1MB 的體積限制，建議改用「貼上連結」功能。`);
-        return;
-    }
-    setIsUploading(true);
-    setUploadStatus("準備上傳...");
-    const reader = new FileReader();
-    reader.onload = async () => {
-        try {
-            setUploadStatus("處理中...");
-            const base64 = (reader.result as string).split(',')[1];
-            const newFlowFile: FlowFile = {
-              id: Math.random().toString(36).substr(2, 9),
-              name: file.name,
-              type: currentTypeRef.current,
-              mimeType: file.type,
-              size: file.size,
-              uploadTime: new Date().toISOString(),
-              data: base64
-            };
-            setUploadStatus("寫入雲端中...");
-            await addFlowFile(newFlowFile);
-            alert("檔案上傳成功！");
-        } catch (err: any) {
-            alert("上傳雲端失敗: " + err.message);
-        } finally {
-            setIsUploading(false);
-            if (fileInputRef.current) fileInputRef.current.value = '';
-        }
-    };
-    reader.readAsDataURL(file);
-  };
-
-  const formatSize = (bytes: number) => {
-    if (bytes === 0) return '連結';
-    const k = 1024;
-    const sizes = ['Bytes', 'KB', 'MB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
   };
 
   const getTypeLabel = (type: string) => {
     switch(type) {
-      case 'schedule': return '流程表';
-      case 'gifts': return '禮品清單';
-      case 'slides': return '簡報';
+      case 'schedule': return '活動流程表';
+      case 'gifts': return '禮品抽籤清單';
+      case 'slides': return '活動投影片';
       default: return '檔案';
     }
   };
 
-  const getBlobUrl = (base64: string, mime: string) => {
-    const byteCharacters = atob(base64);
-    const byteNumbers = new Array(byteCharacters.length);
-    for (let i = 0; i < byteCharacters.length; i++) {
-        byteNumbers[i] = byteCharacters.charCodeAt(i);
+  const triggerUpload = (type: 'schedule' | 'gifts' | 'slides') => {
+    if (!isAdmin) {
+      alert("請先點擊右上角「解除鎖定」進入管理模式後再進行上傳。");
+      return;
     }
-    const byteArray = new Uint8Array(byteNumbers);
-    const blob = new Blob([byteArray], { type: mime });
-    return URL.createObjectURL(blob);
+    setUploadType(type);
+    fileInputRef.current?.click();
+  };
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !uploadType) return;
+
+    // 檢查檔案大小是否超過限制 (Firestore 限制約 1MB，建議控制在 800KB 內)
+    if (file.size > 800 * 1024) {
+      alert("檔案大小超過 800KB 限制。請嘗試壓縮檔案或上傳較小的文檔，以確保雲端同步正常。");
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      return;
+    }
+
+    setIsUploading(true);
+    try {
+      const reader = new FileReader();
+      reader.onload = async () => {
+        try {
+          const base64 = (reader.result as string).split(',')[1];
+          const newFile: FlowFile = {
+            id: Math.random().toString(36).substr(2, 9),
+            name: file.name,
+            type: uploadType,
+            mimeType: file.type,
+            size: file.size,
+            uploadTime: new Date().toISOString(),
+            data: base64
+          };
+          await addFlowFile(newFile);
+          alert(`${getTypeLabel(uploadType)} 上傳成功！`);
+        } catch (err) {
+          alert("儲存檔案失敗，請檢查網路連接。");
+        }
+      };
+      reader.onerror = () => alert("讀取檔案失敗");
+      reader.readAsDataURL(file);
+    } catch (err) {
+      alert("處理檔案時發生錯誤");
+    } finally {
+      setIsUploading(false);
+      setUploadType(null);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
   };
 
   const handlePreview = (file: FlowFile) => {
-    if (file.url) {
-      window.open(file.url, '_blank');
+    if (!file.data) {
+      if (file.url) {
+        window.open(file.url, '_blank');
+      } else {
+        alert("目前該檔案無可預覽之數據。");
+      }
       return;
     }
-    if (file.data) {
-        // PDF 與圖片在行動裝置瀏覽器通常可直接預覽，Excel 等格式則會觸發下載
-        const url = getBlobUrl(file.data, file.mimeType);
-        window.open(url, '_blank');
-    } else {
-        alert("預覽失敗：無檔案內容。");
+
+    try {
+      const byteCharacters = atob(file.data);
+      const byteNumbers = new Array(byteCharacters.length);
+      for (let i = 0; i < byteCharacters.length; i++) {
+        byteNumbers[i] = byteCharacters.charCodeAt(i);
+      }
+      const byteArray = new Uint8Array(byteNumbers);
+      const blob = new Blob([byteArray], { type: file.mimeType });
+      const blobUrl = window.URL.createObjectURL(blob);
+      
+      // 在新分頁開啟以進行預覽
+      window.open(blobUrl, '_blank');
+    } catch (err) {
+      alert("預覽失敗，數據格式可能有誤。");
     }
   };
 
   const handleDownload = (file: FlowFile) => {
-    if (file.url) {
+    if (!file.data) {
+      if (file.url) {
         window.open(file.url, '_blank');
-        return;
+      } else {
+        alert("目前該檔案無可下載之數據。");
+      }
+      return;
     }
-    if (file.data) {
-        const url = getBlobUrl(file.data, file.mimeType);
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = file.name;
-        document.body.appendChild(link);
-        link.click();
+
+    try {
+      const byteCharacters = atob(file.data);
+      const byteNumbers = new Array(byteCharacters.length);
+      for (let i = 0; i < byteCharacters.length; i++) {
+        byteNumbers[i] = byteCharacters.charCodeAt(i);
+      }
+      const byteArray = new Uint8Array(byteNumbers);
+      const blob = new Blob([byteArray], { type: file.mimeType });
+      
+      const blobUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = blobUrl;
+      link.download = file.name;
+      document.body.appendChild(link);
+      link.click();
+      
+      // 清理資源
+      setTimeout(() => {
         document.body.removeChild(link);
-        setTimeout(() => URL.revokeObjectURL(url), 100);
+        window.URL.revokeObjectURL(blobUrl);
+      }, 100);
+    } catch (err) {
+      alert("檔案下載失敗，數據格式可能有誤。");
     }
   };
 
   return (
-    <div className="p-2 md:p-8 lg:p-12 max-w-[1440px] mx-auto space-y-3 md:space-y-8 pb-24 relative">
-      <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" />
+    <div className="p-4 md:p-8 max-w-2xl mx-auto space-y-6 animate-in fade-in duration-500 pb-32 bg-[#F2F2F7] min-h-screen">
+      
+      <input 
+        type="file" 
+        ref={fileInputRef} 
+        onChange={handleFileChange} 
+        className="hidden" 
+      />
 
-      {isUploading && (
-        <div className="fixed inset-0 bg-white/80 backdrop-blur-md z-[200] flex flex-col items-center justify-center animate-in fade-in duration-300">
-            <div className="bg-white p-8 rounded-3xl shadow-2xl border border-slate-100 flex flex-col items-center gap-6 max-w-xs w-full text-center">
-                <Loader2 size={64} className="text-indigo-600 animate-spin" />
-                <h3 className="text-xl font-black text-slate-800">{uploadStatus}</h3>
+      {/* Header Section */}
+      <div className="bg-white rounded-[2rem] p-8 shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-white space-y-8">
+        <div className="flex justify-between items-center">
+           <div className="flex items-center gap-2">
+             <div className="w-8 h-8 bg-blue-50 rounded-full flex items-center justify-center">
+               <Settings className="text-blue-500" size={16} />
+             </div>
+             <span className="text-gray-400 font-black uppercase tracking-tight text-xs">活動配置中心</span>
+           </div>
+           <button 
+             onClick={() => isAdmin ? logoutAdmin() : setShowLoginModal(true)} 
+             className={`px-5 py-2 rounded-full text-xs font-black transition-all shadow-sm flex items-center gap-2 ${isAdmin ? 'bg-blue-600 text-white hover:bg-blue-700' : 'bg-white text-gray-400 hover:bg-gray-50'}`}
+           >
+             {isAdmin ? <Unlock size={14} /> : <Lock size={14} />} 
+             {isAdmin ? '管理模式：已解鎖' : '解除鎖定'}
+           </button>
+        </div>
+
+        <div className="space-y-1">
+          <label className="text-[10px] font-black text-gray-300 uppercase tracking-widest ml-1">EVENT THEME</label>
+          <input 
+            type="text" 
+            value={settings.eventName} 
+            onChange={(e) => updateSettings({ eventName: e.target.value })}
+            placeholder="請輸入活動主題名稱..."
+            className="w-full bg-transparent border-none text-2xl md:text-3xl font-black text-black focus:ring-0 p-0 placeholder:text-gray-200"
+            disabled={!isAdmin}
+          />
+        </div>
+
+        {/* 精簡流程編輯器 */}
+        <div className="bg-[#F2F2F7] rounded-[1.5rem] p-6 space-y-4 shadow-inner relative overflow-hidden group">
+            <div className="flex justify-between items-center">
+                <div className="flex items-center gap-2">
+                    <ListTodo size={16} className="text-blue-500" />
+                    <h3 className="font-black text-[11px] text-gray-400 uppercase tracking-tight">精簡流程 (首頁重點摘要)</h3>
+                </div>
+                {!isAdmin && (
+                  <div className="flex items-center gap-1 text-gray-300">
+                    <Info size={12} />
+                    <span className="text-[10px] font-bold">唯讀模式</span>
+                  </div>
+                )}
+            </div>
+            
+            <div className="relative min-h-[120px] flex items-start justify-start">
+              <textarea 
+                  ref={textareaRef}
+                  value={settings.briefSchedule || ''}
+                  onChange={(e) => {
+                    updateSettings({ briefSchedule: e.target.value });
+                    adjustHeight();
+                  }}
+                  placeholder="點擊此處輸入活動流程摘要..."
+                  className={`w-full bg-white rounded-2xl p-6 border-none text-xl md:text-2xl font-light text-black leading-snug placeholder:text-gray-200 transition-all resize-none overflow-hidden text-left shadow-sm focus:ring-2 focus:ring-blue-500/20 ${!isAdmin ? 'cursor-default' : 'cursor-text'}`}
+                  disabled={!isAdmin}
+                  style={{ minHeight: '120px' }}
+              />
+              {!isAdmin && !settings.briefSchedule && (
+                <div className="absolute inset-0 flex items-center justify-center text-gray-300 font-bold italic text-sm">
+                  目前尚無摘要內容
+                </div>
+              )}
             </div>
         </div>
-      )}
+      </div>
 
-      {/* 活動基本設定 & 精簡流程看板 */}
-      <div className="bg-white rounded-2xl md:rounded-3xl p-4 md:p-10 shadow-sm border border-slate-100 flex flex-col gap-4 md:gap-8">
-        <div className="flex justify-between items-center">
-            <h2 className="text-[10px] md:text-sm font-bold text-slate-400 flex items-center gap-1.5 tracking-widest uppercase">
-              <Settings size={12} className="md:w-4 md:h-4" /> 基本設定
-            </h2>
-            <div className="flex gap-1.5">
-                {(isAdmin || hasUploadPermission) && (
-                    <div className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[8px] md:text-[10px] font-black bg-emerald-50 text-emerald-600 border border-emerald-100 animate-pulse">
-                        <ShieldCheck size={10} /> 具備權限
+      {/* 檔案資源區 */}
+      <div className="space-y-4 pt-4">
+        <h4 className="px-6 text-[11px] font-black text-gray-400 uppercase tracking-widest flex items-center gap-2">
+          檔案資源庫 <span className="w-1 h-1 bg-gray-300 rounded-full"></span>
+        </h4>
+        
+        <div className="grid grid-cols-1 gap-3">
+          {(['schedule', 'gifts', 'slides'] as const).map((type) => {
+            const file = (settings.flowFiles || []).find(f => f.type === type);
+            return (
+              <div 
+                key={type} 
+                className={`bg-white rounded-[1.8rem] p-5 shadow-sm border border-white flex items-center gap-4 transition-all group ${file ? 'active:scale-95 cursor-pointer hover:shadow-md' : isAdmin ? 'cursor-pointer hover:bg-blue-50/30' : 'opacity-80'}`}
+                onClick={() => file ? handlePreview(file) : isAdmin ? triggerUpload(type) : null}
+              >
+                 <div className={`w-14 h-14 rounded-2xl flex items-center justify-center shrink-0 transition-transform group-hover:scale-110 ${type === 'schedule' ? 'bg-blue-50 text-blue-500' : type === 'gifts' ? 'bg-orange-50 text-orange-500' : 'bg-purple-50 text-purple-500'}`}>
+                    {type === 'schedule' ? <FileText size={24} /> : type === 'gifts' ? <FileSpreadsheet size={24} /> : <Presentation size={24} />}
+                 </div>
+                 
+                 <div className="flex-1 min-w-0">
+                    <h3 className="font-black text-black text-base">{getTypeLabel(type)}</h3>
+                    <div className="text-[11px] text-gray-400 font-bold truncate mt-0.5">
+                      {file ? file.name : isAdmin ? '點擊此處上傳檔案...' : '管理員尚未上傳'}
                     </div>
-                )}
-                <button onClick={() => isAdmin ? logoutAdmin() : setShowLoginModal(true)} className="flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[9px] md:text-xs font-bold border bg-slate-100 text-slate-500">
-                    {isAdmin ? <Unlock size={12} /> : <Lock size={12} />} {isAdmin ? '管理員' : '鎖定'}
-                </button>
-            </div>
+                 </div>
+
+                 <div className="flex items-center gap-1">
+                    {file ? (
+                      <div className="flex items-center gap-1">
+                        <button 
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handlePreview(file);
+                          }}
+                          className="p-3 bg-gray-50 rounded-xl text-gray-400 shadow-sm transition-all hover:bg-blue-50 hover:text-blue-500"
+                          title="預覽"
+                        >
+                           <Eye size={20} />
+                        </button>
+                        <button 
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDownload(file);
+                          }}
+                          className="p-3 bg-blue-50 rounded-xl text-blue-500 shadow-sm transition-all hover:bg-blue-500 hover:text-white"
+                          title="下載"
+                        >
+                           <Download size={20} />
+                        </button>
+                        {isAdmin && (
+                          <div className="flex items-center gap-1">
+                            <button 
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                triggerUpload(type);
+                              }} 
+                              className="p-3 bg-gray-50 rounded-xl text-gray-400 hover:text-blue-500 transition-all ml-1"
+                              title="更新檔案 (覆蓋)"
+                            >
+                              <Upload size={20} />
+                            </button>
+                            <button 
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if(confirm(`確定要從伺服器刪除「${file.name}」嗎？`)) removeFlowFile(file.id);
+                              }} 
+                              className="p-3 text-gray-200 hover:text-red-500 transition-colors ml-1"
+                              title="刪除"
+                            >
+                              <Trash2 size={20} />
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    ) : isAdmin ? (
+                      <div className="p-3 bg-gray-50 rounded-xl text-gray-300 group-hover:bg-blue-100 group-hover:text-blue-500 transition-all">
+                        {isUploading && uploadType === type ? <Loader2 size={20} className="animate-spin" /> : <Plus size={20} />}
+                      </div>
+                    ) : null}
+                 </div>
+              </div>
+            );
+          })}
         </div>
         
-        <input 
-            className="w-full text-lg md:text-4xl font-black p-2 md:p-4 rounded-xl md:rounded-2xl border-2 border-slate-50 bg-slate-50 focus:border-indigo-500 outline-none transition-all"
-            value={settings.eventName} 
-            onChange={e => updateSettings({ eventName: e.target.value })}
-            placeholder="請輸入活動名稱"
-            disabled={!isAdmin}
-        />
-
-        {/* 精簡流程文字看板 */}
-        <div className="bg-indigo-50/30 border-2 border-indigo-100/50 rounded-2xl p-4 md:p-6 flex flex-col gap-3">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2 text-indigo-700 font-black text-xs md:text-sm">
-              <ListTodo size={16} /> 精簡流程概覽
-            </div>
-            {isAdmin && <span className="text-[10px] font-bold text-indigo-400">總幹事模式：直接點擊輸入內容</span>}
-          </div>
-          
-          {isAdmin ? (
-            <textarea 
-              className="w-full bg-white/60 p-3 md:p-4 rounded-xl border-2 border-transparent focus:border-indigo-300 outline-none font-bold text-sm md:text-lg text-slate-700 placeholder:text-slate-300 min-h-[120px] md:min-h-[160px] resize-none transition-all shadow-inner"
-              value={settings.briefSchedule || ''}
-              onChange={e => updateSettings({ briefSchedule: e.target.value })}
-              placeholder="請在此輸入今日精簡流程，例如：&#10;18:00 報到聯誼&#10;18:30 典禮開始&#10;19:00 主席致詞..."
-            />
-          ) : (
-            <div className="bg-white/40 p-3 md:p-5 rounded-xl text-slate-700 font-bold text-sm md:text-lg leading-relaxed whitespace-pre-wrap min-h-[100px] shadow-sm">
-              {settings.briefSchedule || <span className="text-slate-300 italic">尚未發布流程摘要</span>}
-            </div>
-          )}
-          
-          <div className="text-[9px] md:text-xs text-slate-400 flex items-center gap-1">
-            <Info size={12} /> 提示：此內容會同步給所有進入系統的會友查看。
-          </div>
-        </div>
+        <p className="px-8 text-[10px] text-gray-300 font-bold text-center leading-relaxed italic">
+          提示：點擊卡片中心可直接預覽，點擊右側按鈕可進行下載或管理。
+        </p>
       </div>
 
-      {/* 功能卡片 - 按鈕尺寸優化 */}
-      <div className="grid grid-cols-3 md:grid-cols-3 gap-2 md:gap-8">
-        {[
-            { id: 'schedule', label: '流程表', icon: ScrollText, color: 'blue' },
-            { id: 'gifts', label: '禮品清單', icon: FileSpreadsheet, color: 'emerald' },
-            { id: 'slides', label: '簡報檔案', icon: Presentation, color: 'orange' }
-        ].map(item => (
-            <div key={item.id} className="bg-white p-2.5 md:p-6 rounded-xl md:rounded-[2rem] border-2 border-slate-50 shadow-sm flex flex-col items-center text-center gap-2 md:gap-4 hover:shadow-lg transition-all group">
-                <div className={`p-2 md:p-4 bg-${item.color}-50 text-${item.color}-600 rounded-lg md:rounded-2xl group-hover:scale-110 transition-transform`}>
-                  <item.icon size={20} className="md:w-8 md:h-8" />
-                </div>
-                <div className="font-black text-[10px] md:text-xl text-slate-800 leading-tight">{item.label}</div>
-                
-                <div className="flex flex-col md:flex-row gap-1 w-full mt-auto">
-                    <button onClick={() => triggerUpload(item.id as any)} className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-1 md:py-1.5 rounded-md md:rounded-lg text-[8px] md:text-[11px] flex items-center justify-center gap-1 transition-colors flex-1">
-                        <UploadCloud size={10} className="md:w-3.5 md:h-3.5" /> <span className="hidden xs:inline">上傳</span>
-                    </button>
-                    <button onClick={() => openLinkModal(item.id as any)} className="bg-indigo-50 hover:bg-indigo-100 text-indigo-600 font-bold py-1 md:py-1.5 rounded-md md:rounded-lg text-[8px] md:text-[11px] flex items-center justify-center gap-1 transition-colors flex-1">
-                        <LinkIcon size={10} className="md:w-3.5 md:h-3.5" /> <span className="hidden xs:inline">連結</span>
-                    </button>
-                </div>
-            </div>
-        ))}
-      </div>
-
-      {/* 檔案清單 */}
-      <div className="bg-white rounded-2xl md:rounded-[2rem] shadow-sm border border-slate-100 overflow-hidden">
-        <div className="px-4 py-3 md:p-8 border-b bg-slate-50 flex flex-col md:flex-row justify-between items-start md:items-center gap-2 md:gap-4">
-            <h3 className="text-sm md:text-xl font-black text-slate-700 flex items-center gap-2"><FileText size={16} className="md:w-5 md:h-5" /> 檔案清單</h3>
-            <div className="w-full md:w-80">
-                <div className="flex justify-between items-center mb-1 text-[8px] md:text-xs font-black text-slate-400 uppercase tracking-widest">
-                    <span>空間 ({storageStats.usagePercent}%)</span>
-                </div>
-                <div className="w-full bg-slate-200 h-1.5 md:h-2.5 rounded-full overflow-hidden">
-                    <div className={`h-full transition-all duration-700 ${storageStats.usagePercent > 80 ? 'bg-orange-500' : 'bg-indigo-500'}`} style={{ width: `${storageStats.usagePercent}%` }}></div>
-                </div>
-            </div>
-        </div>
-
-        <div className="divide-y divide-slate-100">
-            {(settings.flowFiles || []).length === 0 ? (
-                <div className="p-12 text-center text-slate-300 font-bold text-sm md:text-lg">尚無檔案</div>
-            ) : (
-                [...(settings.flowFiles || [])].reverse().map(file => (
-                    <div key={file.id} className="p-3 md:p-8 flex items-center gap-3 md:gap-6 hover:bg-slate-50 transition-all">
-                        <div className="p-1.5 md:p-3 bg-white rounded-lg border shadow-sm shrink-0">
-                           {file.type === 'schedule' ? <ScrollText size={14} className="text-blue-500 md:w-6 md:h-6"/> : file.type === 'gifts' ? <FileSpreadsheet size={14} className="text-emerald-500 md:w-6 md:h-6"/> : <Presentation size={14} className="text-orange-500 md:w-6 md:h-6"/>}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                            <div className="font-black text-slate-800 text-xs md:text-xl truncate">{file.name}</div>
-                            <div className="flex items-center gap-2 text-[8px] md:text-sm text-slate-400 font-bold">
-                                <span className="bg-slate-100 px-1 py-0.5 rounded uppercase">{getTypeLabel(file.type)}</span>
-                                <span className="hidden sm:inline">{formatSize(file.size)}</span>
-                            </div>
-                        </div>
-                        <div className="flex items-center gap-1 md:gap-3">
-                            <button onClick={() => handlePreview(file)} className="p-2 text-indigo-600 hover:bg-indigo-50 rounded-lg flex items-center gap-1 group transition-all">
-                                <Eye size={16} className="md:w-5 md:h-5" />
-                                <span className="hidden md:inline font-black">預覽</span>
-                            </button>
-                            <button onClick={() => handleDownload(file)} className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg flex items-center gap-1 group transition-all">
-                                <Download size={16} className="md:w-5 md:h-5" />
-                                <span className="hidden md:inline font-black">下載</span>
-                            </button>
-                            {isAdmin && (
-                                <button onClick={() => removeFlowFile(file.id)} className="p-2 text-red-300 hover:text-red-500 rounded-lg">
-                                    <Trash2 size={16} className="md:w-5 md:h-5" />
-                                </button>
-                            )}
-                        </div>
-                    </div>
-                ))
-            )}
-        </div>
-      </div>
-
-      {/* Link Modal... */}
-      {showLinkModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[150] flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl p-6 md:p-10 max-w-md w-full shadow-2xl animate-in zoom-in duration-300">
-            <h3 className="text-lg md:text-2xl font-black text-slate-800 mb-6 flex items-center gap-3">
-                <LinkIcon className="text-indigo-600" size={20}/> 更新外部連結
-            </h3>
-            <div className="space-y-4">
-              <input 
-                placeholder="名稱" 
-                className="w-full p-3 bg-slate-50 rounded-xl outline-none border-2 border-transparent focus:border-indigo-500 font-bold text-sm"
-                value={linkInput.name}
-                onChange={e => setLinkInput({ ...linkInput, name: e.target.value })}
-              />
-              <input 
-                placeholder="網址 (https://...)" 
-                className="w-full p-3 bg-slate-50 rounded-xl outline-none border-2 border-transparent focus:border-indigo-500 font-bold text-sm"
-                value={linkInput.url}
-                onChange={e => setLinkInput({ ...linkInput, url: e.target.value })}
-              />
-              <div className="flex gap-3 pt-2">
-                <button onClick={() => setShowLinkModal(false)} className="flex-1 bg-slate-100 py-3 rounded-xl font-black text-slate-500 text-sm">取消</button>
-                <button onClick={handleAddLink} className="flex-[2] bg-indigo-600 text-white py-3 rounded-xl font-black text-sm">儲存</button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {showUploadAuthModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[180] flex items-center justify-center p-4">
-          <div className="bg-white rounded-[2.5rem] p-10 max-w-sm w-full shadow-2xl">
-            <form onSubmit={handleWorkAuthSubmit} className="space-y-6 text-center">
-              <h3 className="text-xl font-black text-slate-800">工作人員權限</h3>
-              <p className="text-slate-400 text-sm font-bold">輸入密碼啟動上傳功能 (0000)</p>
-              <input type="password" placeholder="密碼" className="w-full p-4 bg-slate-50 rounded-2xl text-center text-3xl font-mono outline-none border-2 border-indigo-500 shadow-inner" value={workPassword} onChange={e => setWorkPassword(e.target.value)} autoFocus />
-              <div className="flex gap-3">
-                <button type="button" onClick={() => setShowUploadAuthModal(false)} className="flex-1 bg-slate-100 text-slate-500 font-black py-4 rounded-2xl text-xl">取消</button>
-                <button type="submit" className="flex-[2] bg-indigo-600 text-white font-black py-4 rounded-2xl text-xl">驗證</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-      
+      {/* Login Modal */}
       {showLoginModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[190] flex items-center justify-center p-4">
-          <div className="bg-white rounded-[2.5rem] p-10 max-w-sm w-full shadow-2xl">
-            <form onSubmit={handleAdminLogin} className="space-y-6 text-center">
-              <h3 className="text-xl font-black text-slate-800">管理員登入</h3>
-              <input type="password" placeholder="管理密碼" className="w-full p-4 bg-slate-100 rounded-2xl text-center text-3xl font-mono outline-none border-2 border-indigo-500 shadow-inner" value={loginPassword} onChange={e => setLoginPassword(e.target.value)} autoFocus />
+        <div className="fixed inset-0 ios-blur bg-black/40 z-[250] flex items-center justify-center p-6 animate-in fade-in duration-300">
+          <div className="bg-white rounded-[2.5rem] p-8 max-w-xs w-full shadow-2xl flex flex-col items-center gap-6 border border-white/20">
+            <div className="w-20 h-20 bg-blue-50 rounded-3xl flex items-center justify-center text-blue-600 shadow-sm">
+               <ShieldCheck size={40} />
+            </div>
+            <div className="text-center">
+              <h3 className="text-xl font-black text-black">管理員授權登入</h3>
+              <p className="text-gray-400 font-bold text-xs mt-2">請輸入後台維護密碼 (預設 8888)</p>
+            </div>
+            <form onSubmit={handleAdminLogin} className="w-full space-y-4">
+              <input 
+                type="password" 
+                placeholder="Password" 
+                value={loginPassword} 
+                onChange={e => setLoginPassword(e.target.value)}
+                className="w-full bg-[#F2F2F7] border-none rounded-2xl py-5 px-4 text-center text-3xl font-black focus:ring-4 focus:ring-blue-500/20 outline-none transition-all"
+                autoFocus
+              />
               <div className="flex gap-3">
-                <button type="button" onClick={() => { setShowLoginModal(false); setLoginPassword(""); }} className="flex-1 bg-slate-100 text-slate-500 font-black py-4 rounded-2xl text-lg">取消</button>
-                <button type="submit" className="flex-[2] bg-indigo-600 text-white font-black py-4 rounded-2xl text-lg shadow-lg">解鎖</button>
+                <button type="button" onClick={() => setShowLoginModal(false)} className="flex-1 py-4 font-black text-gray-400 hover:text-gray-600">取消</button>
+                <button type="submit" className="flex-1 py-4 bg-blue-600 text-white font-black rounded-2xl shadow-xl shadow-blue-200 active:scale-95 transition-all">確認進入</button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Uploading Overlay */}
+      {isUploading && (
+        <div className="fixed inset-0 ios-blur bg-white/70 z-[400] flex flex-col items-center justify-center gap-5">
+          <div className="relative w-24 h-24">
+             <div className="absolute inset-0 border-8 border-blue-50 rounded-full"></div>
+             <div className="absolute inset-0 border-8 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+             <div className="absolute inset-0 flex items-center justify-center text-blue-600">
+                <Loader2 size={32} className="animate-spin" />
+             </div>
+          </div>
+          <div className="text-center">
+            <p className="font-black text-black text-xl">正在同步雲端資料...</p>
+            <p className="text-gray-400 font-bold text-xs mt-1">請勿關閉視窗，檔案上傳中</p>
           </div>
         </div>
       )}
@@ -430,4 +381,3 @@ const FlowPanel: React.FC = () => {
 };
 
 export default FlowPanel;
-

@@ -2,7 +2,7 @@
 import React, { useMemo, useState } from 'react';
 import { useEvent } from '../context/EventContext';
 import { GuestCategory, Guest } from '../types';
-import { CheckCircle2, Circle, RefreshCw, Mic2, Users, ListFilter, ArrowRight, ChevronDown, ChevronUp, Crown, Star, User, Layers, Globe, Landmark, Handshake } from 'lucide-react';
+import { CheckCircle2, Circle, RefreshCw, Mic2, ChevronDown, ChevronUp, Handshake } from 'lucide-react';
 
 interface VipCardProps {
   guest: Guest;
@@ -13,39 +13,37 @@ interface VipCardProps {
 const VipCard: React.FC<VipCardProps> = ({ guest, side, onToggle }) => (
   <div 
       onClick={() => onToggle(guest.id)}
-      className={`cursor-pointer transition-all duration-300 transform rounded-xl border p-3 md:p-4 mb-2 relative group
+      className={`cursor-pointer transition-all duration-200 rounded-2xl border p-4 md:p-5 mb-3 relative group
           ${side === 'left' 
-              ? 'bg-white border-indigo-100 shadow-sm hover:shadow-md hover:border-indigo-300' 
-              : 'bg-slate-50 border-slate-200 opacity-60 hover:opacity-100 hover:bg-white'}
+              ? 'bg-white border-white shadow-[0_4px_15px_rgba(0,0,0,0.03)] active:scale-[0.98]' 
+              : 'bg-gray-200/50 border-transparent opacity-60'}
       `}
   >
-      <div className="flex items-center gap-2 md:gap-3">
-           {/* Indicator Icon */}
-          <div className={`shrink-0 transition-colors ${side === 'left' ? 'text-indigo-200 group-hover:text-indigo-500' : 'text-green-500'}`}>
-              {side === 'left' ? <Circle size={20} className="md:w-6 md:h-6" /> : <CheckCircle2 size={20} className="md:w-6 md:h-6" />}
+      <div className="flex items-center gap-3 md:gap-4">
+          <div className={`shrink-0 ${side === 'left' ? 'text-[#007AFF]' : 'text-green-600'}`}>
+              {side === 'left' ? <Circle size={24} strokeWidth={3} /> : <CheckCircle2 size={24} strokeWidth={3} />}
           </div>
           
           <div className="flex-1 min-w-0">
-               <div className="flex flex-col md:flex-row md:items-baseline md:gap-2">
-                  <span className={`text-base md:text-xl font-black truncate ${side === 'left' ? 'text-slate-900' : 'text-slate-400 line-through'}`}>
+               <div className="flex flex-col">
+                  <span className={`text-lg md:text-xl font-black truncate leading-tight ${side === 'left' ? 'text-black' : 'text-gray-400 line-through'}`}>
                       {guest.name}
                   </span>
-                  <span className={`text-[10px] md:text-sm font-bold truncate ${side === 'left' ? 'text-indigo-600' : 'text-slate-400'}`}>
+                  <span className={`text-[11px] md:text-sm font-bold truncate mt-0.5 ${side === 'left' ? 'text-[#007AFF]' : 'text-gray-400'}`}>
                       {guest.title}
                   </span>
                </div>
                {guest.note && (
-                   <div className="text-[10px] text-orange-600 font-bold bg-orange-50 inline-block px-1.5 rounded mt-0.5">
+                   <div className="text-[10px] text-orange-700 font-black bg-orange-50 px-2 py-0.5 rounded-lg mt-2 inline-block border border-orange-100">
                        {guest.note}
                    </div>
                )}
           </div>
 
-          <div className="flex flex-col items-end gap-0.5 shrink-0">
-            <span className={`text-[8px] md:text-[10px] font-black px-1.5 py-0.5 rounded-full border ${guest.round === 1 ? 'bg-blue-50 text-blue-500 border-blue-100' : 'bg-purple-50 text-purple-500 border-purple-100'}`}>
-                {guest.round === 1 ? 'R1' : (guest.round === 2 ? 'R2' : `R${guest.round || 1}`)}
+          <div className="flex flex-col items-end gap-1 shrink-0">
+            <span className={`text-[10px] font-black px-2 py-1 rounded-lg ${guest.round === 2 ? 'bg-purple-100 text-purple-600' : 'bg-blue-100 text-blue-600'}`}>
+                R{guest.round || 1}
             </span>
-            {side === 'left' && <span className="text-[8px] md:text-[10px] text-slate-400 font-bold">{guest.category.substring(0, 4)}</span>}
           </div>
       </div>
   </div>
@@ -56,25 +54,15 @@ const McPanel: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'vip' | 'roster'>('vip');
   const [filterRound, setFilterRound] = useState<number | 'all'>('all');
 
-  // Collapsible state
   const [isUnintroExpanded, setIsUnintroExpanded] = useState(true);
   const [isIntroExpanded, setIsIntroExpanded] = useState(false); 
 
-  // Data Processing
   const presentGuests = useMemo(() => guests.filter(g => g.isCheckedIn), [guests]);
-  const absentGuests = useMemo(() => guests.filter(g => !g.isCheckedIn), [guests]);
 
   const toHalfWidth = (str: string) => {
       return str.replace(/[\uff01-\uff5e]/g, function(ch) {
           return String.fromCharCode(ch.charCodeAt(0) - 0xfee0);
       }).replace(/\u3000/g, ' ');
-  };
-
-  const sortGuests = (list: Guest[]) => {
-      return list.sort((a, b) => {
-        if ((a.round || 0) !== (b.round || 0)) return (a.round || 0) - (b.round || 0);
-        return (a.checkInTime || '').localeCompare(b.checkInTime || '');
-      });
   };
 
   const getTitleNumber = (title: string): number => {
@@ -94,10 +82,10 @@ const McPanel: React.FC = () => {
 
   const groupedUnintroduced = useMemo(() => {
       const groups = {
-          hq: [] as Guest[],
+          gov: [] as Guest[],
           presidents: [] as Guest[],
           chairmen: [] as Guest[],
-          gov: [] as Guest[],
+          hq: [] as Guest[],
           visiting: [] as Guest[],
           vips: [] as Guest[]
       };
@@ -111,45 +99,30 @@ const McPanel: React.FC = () => {
 
           const title = g.title.trim();
           const normalizedTitle = toHalfWidth(title); 
-          const isHQ = normalizedTitle.includes('總會') || g.category === GuestCategory.HQ_GUEST;
+          
+          const isGov = g.category === GuestCategory.GOV_OFFICIAL || ['政府', '議員', '立委', '市長', '縣長', '局長', '局'].some(k => normalizedTitle.includes(k));
           const isPresident = normalizedTitle.includes('會長') || g.category === GuestCategory.PAST_PRESIDENT;
           const isChairman = normalizedTitle.includes('主席') || g.category === GuestCategory.PAST_CHAIRMAN;
-          
+          const isHQ = normalizedTitle.includes('總會') || g.category === GuestCategory.HQ_GUEST;
           const isVisiting = g.category === GuestCategory.VISITING_CHAPTER || 
-                            ['母會', '友會', '兄弟會', '姊妹會', '分會', '聯誼會', '友好會'].some(k => normalizedTitle.includes(k));
+                            ['母會', '友會', '兄弟會', '姊妹會', '分會', '友好會', '聯誼會'].some(k => normalizedTitle.includes(k));
           
-          const isGov = g.category === GuestCategory.GOV_OFFICIAL || ['政府', '議員', '立委', '市長', '縣長', '局長', '部長', '院長', '總統', '市民代表', '鄉民代表'].some(k => normalizedTitle.includes(k));
-
-          if (isHQ) groups.hq.push(g);
+          if (isGov) groups.gov.push(g);
           else if (isPresident) groups.presidents.push(g);
           else if (isChairman) groups.chairmen.push(g);
+          else if (isHQ) groups.hq.push(g);
           else if (isVisiting) groups.visiting.push(g);
-          else if (isGov) groups.gov.push(g);
           else groups.vips.push(g);
       });
 
-      sortGuests(groups.hq);
+      const sortListByTime = (l: Guest[]) => l.sort((a,b) => (a.checkInTime || '').localeCompare(b.checkInTime || ''));
+      
+      sortListByTime(groups.gov);
       groups.presidents.sort(stableSortByTitleNumber);
       groups.chairmen.sort(stableSortByTitleNumber);
-      sortGuests(groups.gov);
-      
-      groups.visiting.sort((a, b) => {
-          const getPriority = (title: string) => {
-              const t = title || '';
-              if (t.includes('母會')) return 0;
-              if (t.includes('兄弟會')) return 1;
-              if (t.includes('聯誼會')) return 2;
-              if (t.includes('分會')) return 3;
-              if (t.includes('友好會')) return 4;
-              return 99;
-          };
-          const pA = getPriority(a.title);
-          const pB = getPriority(b.title);
-          if (pA !== pB) return pA - pB;
-          return (a.checkInTime || '').localeCompare(b.checkInTime || '');
-      });
-      
-      sortGuests(groups.vips);
+      sortListByTime(groups.hq);
+      sortListByTime(groups.visiting);
+      sortListByTime(groups.vips);
       return groups;
   }, [presentGuests, filterRound]);
 
@@ -167,182 +140,145 @@ const McPanel: React.FC = () => {
   }, [presentGuests, filterRound]);
 
   return (
-    <div className="w-full h-full bg-slate-50 p-1.5 md:p-6 flex flex-col overflow-hidden font-sans pb-16">
-        {/* Header & Tabs - 手機版極簡化 */}
-        <div className="bg-white shadow-sm rounded-2xl p-3 md:p-5 mb-2 md:mb-4 border border-slate-200 shrink-0">
-            <div className="flex justify-between items-center mb-3 md:mb-4">
-                 <h2 className="text-xl md:text-2xl font-black text-indigo-900 flex items-center gap-2">
-                    <Mic2 className="text-indigo-600" size={20} /> <span className="tracking-tight">司儀面板</span>
-                 </h2>
-                <div className="flex bg-slate-100 p-1 rounded-xl text-[10px] md:text-sm font-bold">
-                    <button onClick={() => setActiveTab('vip')} className={`px-4 py-1.5 rounded-lg transition-all ${activeTab === 'vip' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400'}`}>介紹模式</button>
-                    <button onClick={() => setActiveTab('roster')} className={`px-4 py-1.5 rounded-lg transition-all ${activeTab === 'roster' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400'}`}>總清單</button>
-                </div>
+    <div className="w-full flex flex-col p-4 md:p-8 space-y-6 pb-32 animate-in fade-in duration-500 bg-[#F2F2F7] min-h-screen">
+        
+        {/* Header Card */}
+        <div className="bg-white rounded-[2.5rem] shadow-[0_10px_40px_rgba(0,0,0,0.03)] p-6 md:p-8 border border-white space-y-6">
+            <div className="flex flex-col md:flex-row justify-between items-center gap-4">
+                 <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-blue-50 text-[#007AFF] rounded-2xl flex items-center justify-center">
+                        <Mic2 size={20} />
+                    </div>
+                    <h2 className="text-2xl font-black text-black tracking-tight">司儀播報模式</h2>
+                 </div>
+                 <div className="bg-[#F2F2F7] p-1 rounded-xl flex text-[11px] font-black w-full md:w-auto shadow-inner">
+                    <button onClick={() => setActiveTab('vip')} className={`flex-1 md:px-6 py-2.5 rounded-lg transition-all ${activeTab === 'vip' ? 'bg-white shadow-md text-black' : 'text-gray-400'}`}>智能介紹</button>
+                    <button onClick={() => setActiveTab('roster')} className={`flex-1 md:px-6 py-2.5 rounded-lg transition-all ${activeTab === 'roster' ? 'bg-white shadow-md text-black' : 'text-gray-400'}`}>完整名單</button>
+                 </div>
             </div>
 
-            <div className="flex flex-col md:flex-row justify-between items-center gap-2 md:gap-4 bg-indigo-50/50 p-2 rounded-xl border border-indigo-100">
-                 <div className="flex gap-1.5 overflow-x-auto no-scrollbar w-full md:w-auto">
-                    {[
-                        { label: '全部梯次', val: 'all' as const },
-                        { label: '第一梯次', val: 1 },
-                        { label: '第二梯次', val: 2 }
-                    ].map(btn => (
-                        <button 
-                            key={btn.label}
-                            onClick={() => setFilterRound(btn.val)}
-                            className={`flex-1 md:flex-none px-3 py-1.5 rounded-lg text-[10px] md:text-xs font-black whitespace-nowrap transition-colors border ${filterRound === btn.val ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm' : 'bg-white text-slate-500 border-slate-200'}`}
-                        >
-                            {btn.label}
-                        </button>
+            <div className="space-y-5">
+                <div className="flex gap-1 bg-gray-100 p-1 rounded-2xl">
+                    {[{ label: '全部', val: 'all' as const }, { label: 'R1 梯次', val: 1 }, { label: 'R2 梯次', val: 2 }].map(btn => (
+                        <button key={btn.label} onClick={() => setFilterRound(btn.val)} className={`flex-1 py-2.5 rounded-xl text-[11px] font-black transition-all ${filterRound === btn.val ? 'bg-white text-[#007AFF] shadow-sm' : 'text-gray-400'}`}>{btn.label}</button>
                     ))}
                 </div>
-
-                {activeTab === 'vip' && (
-                    <div className="flex items-center justify-between w-full md:w-auto gap-4 px-1">
-                         <div className="flex gap-3 text-[10px] md:text-xs font-black">
-                            <div className="text-slate-400">共 {vipStats.total} 位</div>
-                            <div className="text-orange-500">待介 {vipStats.remain}</div>
-                            <div className="text-emerald-600">已介 {vipStats.intro}</div>
-                        </div>
-                        <button onClick={resetIntroductions} className="text-[10px] font-bold text-slate-400 hover:text-red-500 flex items-center gap-1">
-                            <RefreshCw size={10}/> 重置
-                        </button>
+                <div className="flex justify-between items-center px-2">
+                    <div className="flex gap-4 text-[11px] font-black uppercase tracking-tighter tabular-nums">
+                        <span className="text-gray-400">已到: {vipStats.total}</span>
+                        <span className="text-orange-600 underline underline-offset-4 decoration-2">待介: {vipStats.remain}</span>
+                        <span className="text-green-600">已介: {vipStats.intro}</span>
                     </div>
-                )}
+                    <button onClick={resetIntroductions} className="text-[11px] font-black text-gray-300 hover:text-red-500 flex items-center gap-1 transition-colors">
+                        <RefreshCw size={12}/> 重置
+                    </button>
+                </div>
             </div>
         </div>
 
-        {/* Content Area - 調整手機版高度佔比 */}
-        <div className="flex-1 min-h-0">
-            {activeTab === 'vip' ? (
-                <div className="flex flex-col md:flex-row gap-2 md:gap-4 h-full">
-                    {/* 待介紹區域 - 在手機上預設佔據絕大部分空間 */}
-                    <div className={`${isUnintroExpanded ? 'flex-[10]' : 'flex-none h-12'} bg-white rounded-2xl shadow-sm border border-indigo-200 flex flex-col overflow-hidden transition-all duration-300`}>
-                        <div 
-                            className="bg-indigo-50 px-4 py-3 font-black text-indigo-900 border-b border-indigo-100 flex justify-between items-center cursor-pointer select-none"
-                            onClick={() => {
-                                setIsUnintroExpanded(!isUnintroExpanded);
-                                if (!isUnintroExpanded) setIsIntroExpanded(false);
-                            }}
-                        >
-                            <span className="flex items-center gap-2 text-sm md:text-base"><Mic2 size={16}/> 待介紹貴賓</span>
-                            <div className="flex items-center gap-2">
-                                <span className="bg-indigo-200 text-indigo-800 text-[10px] px-2 py-0.5 rounded-full font-black">{vipStats.remain}</span>
-                                {isUnintroExpanded ? <ChevronUp size={16}/> : <ChevronDown size={16}/>}
-                            </div>
+        {/* Lists Content */}
+        {activeTab === 'vip' ? (
+            <div className="space-y-6">
+                {/* 待介紹區域 */}
+                <div className="bg-white rounded-[2.5rem] shadow-[0_10px_40px_rgba(0,0,0,0.04)] border border-white overflow-hidden">
+                    <div className="bg-[#007AFF] px-6 py-5 flex justify-between items-center cursor-pointer" onClick={() => setIsUnintroExpanded(!isUnintroExpanded)}>
+                        <div className="flex items-center gap-3 text-white font-black tracking-tight">
+                            <Mic2 size={20}/> <span>待介紹區域</span>
                         </div>
-                        {isUnintroExpanded && (
-                            <div className="flex-1 overflow-y-auto p-2 md:p-4 custom-scrollbar bg-slate-50/20">
-                                {groupedUnintroduced.hq.length > 0 && (
-                                    <div className="mb-4 md:mb-6">
-                                        <h3 className="text-[10px] md:text-xs font-black text-indigo-800 uppercase mb-2 flex items-center gap-2 border-b border-indigo-100 pb-1">
-                                            <Globe size={14} className="text-blue-500"/> 總會長官 ({groupedUnintroduced.hq.length})
-                                        </h3>
-                                        {groupedUnintroduced.hq.map(g => <VipCard key={g.id} guest={g} side="left" onToggle={toggleIntroduced} />)}
-                                    </div>
-                                )}
-                                {groupedUnintroduced.presidents.length > 0 && (
-                                    <div className="mb-4 md:mb-6">
-                                        <h3 className="text-[10px] md:text-xs font-black text-indigo-800 uppercase mb-2 flex items-center gap-2 border-b border-indigo-100 pb-1">
-                                            <Crown size={14} className="text-yellow-500"/> 歷屆會長 ({groupedUnintroduced.presidents.length})
-                                        </h3>
-                                        {groupedUnintroduced.presidents.map(g => <VipCard key={g.id} guest={g} side="left" onToggle={toggleIntroduced} />)}
-                                    </div>
-                                )}
-                                {groupedUnintroduced.chairmen.length > 0 && (
-                                    <div className="mb-4 md:mb-6">
-                                        <h3 className="text-[10px] md:text-xs font-black text-indigo-800 uppercase mb-2 flex items-center gap-2 border-b border-indigo-100 pb-1">
-                                            <Star size={14} className="text-orange-400"/> 歷屆主席 ({groupedUnintroduced.chairmen.length})
-                                        </h3>
-                                        {groupedUnintroduced.chairmen.map(g => <VipCard key={g.id} guest={g} side="left" onToggle={toggleIntroduced} />)}
-                                    </div>
-                                )}
-                                {groupedUnintroduced.visiting.length > 0 && (
-                                    <div className="mb-4 md:mb-6">
-                                        <h3 className="text-[10px] md:text-xs font-black text-indigo-800 uppercase mb-2 flex items-center gap-2 border-b border-indigo-100 pb-1">
-                                            <Handshake size={14} className="text-green-500" /> 友會貴賓 ({groupedUnintroduced.visiting.length})
-                                        </h3>
-                                        {groupedUnintroduced.visiting.map(g => <VipCard key={g.id} guest={g} side="left" onToggle={toggleIntroduced} />)}
-                                    </div>
-                                )}
-                                {groupedUnintroduced.gov.length > 0 && (
-                                    <div className="mb-4 md:mb-6">
-                                        <h3 className="text-[10px] md:text-xs font-black text-indigo-800 uppercase mb-2 flex items-center gap-2 border-b border-indigo-100 pb-1">
-                                            <Landmark size={14} className="text-red-500" /> 政府長官 ({groupedUnintroduced.gov.length})
-                                        </h3>
-                                        {groupedUnintroduced.gov.map(g => <VipCard key={g.id} guest={g} side="left" onToggle={toggleIntroduced} />)}
-                                    </div>
-                                )}
-                                {groupedUnintroduced.vips.length > 0 && (
-                                    <div className="mb-4 md:mb-6">
-                                        <h3 className="text-[10px] md:text-xs font-black text-indigo-800 uppercase mb-2 flex items-center gap-2 border-b border-indigo-100 pb-1">
-                                            <User size={14} className="text-indigo-500" /> 其他貴賓 ({groupedUnintroduced.vips.length})
-                                        </h3>
-                                        {groupedUnintroduced.vips.map(g => <VipCard key={g.id} guest={g} side="left" onToggle={toggleIntroduced} />)}
-                                    </div>
-                                )}
-                                {vipStats.remain === 0 && <div className="text-center text-slate-300 py-20 font-bold">目前無待介紹貴賓</div>}
-                            </div>
-                        )}
+                        <div className="flex items-center gap-3">
+                            <span className="bg-white/20 text-white text-[11px] px-3 py-1 rounded-full font-black tabular-nums">{vipStats.remain}</span>
+                            {isUnintroExpanded ? <ChevronUp size={20} className="text-white/50"/> : <ChevronDown size={20} className="text-white/50"/>}
+                        </div>
                     </div>
-
-                    {/* 已介紹區域 - 手機上預設收合 */}
-                    <div className={`${isIntroExpanded ? 'flex-[10]' : 'flex-none h-12'} bg-slate-100 rounded-2xl border border-slate-200 flex flex-col overflow-hidden transition-all duration-300`}>
-                        <div 
-                            className="bg-slate-200 px-4 py-3 font-black text-slate-500 border-b border-slate-300 flex justify-between items-center cursor-pointer select-none"
-                            onClick={() => {
-                                setIsIntroExpanded(!isIntroExpanded);
-                                if (!isIntroExpanded) setIsUnintroExpanded(false);
-                            }}
-                        >
-                            <span className="flex items-center gap-2 text-sm md:text-base"><CheckCircle2 size={16}/> 已介紹清單</span>
-                            <div className="flex items-center gap-2">
-                                <span className="bg-slate-300 text-slate-700 text-[10px] px-2 py-0.5 rounded-full font-black">{vipStats.intro}</span>
-                                {isIntroExpanded ? <ChevronUp size={16}/> : <ChevronDown size={16}/>}
-                            </div>
-                        </div>
-                        {isIntroExpanded && (
-                            <div className="flex-1 overflow-y-auto p-2 md:p-4 custom-scrollbar">
-                                {Object.entries(groupedUnintroduced).map(([key, _]) => {
-                                    const list = guests.filter(g => g.isIntroduced && g.isCheckedIn);
-                                    // 簡單過濾對應類別的人
-                                    return (
-                                        <div key={key} className="space-y-2">
-                                            {/* 已介紹不分小組，直接列出 */}
-                                        </div>
-                                    )
-                                })}
-                                {presentGuests.filter(g => g.isIntroduced).map(g => (
-                                    <VipCard key={g.id} guest={g} side="right" onToggle={toggleIntroduced} />
-                                ))}
-                                {vipStats.intro === 0 && <div className="text-center text-slate-400 py-10 text-xs font-bold">尚未介紹任何貴賓</div>}
-                            </div>
-                        )}
-                    </div>
-                </div>
-            ) : (
-                <div className="h-full flex flex-col md:flex-row gap-2 md:gap-4 p-1">
-                    {/* 總名單渲染部分保持原樣，但在手機上增加 padding 適配 */}
-                    <div className="flex-1 overflow-hidden flex flex-col bg-white rounded-2xl border border-blue-100 shadow-sm">
-                        <div className="p-3 bg-blue-50/50 border-b font-black text-blue-800 text-xs flex justify-between">
-                            <span>已報到</span>
-                            <span>{presentGuests.length}</span>
-                        </div>
-                        <div className="flex-1 overflow-y-auto p-2 space-y-1.5 custom-scrollbar">
-                            {presentGuests.map(g => (
-                                <div key={g.id} className="p-2.5 bg-slate-50 rounded-xl flex justify-between items-center border border-slate-100">
-                                    <div className="min-w-0">
-                                        <div className="font-black text-slate-800 truncate text-sm">{g.name}</div>
-                                        <div className="text-[10px] text-slate-400 font-bold truncate">{g.title}</div>
-                                    </div>
-                                    <span className="text-[9px] font-black bg-white px-1.5 py-0.5 rounded border text-slate-400 shrink-0">{g.category.substring(0,2)}</span>
+                    {isUnintroExpanded && (
+                        <div className="p-4 md:p-8 bg-gray-50/20">
+                            {groupedUnintroduced.gov.length > 0 && (
+                                <div className="mb-8">
+                                    <h3 className="text-[10px] font-black text-red-500 uppercase tracking-widest mb-4 border-b border-red-50 pb-2">長官貴賓</h3>
+                                    {groupedUnintroduced.gov.map(g => <VipCard key={g.id} guest={g} side="left" onToggle={toggleIntroduced} />)}
                                 </div>
-                            ))}
+                            )}
+                            {groupedUnintroduced.presidents.length > 0 && (
+                                <div className="mb-8">
+                                    <h3 className="text-[10px] font-black text-yellow-600 uppercase tracking-widest mb-4 border-b border-yellow-50 pb-2">歷屆會長</h3>
+                                    {groupedUnintroduced.presidents.map(g => <VipCard key={g.id} guest={g} side="left" onToggle={toggleIntroduced} />)}
+                                </div>
+                            )}
+                            {groupedUnintroduced.chairmen.length > 0 && (
+                                <div className="mb-8">
+                                    <h3 className="text-[10px] font-black text-orange-500 uppercase tracking-widest mb-4 border-b border-orange-50 pb-2">歷屆主席</h3>
+                                    {groupedUnintroduced.chairmen.map(g => <VipCard key={g.id} guest={g} side="left" onToggle={toggleIntroduced} />)}
+                                </div>
+                            )}
+                            {groupedUnintroduced.hq.length > 0 && (
+                                <div className="mb-8">
+                                    <h3 className="text-[10px] font-black text-[#007AFF] uppercase tracking-widest mb-4 border-b border-blue-50 pb-2">總會長官</h3>
+                                    {groupedUnintroduced.hq.map(g => <VipCard key={g.id} guest={g} side="left" onToggle={toggleIntroduced} />)}
+                                </div>
+                            )}
+                            {groupedUnintroduced.visiting.length > 0 && (
+                                <div className="mb-8">
+                                    <h3 className="text-[10px] font-black text-green-600 uppercase tracking-widest mb-4 border-b border-green-50 pb-2 flex items-center gap-2">
+                                        <Handshake size={14}/> 友會/聯誼會來訪
+                                    </h3>
+                                    {groupedUnintroduced.visiting.map(g => <VipCard key={g.id} guest={g} side="left" onToggle={toggleIntroduced} />)}
+                                </div>
+                            )}
+                            {groupedUnintroduced.vips.length > 0 && (
+                                <div className="mb-8">
+                                    <h3 className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-4 border-b border-gray-100 pb-2">其他貴賓</h3>
+                                    {groupedUnintroduced.vips.map(g => <VipCard key={g.id} guest={g} side="left" onToggle={toggleIntroduced} />)}
+                                </div>
+                            )}
+                            {vipStats.remain === 0 && <div className="py-24 text-center text-gray-300 font-black italic tracking-widest">目前暫無待介紹名單</div>}
+                        </div>
+                    )}
+                </div>
+
+                {/* 已介紹區域 */}
+                <div className="bg-gray-200/50 rounded-[2.5rem] border border-transparent overflow-hidden">
+                    <div className="px-6 py-5 flex justify-between items-center cursor-pointer" onClick={() => setIsIntroExpanded(!isIntroExpanded)}>
+                        <div className="flex items-center gap-3 text-gray-400 font-black text-[11px] uppercase tracking-wider">
+                            <CheckCircle2 size={16}/> <span>已完成介紹紀錄</span>
+                        </div>
+                        <div className="flex items-center gap-3">
+                            <span className="text-gray-400 text-[11px] font-black tabular-nums">{vipStats.intro}</span>
+                            {isIntroExpanded ? <ChevronUp size={18} className="text-gray-300"/> : <ChevronDown size={18} className="text-gray-300"/>}
                         </div>
                     </div>
+                    {isIntroExpanded && (
+                        <div className="p-4 md:p-8">
+                            {presentGuests.filter(g => g.isIntroduced).map(g => (
+                                <VipCard key={g.id} guest={g} side="right" onToggle={toggleIntroduced} />
+                            ))}
+                            {vipStats.intro === 0 && <div className="py-12 text-center text-gray-400 text-xs font-bold italic">尚無已介紹資料</div>}
+                        </div>
+                    )}
                 </div>
-            )}
-        </div>
+            </div>
+        ) : (
+            <div className="bg-white rounded-[2.5rem] shadow-sm border border-white overflow-hidden">
+                <div className="px-8 py-6 border-b border-gray-50 font-black text-black text-xl flex justify-between items-center">
+                    <span>本日報到總覽</span>
+                    <span className="text-[#007AFF] text-[10px] bg-blue-50 px-3 py-1 rounded-full">{presentGuests.length} 人</span>
+                </div>
+                <div className="p-4 space-y-3 bg-gray-50/30">
+                    {presentGuests.map(g => (
+                        <div key={g.id} className="p-4 md:p-5 bg-white rounded-[1.5rem] flex justify-between items-center shadow-[0_2px_10px_rgba(0,0,0,0.01)] border border-white">
+                            <div className="min-w-0 flex-1 pr-4">
+                                <div className="font-black text-black text-lg md:text-xl leading-tight truncate">{g.name}</div>
+                                <div className="text-[10px] md:text-[11px] text-gray-400 font-bold uppercase truncate mt-0.5 tracking-tight">{g.title}</div>
+                            </div>
+                            <div className="flex items-center gap-3 shrink-0">
+                                <span className="text-[10px] font-black bg-gray-100 text-gray-500 px-3 py-1 rounded-lg">{g.category}</span>
+                                {g.isIntroduced && <span className="text-[10px] font-black text-green-600 bg-green-50 px-2 py-1 rounded-lg">已介</span>}
+                            </div>
+                        </div>
+                    ))}
+                    {presentGuests.length === 0 && <div className="py-32 text-center text-gray-300 font-black italic tracking-widest">目前尚無人員報到</div>}
+                </div>
+            </div>
+        )}
     </div>
   );
 };
