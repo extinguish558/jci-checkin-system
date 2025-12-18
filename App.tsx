@@ -17,7 +17,8 @@ const App: React.FC = () => {
     <EventProvider>
       <div className="fixed inset-0 flex flex-col bg-[#F2F2F7] overflow-hidden">
         
-        <main className="flex-1 w-full overflow-y-auto relative custom-scrollbar smooth-scroll">
+        {/* 主內容區塊 - 增加 pb-48 確保不被導覽列遮擋 */}
+        <main className="flex-1 w-full overflow-y-auto relative custom-scrollbar smooth-scroll pb-48">
           {activeTab === 'flow' && <FlowPanel />}
           {activeTab === 'admin' && <AdminPanel />}
           {activeTab === 'gifts' && <GiftsPanel />}
@@ -39,7 +40,6 @@ const App: React.FC = () => {
                 <span className="text-[10px] font-black tracking-tighter">報到管理</span>
               </button>
               
-              {/* 新增：禮品頒贈 */}
               <button onClick={() => setActiveTab('gifts')} className={`flex flex-col items-center gap-1.5 transition-all flex-1 ${activeTab === 'gifts' ? 'text-[#007AFF]' : 'text-gray-400'}`}>
                 <Award size={activeTab === 'gifts' ? 24 : 22} className={`transition-transform ${activeTab === 'gifts' ? 'scale-110 drop-shadow-[0_0_8px_rgba(0,122,255,0.5)]' : ''}`} />
                 <span className="text-[10px] font-black tracking-tighter">禮品頒贈</span>

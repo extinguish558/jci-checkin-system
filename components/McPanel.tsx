@@ -1,3 +1,4 @@
+
 import React, { useMemo, useState } from 'react';
 import { useEvent } from '../context/EventContext';
 import { GuestCategory, Guest } from '../types';
@@ -24,11 +25,11 @@ const VipCard: React.FC<VipCardProps> = ({ guest, side, onToggle }) => (
           </div>
           
           <div className="flex-1 min-w-0">
-               <div className="flex flex-col">
-                  <span className={`text-lg md:text-xl font-black truncate leading-tight ${side === 'left' ? 'text-black' : 'text-gray-400 line-through'}`}>
+               <div className="flex flex-wrap items-baseline gap-x-2">
+                  <span className={`text-lg md:text-xl font-black leading-tight ${side === 'left' ? 'text-black' : 'text-gray-400 line-through'}`}>
                       {guest.name}
                   </span>
-                  <span className={`text-[11px] md:text-sm font-bold truncate mt-0.5 ${side === 'left' ? 'text-[#007AFF]' : 'text-gray-400'}`}>
+                  <span className={`text-[11px] md:text-sm font-bold leading-tight ${side === 'left' ? 'text-[#007AFF]' : 'text-gray-400'}`}>
                       {guest.title}
                   </span>
                </div>
@@ -301,10 +302,12 @@ const McPanel: React.FC = () => {
                 </div>
                 <div className="p-4 space-y-3 bg-gray-50/30">
                     {presentGuests.map(g => (
-                        <div key={g.id} className="p-4 md:p-5 bg-white rounded-[1.5rem] flex justify-between items-center shadow-[0_2px_10px_rgba(0,0,0,0.01)] border border-white">
+                        <div key={g.id} className="p-4 md:p-5 bg-white rounded-[1.5rem] flex items-center shadow-[0_2px_10px_rgba(0,0,0,0.01)] border border-white">
                             <div className="min-w-0 flex-1 pr-4">
-                                <div className="font-black text-black text-lg md:text-xl leading-tight truncate">{g.name}</div>
-                                <div className="text-[10px] md:text-[11px] text-gray-400 font-bold uppercase truncate mt-0.5 tracking-tight">{g.title}</div>
+                                <div className="flex flex-wrap items-baseline gap-x-2">
+                                  <div className="font-black text-black text-lg md:text-xl leading-tight">{g.name}</div>
+                                  <div className="text-[10px] md:text-[11px] text-gray-400 font-bold uppercase tracking-tight">{g.title}</div>
+                                </div>
                             </div>
                             <div className="flex items-center gap-3 shrink-0">
                                 <span className="text-[10px] font-black bg-gray-100 text-gray-500 px-3 py-1 rounded-lg">{g.category}</span>

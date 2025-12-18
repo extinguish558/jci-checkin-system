@@ -1,11 +1,12 @@
 
 import React, { useRef, useState, useEffect, useMemo } from 'react';
 import { useEvent } from '../context/EventContext';
-import { FlowFile } from '../types';
+import { FlowFile, GuestCategory } from '../types';
 import { 
   FileSpreadsheet, FileText, Presentation, Trash2, Settings, Lock, Unlock, 
   Plus, ListTodo, ShieldCheck, Download, Loader2, Info, Eye, Upload, X, 
-  Activity, CheckCircle2, Mic2, Award, ChevronDown, ChevronUp, Maximize2, Minimize2, PlayCircle
+  Activity, CheckCircle2, Mic2, Award, ChevronDown, ChevronUp, Maximize2, Minimize2, 
+  PlayCircle, Users, PieChart, Users2, TrendingUp
 } from 'lucide-react';
 
 const FlowPanel: React.FC = () => {
@@ -29,21 +30,53 @@ const FlowPanel: React.FC = () => {
     }
   };
 
+  // 報到數據統計邏輯
+  const checkInStats = useMemo(() => {
+    const total = guests.length;
+    const present = guests.filter(g => g.isCheckedIn).length;
+    const percent = total > 0 ? Math.round((present / total) * 100) : 0;
+
+    const categories = [
+      { label: 'YB', color: 'bg-blue-500', key: 'YB' },
+      { label: 'OB', color: 'bg-orange-500', key: 'OB' },
+      { label: '貴賓', color: 'bg-purple-500', key: 'VIP' },
+      { label: '友會', color: 'bg-green-500', key: 'VISITING' },
+      { label: '總會', color: 'bg-indigo-500', key: 'HQ' }
+    ];
+
+    const breakdown = categories.map(cat => {
+      const list = guests.filter(g => {
+        const catStr = (g.category || '').toString();
+        const title = (g.title || '').toString();
+        if (cat.key === 'YB') return catStr.includes('YB') || catStr.includes('會友');
+        if (cat.key === 'OB') return catStr.includes('OB') || catStr.includes('特友');
+        if (cat.key === 'HQ') return catStr.includes('總會') || title.includes('總會');
+        if (cat.key === 'VISITING') return catStr.includes('友會') || title.includes('會');
+        return true; // VIP & Others
+      });
+      
+      // 過濾 VIP 類別 (避免重複計算)
+      let finalCount = list.length;
+      let finalPresent = list.filter(g => g.isCheckedIn).length;
+      
+      return { ...cat, total: finalCount, present: finalPresent };
+    });
+
+    return { total, present, percent, breakdown };
+  }, [guests]);
+
   // 深度進度監控邏輯
   const liveStats = useMemo(() => {
-    // 1. 司儀流程：找出第一個未完成的步驟
     const mcSteps = settings.mcFlowSteps || [];
     const mcCompleted = mcSteps.filter(s => s.isCompleted).length;
     const currentStep = mcSteps.find(s => !s.isCompleted);
     const mcPercent = mcSteps.length > 0 ? Math.round((mcCompleted / mcSteps.length) * 100) : 0;
 
-    // 2. 禮品頒贈：找出第一個未頒發的禮品
     const giftItems = settings.giftItems || [];
     const giftsPresented = giftItems.filter(i => i.isPresented).length;
     const nextGift = giftItems.find(i => !i.isPresented);
     const giftsPercent = giftItems.length > 0 ? Math.round((giftsPresented / giftItems.length) * 100) : 0;
 
-    // 3. 貴賓介紹：計算剩餘待介紹人數
     const checkedInVips = guests.filter(g => g.isCheckedIn && g.title && !g.title.includes('見習'));
     const introducedVips = checkedInVips.filter(g => g.isIntroduced).length;
     const remainingVips = checkedInVips.length - introducedVips;
@@ -96,10 +129,6 @@ const FlowPanel: React.FC = () => {
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !uploadType) return;
-    if (file.size > 800 * 1024) {
-      alert("檔案超過 800KB 限制。");
-      return;
-    }
     setIsUploading(true);
     try {
       const reader = new FileReader();
@@ -135,10 +164,10 @@ const FlowPanel: React.FC = () => {
   };
 
   return (
-    <div className="p-4 md:p-8 max-w-3xl mx-auto space-y-8 pb-40 animate-in fade-in duration-500 bg-[#F2F2F7] min-h-screen">
+    <div className="p-4 md:p-8 max-w-3xl mx-auto space-y-6 pb-60 animate-in fade-in duration-500 bg-[#F2F2F7] min-h-screen">
       <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" />
 
-      {/* 活動配置主卡片 - 置頂 */}
+      {/* 活動配置主卡片 */}
       <div className="bg-white rounded-[2.5rem] p-8 shadow-[0_15px_50px_rgba(0,0,0,0.03)] border border-white space-y-8">
         <div className="flex justify-between items-center">
            <div className="flex items-center gap-2">
@@ -161,22 +190,19 @@ const FlowPanel: React.FC = () => {
           />
         </div>
 
-        {/* 精簡流程摘要 - 可縮放樣式 */}
+        {/* 精簡流程摘要 */}
         <div className={`rounded-[2rem] transition-all duration-500 overflow-hidden relative group border ${isScheduleExpanded ? 'bg-white border-blue-100' : 'bg-[#F2F2F7] border-transparent'}`}>
             <div className="px-6 py-4 flex justify-between items-center border-b border-transparent group-hover:border-gray-100/50 transition-colors">
                 <div className="flex items-center gap-2">
                     <ListTodo size={16} className="text-blue-500" />
                     <h3 className="font-black text-[11px] text-gray-400 uppercase tracking-widest">精簡流程摘要</h3>
                 </div>
-                <div className="flex items-center gap-2">
-                  {!isAdmin && <span className="text-[9px] font-black text-gray-300 uppercase tracking-widest">Read Only</span>}
-                  <button 
-                    onClick={() => setIsScheduleExpanded(!isScheduleExpanded)}
-                    className="p-2 hover:bg-white rounded-xl text-gray-400 transition-all shadow-sm"
-                  >
-                    {isScheduleExpanded ? <Minimize2 size={16}/> : <Maximize2 size={16}/>}
-                  </button>
-                </div>
+                <button 
+                  onClick={() => setIsScheduleExpanded(!isScheduleExpanded)}
+                  className="p-2 hover:bg-white rounded-xl text-gray-400 transition-all shadow-sm"
+                >
+                  {isScheduleExpanded ? <Minimize2 size={16}/> : <Maximize2 size={16}/>}
+                </button>
             </div>
             
             <div className={`p-6 transition-all duration-500 ${isScheduleExpanded ? 'max-h-[1000px]' : 'max-h-[140px]'}`}>
@@ -198,7 +224,49 @@ const FlowPanel: React.FC = () => {
         </div>
       </div>
 
-      {/* 核心監控區 (Monitoring Dashboard) - 移動到中間 */}
+      {/* 全新：報到總覽看板 */}
+      <div className="bg-white rounded-[2.5rem] p-6 md:p-8 shadow-[0_15px_50px_rgba(0,0,0,0.03)] border border-white space-y-6">
+          <div className="flex justify-between items-center">
+             <div className="flex items-center gap-2">
+               <TrendingUp className="text-[#007AFF]" size={18} strokeWidth={3} />
+               <span className="text-gray-400 font-black uppercase tracking-widest text-[10px]">Real-time Check-in Analytics</span>
+             </div>
+             <div className="bg-blue-50 text-[#007AFF] px-3 py-1 rounded-full text-[11px] font-black tabular-nums">
+                報到率 {checkInStats.percent}%
+             </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-center">
+             {/* 總進度圈 */}
+             <div className="flex flex-col items-center justify-center p-6 bg-[#F2F2F7] rounded-[2rem] relative overflow-hidden group">
+                <div className="text-6xl md:text-7xl font-black text-black tabular-nums leading-none">
+                  {checkInStats.present}
+                </div>
+                <div className="text-[10px] font-black text-gray-400 uppercase tracking-widest mt-2">已報到總人數 / {checkInStats.total}</div>
+                <div className="absolute bottom-0 left-0 right-0 h-1.5 bg-gray-200">
+                   <div className="h-full bg-[#007AFF] transition-all duration-1000" style={{ width: `${checkInStats.percent}%` }} />
+                </div>
+             </div>
+
+             {/* 分類清單 */}
+             <div className="space-y-3">
+                {checkInStats.breakdown.map(cat => (
+                  <div key={cat.label} className="flex items-center justify-between group">
+                    <div className="flex items-center gap-3">
+                      <div className={`w-2 h-2 rounded-full ${cat.color} group-hover:scale-150 transition-transform`} />
+                      <span className="text-sm font-black text-gray-500">{cat.label}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-base font-black text-black tabular-nums">{cat.present}</span>
+                      <span className="text-[10px] font-bold text-gray-300">/ {cat.total}</span>
+                    </div>
+                  </div>
+                ))}
+             </div>
+          </div>
+      </div>
+
+      {/* 核心監控區 */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {/* 司儀流程監控 */}
         <div className="bg-white rounded-[2rem] p-6 shadow-sm border border-white flex flex-col gap-4 relative overflow-hidden group">
@@ -217,10 +285,6 @@ const FlowPanel: React.FC = () => {
             </div>
             <div className="w-full h-1.5 bg-gray-50 rounded-full overflow-hidden">
                 <div className="h-full bg-blue-500 transition-all duration-1000" style={{ width: `${liveStats.mc.percent}%` }} />
-            </div>
-            <div className="flex justify-between items-center text-[9px] font-bold text-gray-300 uppercase">
-                <span>{liveStats.mc.current} / {liveStats.mc.total} 步</span>
-                <PlayCircle size={14} className="text-blue-100 group-hover:text-blue-200 transition-colors" />
             </div>
         </div>
 
@@ -242,13 +306,9 @@ const FlowPanel: React.FC = () => {
             <div className="w-full h-1.5 bg-gray-50 rounded-full overflow-hidden">
                 <div className="h-full bg-orange-500 transition-all duration-1000" style={{ width: `${liveStats.gifts.percent}%` }} />
             </div>
-            <div className="flex justify-between items-center text-[9px] font-bold text-gray-300 uppercase">
-                <span>{liveStats.gifts.current} / {liveStats.gifts.total} 件</span>
-                <PlayCircle size={14} className="text-orange-100 group-hover:text-orange-200 transition-colors" />
-            </div>
         </div>
 
-        {/* 貴賓介紹監控 - 強化剩餘人數顯示 */}
+        {/* 貴賓介紹監控 */}
         <div className="bg-white rounded-[2rem] p-6 shadow-sm border border-white flex flex-col gap-4 relative overflow-hidden group">
             <div className="flex justify-between items-center">
               <div className="w-10 h-10 bg-purple-50 text-purple-500 rounded-xl flex items-center justify-center">
@@ -268,10 +328,6 @@ const FlowPanel: React.FC = () => {
             </div>
             <div className="w-full h-1.5 bg-gray-50 rounded-full overflow-hidden">
                 <div className="h-full bg-purple-500 transition-all duration-1000" style={{ width: `${liveStats.vips.percent}%` }} />
-            </div>
-            <div className="flex justify-between items-center text-[9px] font-bold text-gray-300 uppercase">
-                <span>現場已報到: {liveStats.vips.total} 位</span>
-                <CheckCircle2 size={14} className="text-purple-100" />
             </div>
         </div>
       </div>
@@ -325,10 +381,7 @@ const FlowPanel: React.FC = () => {
       {showLoginModal && (
         <div className="fixed inset-0 ios-blur bg-black/40 z-[250] flex items-center justify-center p-6">
           <div className="bg-white rounded-[3rem] p-10 max-w-xs w-full shadow-2xl flex flex-col items-center gap-8 border border-white/20">
-            <div className="space-y-2 text-center">
-              <h3 className="text-2xl font-black text-black tracking-tight">管理員授權</h3>
-              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Enter Credentials to Edit</p>
-            </div>
+            <h3 className="text-2xl font-black text-black tracking-tight">管理員授權</h3>
             <form onSubmit={handleLoginSubmit} className="w-full space-y-6">
               <input 
                 type="password" 

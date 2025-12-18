@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useMemo, useCallback } from 'react';
 import { useEvent } from '../context/EventContext';
 import { exportToExcel, parseCheckInSheet, parseGuestsFromExcel } from '../services/geminiService';
@@ -311,8 +312,10 @@ const AdminPanel: React.FC = () => {
                               {g.isCheckedIn ? group.list.filter(x => x.isCheckedIn).indexOf(g) + 1 : (g.code || idx + 1)}
                             </div>
                             <div className="flex-1 min-w-0">
-                              <div className="font-black text-black text-lg leading-tight truncate">{g.name}</div>
-                              <div className="text-[10px] md:text-[11px] text-gray-400 font-bold truncate mt-0.5">{g.title || '貴賓'}</div>
+                              <div className="flex flex-wrap items-baseline gap-x-2">
+                                <div className="font-black text-black text-lg leading-tight">{g.name}</div>
+                                <div className="text-[11px] md:text-xs text-gray-400 font-bold leading-tight">{g.title || '貴賓'}</div>
+                              </div>
                             </div>
                             
                             <div className="flex items-center gap-2 shrink-0">
@@ -398,26 +401,26 @@ const AdminPanel: React.FC = () => {
                <div className="grid grid-cols-2 gap-3">
                   <div className="col-span-1">
                       <label className="text-[10px] font-black text-gray-400 uppercase mb-1 block">姓名</label>
-                      <input required value={editingGuest.name} onChange={setEditingGuest ? e => setEditingGuest({...editingGuest, name: e.target.value}) : undefined} type="text" className="w-full bg-gray-50 border-none rounded-xl py-3.5 px-4 font-bold outline-none focus:ring-2 focus:ring-blue-500" />
+                      <input required value={editingGuest.name} onChange={e => setEditingGuest({...editingGuest, name: e.target.value})} type="text" className="w-full bg-gray-50 border-none rounded-xl py-3.5 px-4 font-bold outline-none focus:ring-2 focus:ring-blue-500" />
                   </div>
                   <div className="col-span-1">
                       <label className="text-[10px] font-black text-gray-400 uppercase mb-1 block">編號 / 代碼</label>
-                      <input value={editingGuest.code || ''} onChange={setEditingGuest ? e => setEditingGuest({...editingGuest, code: e.target.value}) : undefined} type="text" className="w-full bg-gray-50 border-none rounded-xl py-3.5 px-4 font-bold outline-none focus:ring-2 focus:ring-blue-500" placeholder="選填" />
+                      <input value={editingGuest.code || ''} onChange={e => setEditingGuest({...editingGuest, code: e.target.value})} type="text" className="w-full bg-gray-50 border-none rounded-xl py-3.5 px-4 font-bold outline-none focus:ring-2 focus:ring-blue-500" placeholder="選填" />
                   </div>
                </div>
                <div>
                   <label className="text-[10px] font-black text-gray-400 uppercase mb-1 block">職稱</label>
-                  <input value={editingGuest.title} onChange={setEditingGuest ? e => setEditingGuest({...editingGuest, title: e.target.value}) : undefined} type="text" className="w-full bg-gray-50 border-none rounded-xl py-3.5 px-4 font-bold outline-none focus:ring-2 focus:ring-blue-500" />
+                  <input value={editingGuest.title} onChange={e => setEditingGuest({...editingGuest, title: e.target.value})} type="text" className="w-full bg-gray-50 border-none rounded-xl py-3.5 px-4 font-bold outline-none focus:ring-2 focus:ring-blue-500" />
                </div>
                <div>
                   <label className="text-[10px] font-black text-gray-400 uppercase mb-1 block">分類</label>
-                  <select value={editingGuest.category} onChange={setEditingGuest ? e => setEditingGuest({...editingGuest, category: e.target.value as GuestCategory}) : undefined} className="w-full bg-gray-50 border-none rounded-xl py-3.5 px-4 font-black outline-none focus:ring-2 focus:ring-blue-500">
+                  <select value={editingGuest.category} onChange={e => setEditingGuest({...editingGuest, category: e.target.value as GuestCategory})} className="w-full bg-gray-50 border-none rounded-xl py-3.5 px-4 font-black outline-none focus:ring-2 focus:ring-blue-500">
                     {Object.values(GuestCategory).map(cat => <option key={cat} value={cat}>{cat}</option>)}
                   </select>
                </div>
                <div>
                   <label className="text-[10px] font-black text-gray-400 uppercase mb-1 block">備註</label>
-                  <textarea value={editingGuest.note || ''} onChange={setEditingGuest ? e => setEditingGuest({...editingGuest, note: e.target.value}) : undefined} className="w-full bg-gray-50 border-none rounded-xl py-3.5 px-4 font-bold outline-none focus:ring-2 focus:ring-blue-500 h-20 resize-none" placeholder="輸入備註資訊..."></textarea>
+                  <textarea value={editingGuest.note || ''} onChange={e => setEditingGuest({...editingGuest, note: e.target.value})} className="w-full bg-gray-50 border-none rounded-xl py-3.5 px-4 font-bold outline-none focus:ring-2 focus:ring-blue-500 h-20 resize-none" placeholder="輸入備註資訊..."></textarea>
                </div>
 
                <div className="pt-4 flex flex-col gap-3">
