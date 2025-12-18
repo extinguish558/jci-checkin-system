@@ -2,7 +2,7 @@
 import React, { useMemo, useState } from 'react';
 import { useEvent } from '../context/EventContext';
 import { GuestCategory, Guest } from '../types';
-import { CheckCircle2, Circle, RefreshCw, Mic2, ChevronDown, ChevronUp, Handshake } from 'lucide-react';
+import { CheckCircle2, Circle, RefreshCw, Mic2, ChevronDown, ChevronUp, Handshake, Lock, Unlock, X } from 'lucide-react';
 
 interface VipCardProps {
   guest: Guest;
@@ -50,12 +50,24 @@ const VipCard: React.FC<VipCardProps> = ({ guest, side, onToggle }) => (
 );
 
 const McPanel: React.FC = () => {
-  const { guests, toggleIntroduced, resetIntroductions } = useEvent();
+  const { guests, toggleIntroduced, resetIntroductions, isAdmin, loginAdmin, logoutAdmin } = useEvent();
   const [activeTab, setActiveTab] = useState<'vip' | 'roster'>('vip');
   const [filterRound, setFilterRound] = useState<number | 'all'>('all');
 
   const [isUnintroExpanded, setIsUnintroExpanded] = useState(true);
-  const [isIntroExpanded, setIsIntroExpanded] = useState(false); 
+  const [isIntroExpanded, setIsIntroExpanded] = useState(true); // 預設展開方便看
+  const [showLoginModal, setShowLoginModal] = useState(false);
+  const [loginPassword, setLoginPassword] = useState("");
+
+  const handleLoginSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (loginAdmin(loginPassword)) {
+        setShowLoginModal(false);
+        setLoginPassword("");
+    } else {
+        alert("密碼錯誤");
+    }
+  };
 
   const presentGuests = useMemo(() => guests.filter(g => g.isCheckedIn), [guests]);
 
@@ -126,6 +138,14 @@ const McPanel: React.FC = () => {
       return groups;
   }, [presentGuests, filterRound]);
 
+  const introducedGuests = useMemo(() => {
+    return presentGuests.filter(g => {
+        const effectiveRound = g.round || 1;
+        const matchesRound = (filterRound === 'all' || effectiveRound === filterRound);
+        return g.isIntroduced && matchesRound;
+    }).sort((a, b) => (a.name).localeCompare(b.name, "zh-TW"));
+  }, [presentGuests, filterRound]);
+
   const vipStats = useMemo(() => {
       const relevantGuests = presentGuests.filter(g => {
           const effectiveRound = g.round || 1;
@@ -145,15 +165,20 @@ const McPanel: React.FC = () => {
         {/* Header Card */}
         <div className="bg-white rounded-[2.5rem] shadow-[0_10px_40px_rgba(0,0,0,0.03)] p-6 md:p-8 border border-white space-y-6">
             <div className="flex flex-col md:flex-row justify-between items-center gap-4">
-                 <div className="flex items-center gap-3">
+                 <div className="flex items-center gap-3 flex-1">
                     <div className="w-10 h-10 bg-blue-50 text-[#007AFF] rounded-2xl flex items-center justify-center">
                         <Mic2 size={20} />
                     </div>
                     <h2 className="text-2xl font-black text-black tracking-tight">司儀播報模式</h2>
                  </div>
-                 <div className="bg-[#F2F2F7] p-1 rounded-xl flex text-[11px] font-black w-full md:w-auto shadow-inner">
-                    <button onClick={() => setActiveTab('vip')} className={`flex-1 md:px-6 py-2.5 rounded-lg transition-all ${activeTab === 'vip' ? 'bg-white shadow-md text-black' : 'text-gray-400'}`}>智能介紹</button>
-                    <button onClick={() => setActiveTab('roster')} className={`flex-1 md:px-6 py-2.5 rounded-lg transition-all ${activeTab === 'roster' ? 'bg-white shadow-md text-black' : 'text-gray-400'}`}>完整名單</button>
+                 <div className="flex items-center gap-3">
+                    <div className="bg-[#F2F2F7] p-1 rounded-xl flex text-[11px] font-black shadow-inner">
+                        <button onClick={() => setActiveTab('vip')} className={`px-4 md:px-6 py-2.5 rounded-lg transition-all ${activeTab === 'vip' ? 'bg-white shadow-md text-black' : 'text-gray-400'}`}>智能介紹</button>
+                        <button onClick={() => setActiveTab('roster')} className={`px-4 md:px-6 py-2.5 rounded-lg transition-all ${activeTab === 'roster' ? 'bg-white shadow-md text-black' : 'text-gray-400'}`}>完整名單</button>
+                    </div>
+                    <button onClick={() => isAdmin ? logoutAdmin() : setShowLoginModal(true)} className="p-3 bg-[#F2F2F7] rounded-2xl transition-all hover:bg-gray-100">
+                      {isAdmin ? <Unlock size={20} className="text-[#007AFF]"/> : <Lock size={20} className="text-gray-300"/>}
+                    </button>
                  </div>
             </div>
 
@@ -178,9 +203,9 @@ const McPanel: React.FC = () => {
 
         {/* Lists Content */}
         {activeTab === 'vip' ? (
-            <div className="space-y-6">
-                {/* 待介紹區域 */}
-                <div className="bg-white rounded-[2.5rem] shadow-[0_10px_40px_rgba(0,0,0,0.04)] border border-white overflow-hidden">
+            <div className="flex flex-col lg:flex-row gap-6 items-start">
+                {/* 待介紹區域 (較大) */}
+                <div className="bg-white rounded-[2.5rem] shadow-[0_10px_40px_rgba(0,0,0,0.04)] border border-white overflow-hidden flex-[2] w-full">
                     <div className="bg-[#007AFF] px-6 py-5 flex justify-between items-center cursor-pointer" onClick={() => setIsUnintroExpanded(!isUnintroExpanded)}>
                         <div className="flex items-center gap-3 text-white font-black tracking-tight">
                             <Mic2 size={20}/> <span>待介紹區域</span>
@@ -235,8 +260,8 @@ const McPanel: React.FC = () => {
                     )}
                 </div>
 
-                {/* 已介紹區域 */}
-                <div className="bg-gray-200/50 rounded-[2.5rem] border border-transparent overflow-hidden">
+                {/* 已介紹區域 (移動到右側) */}
+                <div className="bg-gray-200/50 rounded-[2.5rem] border border-transparent overflow-hidden flex-1 w-full lg:max-w-md sticky top-8">
                     <div className="px-6 py-5 flex justify-between items-center cursor-pointer" onClick={() => setIsIntroExpanded(!isIntroExpanded)}>
                         <div className="flex items-center gap-3 text-gray-400 font-black text-[11px] uppercase tracking-wider">
                             <CheckCircle2 size={16}/> <span>已完成介紹紀錄</span>
@@ -247,8 +272,8 @@ const McPanel: React.FC = () => {
                         </div>
                     </div>
                     {isIntroExpanded && (
-                        <div className="p-4 md:p-8">
-                            {presentGuests.filter(g => g.isIntroduced).map(g => (
+                        <div className="p-4 md:p-6 max-h-[70vh] overflow-y-auto no-scrollbar">
+                            {introducedGuests.map(g => (
                                 <VipCard key={g.id} guest={g} side="right" onToggle={toggleIntroduced} />
                             ))}
                             {vipStats.intro === 0 && <div className="py-12 text-center text-gray-400 text-xs font-bold italic">尚無已介紹資料</div>}
@@ -278,6 +303,29 @@ const McPanel: React.FC = () => {
                     {presentGuests.length === 0 && <div className="py-32 text-center text-gray-300 font-black italic tracking-widest">目前尚無人員報到</div>}
                 </div>
             </div>
+        )}
+
+        {/* Login Modal */}
+        {showLoginModal && (
+          <div className="fixed inset-0 ios-blur bg-black/40 z-[250] flex items-center justify-center p-6">
+            <div className="bg-white rounded-[2.5rem] p-8 max-xs w-full shadow-2xl flex flex-col items-center gap-6 border border-white/20">
+              <h3 className="text-xl font-black text-black text-center tracking-tight">管理員授權</h3>
+              <form onSubmit={handleLoginSubmit} className="w-full space-y-4">
+                <input 
+                  type="password" 
+                  placeholder="密碼" 
+                  value={loginPassword} 
+                  onChange={e => setLoginPassword(e.target.value)}
+                  className="w-full bg-[#F2F2F7] border-none rounded-2xl py-5 px-4 text-center text-3xl font-black outline-none focus:ring-4 focus:ring-[#007AFF]/20 transition-all"
+                  autoFocus
+                />
+                <div className="flex gap-3">
+                  <button type="button" onClick={() => setShowLoginModal(false)} className="flex-1 py-4 font-black text-gray-400">取消</button>
+                  <button type="submit" className="flex-1 py-4 bg-[#007AFF] text-white font-black rounded-2xl shadow-xl shadow-blue-200 active:scale-95 transition-all">確認</button>
+                </div>
+              </form>
+            </div>
+          </div>
         )}
     </div>
   );

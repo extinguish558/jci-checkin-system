@@ -2,7 +2,7 @@
 import React, { useRef, useState, useEffect } from 'react';
 import { useEvent } from '../context/EventContext';
 import { FlowFile } from '../types';
-import { FileSpreadsheet, FileText, Presentation, Trash2, Settings, Lock, Unlock, Plus, ListTodo, ShieldCheck, Download, Loader2, Info, Eye, Upload } from 'lucide-react';
+import { FileSpreadsheet, FileText, Presentation, Trash2, Settings, Lock, Unlock, Plus, ListTodo, ShieldCheck, Download, Loader2, Info, Eye, Upload, X } from 'lucide-react';
 
 const FlowPanel: React.FC = () => {
   const { settings, updateSettings, addFlowFile, removeFlowFile, isAdmin, loginAdmin, logoutAdmin } = useEvent();
@@ -13,6 +13,16 @@ const FlowPanel: React.FC = () => {
   
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleLoginSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (loginAdmin(loginPassword)) {
+        setShowLoginModal(false);
+        setLoginPassword("");
+    } else {
+        alert("密碼錯誤");
+    }
+  };
 
   // 優化自動高度調整邏輯
   const adjustHeight = () => {
@@ -30,16 +40,6 @@ const FlowPanel: React.FC = () => {
     return () => clearTimeout(timer);
   }, [settings.briefSchedule]);
 
-  const handleAdminLogin = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (loginAdmin(loginPassword)) {
-        setShowLoginModal(false);
-        setLoginPassword("");
-    } else {
-        alert("密碼錯誤");
-    }
-  };
-
   const getTypeLabel = (type: string) => {
     switch(type) {
       case 'schedule': return '活動流程表';
@@ -51,7 +51,7 @@ const FlowPanel: React.FC = () => {
 
   const triggerUpload = (type: 'schedule' | 'gifts' | 'slides') => {
     if (!isAdmin) {
-      alert("請先點擊右上角「解除鎖定」進入管理模式後再進行上傳。");
+      alert("請先點擊右上角鎖定圖標，進入管理模式後再進行上傳。");
       return;
     }
     setUploadType(type);
@@ -183,12 +183,8 @@ const FlowPanel: React.FC = () => {
              </div>
              <span className="text-gray-400 font-black uppercase tracking-tight text-xs">活動配置中心</span>
            </div>
-           <button 
-             onClick={() => isAdmin ? logoutAdmin() : setShowLoginModal(true)} 
-             className={`px-5 py-2 rounded-full text-xs font-black transition-all shadow-sm flex items-center gap-2 ${isAdmin ? 'bg-blue-600 text-white hover:bg-blue-700' : 'bg-white text-gray-400 hover:bg-gray-50'}`}
-           >
-             {isAdmin ? <Unlock size={14} /> : <Lock size={14} />} 
-             {isAdmin ? '管理模式：已解鎖' : '解除鎖定'}
+           <button onClick={() => isAdmin ? logoutAdmin() : setShowLoginModal(true)} className="p-3 bg-[#F2F2F7] rounded-2xl transition-all hover:bg-gray-100 shadow-sm">
+             {isAdmin ? <Unlock size={20} className="text-[#007AFF]"/> : <Lock size={20} className="text-gray-300"/>}
            </button>
         </div>
 
@@ -335,17 +331,11 @@ const FlowPanel: React.FC = () => {
       {showLoginModal && (
         <div className="fixed inset-0 ios-blur bg-black/40 z-[250] flex items-center justify-center p-6 animate-in fade-in duration-300">
           <div className="bg-white rounded-[2.5rem] p-8 max-w-xs w-full shadow-2xl flex flex-col items-center gap-6 border border-white/20">
-            <div className="w-20 h-20 bg-blue-50 rounded-3xl flex items-center justify-center text-blue-600 shadow-sm">
-               <ShieldCheck size={40} />
-            </div>
-            <div className="text-center">
-              <h3 className="text-xl font-black text-black">管理員授權登入</h3>
-              <p className="text-gray-400 font-bold text-xs mt-2">請輸入後台維護密碼 (預設 8888)</p>
-            </div>
-            <form onSubmit={handleAdminLogin} className="w-full space-y-4">
+            <h3 className="text-xl font-black text-black text-center tracking-tight">管理員授權</h3>
+            <form onSubmit={handleLoginSubmit} className="w-full space-y-4">
               <input 
                 type="password" 
-                placeholder="Password" 
+                placeholder="密碼" 
                 value={loginPassword} 
                 onChange={e => setLoginPassword(e.target.value)}
                 className="w-full bg-[#F2F2F7] border-none rounded-2xl py-5 px-4 text-center text-3xl font-black focus:ring-4 focus:ring-blue-500/20 outline-none transition-all"
@@ -353,7 +343,7 @@ const FlowPanel: React.FC = () => {
               />
               <div className="flex gap-3">
                 <button type="button" onClick={() => setShowLoginModal(false)} className="flex-1 py-4 font-black text-gray-400 hover:text-gray-600">取消</button>
-                <button type="submit" className="flex-1 py-4 bg-blue-600 text-white font-black rounded-2xl shadow-xl shadow-blue-200 active:scale-95 transition-all">確認進入</button>
+                <button type="submit" className="flex-1 py-4 bg-blue-600 text-white font-black rounded-2xl shadow-xl shadow-blue-200 active:scale-95 transition-all">確認</button>
               </div>
             </form>
           </div>

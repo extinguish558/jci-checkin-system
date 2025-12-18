@@ -1,13 +1,25 @@
 
 import React, { useState, useRef } from 'react';
 import { useEvent } from '../context/EventContext';
-import { parseMcFlow, FileInput } from '../services/geminiService';
-import { ListChecks, Upload, CheckCircle2, Circle, Loader2, Trash2 } from 'lucide-react';
+import { parseMcFlowFromExcel } from '../services/geminiService';
+import { ListChecks, Upload, CheckCircle2, Circle, Loader2, Trash2, Lock, Unlock, X } from 'lucide-react';
 
 const McFlowPanel: React.FC = () => {
-  const { settings, toggleMcFlowStep, setMcFlowSteps, isAdmin } = useEvent();
+  const { settings, toggleMcFlowStep, setMcFlowSteps, isAdmin, loginAdmin, logoutAdmin } = useEvent();
   const [isProcessing, setIsProcessing] = useState(false);
+  const [showLoginModal, setShowLoginModal] = useState(false);
+  const [loginPassword, setLoginPassword] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleLoginSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (loginAdmin(loginPassword)) {
+        setShowLoginModal(false);
+        setLoginPassword("");
+    } else {
+        alert("密碼錯誤");
+    }
+  };
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
@@ -15,18 +27,14 @@ const McFlowPanel: React.FC = () => {
     
     setIsProcessing(true);
     try {
-      const fileInputs: FileInput[] = [];
-      for (let i = 0; i < files.length; i++) {
-        const file = files[i];
-        const base64 = await new Promise<string>((resolve) => {
-          const reader = new FileReader();
-          reader.onload = () => resolve((reader.result as string).split(',')[1]);
-          reader.readAsDataURL(file);
-        });
-        fileInputs.push({ data: base64, mimeType: file.type });
+      const file = files[0];
+      if (file.name.endsWith('.xlsx') || file.name.endsWith('.xls')) {
+        const steps = await parseMcFlowFromExcel(file);
+        await setMcFlowSteps(steps);
+        alert(`成功匯入 ${steps.length} 筆流程環節`);
+      } else {
+        alert("目前僅支援 Excel (.xlsx, .xls) 格式匯入。");
       }
-      const steps = await parseMcFlow(fileInputs);
-      await setMcFlowSteps(steps);
     } catch (err: any) {
       alert(err.message);
     } finally {
@@ -39,24 +47,29 @@ const McFlowPanel: React.FC = () => {
 
   return (
     <div className="p-4 md:p-8 max-w-2xl mx-auto space-y-6 pb-32 animate-in fade-in duration-500">
-      <input ref={fileInputRef} type="file" className="hidden" onChange={handleFileChange} accept=".pdf,.doc,.docx,.xls,.xlsx,.txt,image/*" />
+      <input ref={fileInputRef} type="file" className="hidden" onChange={handleFileChange} accept=".xls,.xlsx" />
 
       {/* Header */}
-      <div className="flex justify-between items-center">
-        <div>
+      <div className="flex justify-between items-start">
+        <div className="flex-1">
           <h2 className="text-2xl font-black text-black tracking-tight">司儀流程</h2>
           <p className="text-xs font-bold text-gray-400 mt-1 uppercase tracking-wider">MC PROGRAM FLOW</p>
         </div>
-        {isAdmin && (
-          <button 
-            onClick={() => fileInputRef.current?.click()} 
-            disabled={isProcessing}
-            className="flex items-center gap-2 bg-white px-5 py-3 rounded-2xl shadow-sm border border-gray-50 hover:shadow-md transition-all active:scale-95 text-blue-600 font-black text-sm"
-          >
-            {isProcessing ? <Loader2 size={18} className="animate-spin" /> : <Upload size={18} />}
-            <span>匯入流程</span>
+        <div className="flex items-center gap-2">
+          {isAdmin && (
+            <button 
+              onClick={() => fileInputRef.current?.click()} 
+              disabled={isProcessing}
+              className="flex items-center gap-2 bg-white px-4 py-3 rounded-2xl shadow-sm border border-gray-50 hover:shadow-md transition-all active:scale-95 text-blue-600 font-black text-sm"
+            >
+              {isProcessing ? <Loader2 size={18} className="animate-spin" /> : <Upload size={18} />}
+              <span className="hidden md:inline">匯入流程</span>
+            </button>
+          )}
+          <button onClick={() => isAdmin ? logoutAdmin() : setShowLoginModal(true)} className="p-3 bg-white rounded-2xl shadow-sm transition-all hover:bg-gray-50">
+            {isAdmin ? <Unlock size={20} className="text-[#007AFF]"/> : <Lock size={20} className="text-gray-300"/>}
           </button>
-        )}
+        </div>
       </div>
 
       {/* Content Area */}
@@ -107,7 +120,7 @@ const McFlowPanel: React.FC = () => {
           <div className="py-24 flex flex-col items-center justify-center bg-white/50 rounded-[3rem] border border-white border-dashed">
             <ListChecks size={48} className="text-gray-200 mb-4" />
             <p className="text-gray-400 font-bold italic">尚無流程資料</p>
-            {isAdmin && <p className="text-gray-300 text-xs mt-2 font-medium">請點擊上方按鈕匯入活動文檔</p>}
+            {isAdmin && <p className="text-gray-300 text-xs mt-2 font-medium">請點擊上方按鈕匯入 Excel 流程表</p>}
           </div>
         )}
       </div>
@@ -123,6 +136,29 @@ const McFlowPanel: React.FC = () => {
         </div>
       )}
 
+      {/* Login Modal */}
+      {showLoginModal && (
+        <div className="fixed inset-0 ios-blur bg-black/40 z-[250] flex items-center justify-center p-6">
+          <div className="bg-white rounded-[2.5rem] p-8 max-xs w-full shadow-2xl flex flex-col items-center gap-6 border border-white/20">
+            <h3 className="text-xl font-black text-black text-center tracking-tight">管理員授權</h3>
+            <form onSubmit={handleLoginSubmit} className="w-full space-y-4">
+              <input 
+                type="password" 
+                placeholder="密碼" 
+                value={loginPassword} 
+                onChange={e => setLoginPassword(e.target.value)}
+                className="w-full bg-[#F2F2F7] border-none rounded-2xl py-5 px-4 text-center text-3xl font-black outline-none focus:ring-4 focus:ring-[#007AFF]/20 transition-all"
+                autoFocus
+              />
+              <div className="flex gap-3">
+                <button type="button" onClick={() => setShowLoginModal(false)} className="flex-1 py-4 font-black text-gray-400">取消</button>
+                <button type="submit" className="flex-1 py-4 bg-[#007AFF] text-white font-black rounded-2xl shadow-xl shadow-blue-200 active:scale-95 transition-all">確認</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {isProcessing && (
         <div className="fixed inset-0 ios-blur bg-white/60 z-[400] flex flex-col items-center justify-center gap-4">
            <div className="relative w-24 h-24">
@@ -132,7 +168,7 @@ const McFlowPanel: React.FC = () => {
            </div>
            <div className="text-center">
              <h4 className="text-xl font-black text-black">正在解析流程</h4>
-             <p className="text-gray-400 font-bold text-sm mt-1">AI 正在幫您整理活動環節...</p>
+             <p className="text-gray-400 font-bold text-sm mt-1">讀取 Excel 資料中...</p>
            </div>
         </div>
       )}
