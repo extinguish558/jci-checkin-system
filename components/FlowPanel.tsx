@@ -93,12 +93,10 @@ const FlowPanel: React.FC = () => {
         if (importMode === 'overwrite') await overwriteGuestsFromDraft(drafts, new Date());
         else await addGuestsFromDraft(drafts, new Date());
       } else if (currentUploadType === 'gifts_file') {
-        // 先歸零再上傳
         await updateSettings({ giftItems: [], flowFiles: (settings.flowFiles || []).filter(f => f.type !== 'gifts_file') });
         const items = await parseGiftsFromExcel(file);
         await updateSettings({ giftItems: items });
       } else if (currentUploadType === 'mcflow_file') {
-        // 重要：先歸零再上傳
         await updateSettings({ mcFlowSteps: [], flowFiles: (settings.flowFiles || []).filter(f => f.type !== 'mcflow_file') });
         const steps = await parseMcFlowFromExcel(file);
         await updateSettings({ mcFlowSteps: steps });
@@ -158,17 +156,8 @@ const FlowPanel: React.FC = () => {
     const mcSteps = settings.mcFlowSteps || [];
     const uncompleted = mcSteps.filter(s => !s.isCompleted);
     const current = uncompleted[0] || { title: '活動流程已全部結束', time: '' };
-    return { current, previews: uncompleted.slice(1, 5), isSpeechStep: current.title.includes('致詞') };
-  }, [settings.mcFlowSteps]);
-
-  const giftStats = useMemo(() => {
-    const items = settings.giftItems || [];
-    return { total: items.length, completed: items.filter(i => i.isPresented).length, percent: items.length > 0 ? Math.round((items.filter(i => i.isPresented).length / items.length) * 100) : 0 };
-  }, [settings.giftItems]);
-
-  const mcActivityStats = useMemo(() => {
-    const steps = settings.mcFlowSteps || [];
-    return { total: steps.length, completed: steps.filter(s => s.isCompleted).length, percent: steps.length > 0 ? Math.round((steps.filter(s => s.isCompleted).length / steps.length) * 100) : 0 };
+    const previews = uncompleted.slice(1, 5);
+    return { current, previews, isSpeechStep: current.title.includes('致詞') };
   }, [settings.mcFlowSteps]);
 
   const handleLoginSubmit = (e: React.FormEvent) => {
@@ -210,7 +199,6 @@ const FlowPanel: React.FC = () => {
       <div className="space-y-4">
         <div className="flex items-center gap-3 px-4"><TrendingUp size={24} className="text-blue-600"/><h4 className="text-xl font-black text-slate-800">活動即時看板</h4></div>
         
-        {/* 報到數據 */}
         <div className="bg-white rounded-[2.5rem] p-8 shadow-sm border border-white flex flex-col md:flex-row gap-6 md:gap-8 relative overflow-hidden">
           <div className="absolute top-0 left-0 w-1.5 h-full bg-blue-500/10" />
           <div className="flex-1 flex flex-col justify-between space-y-4">
@@ -233,7 +221,6 @@ const FlowPanel: React.FC = () => {
           </div>
         </div>
 
-        {/* 司儀監控 */}
         <div className={`bg-white p-6 md:p-8 rounded-[2.5rem] shadow-sm border-2 transition-all relative overflow-hidden ${flowProgress.isSpeechStep ? 'border-red-500 shadow-[0_0_15px_rgba(239,68,68,0.15)]' : 'border-white'}`}>
           {flowProgress.isSpeechStep && <div className="absolute top-0 right-0 bg-red-600 text-white font-black px-4 py-1.5 rounded-bl-2xl text-[10px] md:text-xs">提醒：移動司儀台</div>}
           <div className="flex items-center justify-between mb-4"><div className={`flex items-center gap-2 ${flowProgress.isSpeechStep ? 'text-red-600' : 'text-blue-600'}`}><ListChecks size={20} strokeWidth={3} /><span className="font-black uppercase tracking-widest text-xs">司儀流程監控</span></div></div>
@@ -241,7 +228,6 @@ const FlowPanel: React.FC = () => {
         </div>
       </div>
 
-      {/* 管理功能 */}
       {isAdmin && (
         <>
           <div className="bg-white rounded-[2.5rem] p-8 border border-white shadow-sm space-y-8">
@@ -253,7 +239,6 @@ const FlowPanel: React.FC = () => {
             {uploadProgress && <div className="flex items-center justify-center gap-2 py-4 bg-blue-500/10 rounded-2xl animate-pulse"><Loader2 className="animate-spin text-blue-600" size={20} /><span className="text-sm font-black text-blue-600">{uploadProgress}</span></div>}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               {[
-                { type: 'gifts_file', label: '上傳禮品清單', icon: Award, color: 'orange', desc: '替換「禮品頒贈」頁面資料。' },
                 { type: 'schedule', label: '上傳流程檔案', icon: ListTodo, color: 'emerald', desc: '更新活動詳細流程文件。' },
                 { type: 'slides', label: '上傳簡報檔案', icon: Presentation, color: 'purple', desc: '更新活動呈現簡報。' },
               ].map(item => (

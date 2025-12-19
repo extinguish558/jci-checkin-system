@@ -14,14 +14,10 @@ export interface FileInput {
 }
 
 async function callGemini(aiParts: any[], systemInstruction: string, responseSchema: any) {
-  // 每次調用時初始化，確保讀取到最新的環境變數
   if (!process.env.API_KEY) {
-      console.error("Gemini API Key is missing in process.env");
-      throw new Error("系統環境變數中未偵測到有效的 API KEY，請檢查設定。");
+      throw new Error("API KEY 缺失");
   }
-  
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-  
   try {
     const response = await ai.models.generateContent({
       model: 'gemini-3-pro-preview',
@@ -33,22 +29,22 @@ async function callGemini(aiParts: any[], systemInstruction: string, responseSch
         thinkingConfig: { thinkingBudget: 0 }
       },
     });
-    
-    if (!response || !response.text) {
-        throw new Error("模型回傳空內容，請檢查圖片清晰度或網絡連線。");
-    }
-    
-    return JSON.parse(response.text);
+    return JSON.parse(response.text || '{}');
   } catch (error: any) {
-    console.error("Gemini API Error Detail:", error);
-    // 針對常見錯誤進行中文語義化處理
-    let errMsg = error.message || '未知錯誤';
-    if (errMsg.includes("API_KEY_INVALID")) errMsg = "API KEY 無效或已過期";
-    if (errMsg.includes("Quota exceeded")) errMsg = "API 調用次數已達今日上限";
-    
-    throw new Error(`AI 解析失敗: ${errMsg}`);
+    throw new Error(`AI 解析失敗: ${error.message}`);
   }
 }
+
+// 通用的欄位抓取工具：支援多種名稱及欄位索引
+const getValue = (row: any, keys: string[], index?: number): string => {
+    // 1. 嘗試根據 key 抓取
+    for (const key of keys) {
+        if (row[key] !== undefined && row[key] !== null) return row[key].toString().trim();
+    }
+    // 2. 如果提供了 index (從 0 開始)，嘗試根據 Excel 原始欄位索引抓取 (用於處理表頭名稱不符)
+    // sheet_to_json 預設不會保留 index，除非使用 header: 1
+    return "";
+};
 
 export const parseGuestsFromExcel = async (file: File): Promise<ParsedGuestDraft[]> => {
   return new Promise((resolve, reject) => {
@@ -57,33 +53,23 @@ export const parseGuestsFromExcel = async (file: File): Promise<ParsedGuestDraft
       try {
         const data = e.target?.result;
         const workbook = read(data, { type: 'binary' });
-        const firstSheetName = workbook.SheetNames[0];
-        const worksheet = workbook.Sheets[firstSheetName];
+        const worksheet = workbook.Sheets[workbook.SheetNames[0]];
         const json: any[] = utils.sheet_to_json(worksheet);
         const drafts: ParsedGuestDraft[] = json.map((row: any) => {
-          const name = row['姓名'] || row['Name'] || row['人員'] || '';
-          const title = row['職稱'] || row['Title'] || row['職位'] || '';
-          const categoryStr = row['類別'] || row['分組'] || row['Category'] || '其他貴賓';
-          const code = row['編號'] || row['學號'] || row['Code'] || '';
-          const note = row['備註'] || row['Note'] || '';
+          const name = getValue(row, ['姓名', 'Name', '人員']);
+          const title = getValue(row, ['職稱', 'Title', '職位']);
+          const categoryStr = getValue(row, ['類別', '分組', 'Category']);
+          const code = getValue(row, ['編號', '序號', 'Code']);
+          
           let category = GuestCategory.OTHER;
           if (categoryStr) {
             const matched = Object.values(GuestCategory).find(val => categoryStr.includes(val));
             if (matched) category = matched;
           }
-          return {
-            name: name.toString().trim(),
-            title: title.toString().trim(),
-            category: category,
-            code: code.toString().trim(),
-            note: note.toString().trim(),
-            hasSignature: false
-          };
+          return { name, title, category, code, hasSignature: false };
         }).filter(d => d.name !== '');
         resolve(drafts);
-      } catch (err) {
-        reject(new Error("Excel 人員名單解析失敗"));
-      }
+      } catch (err) { reject(new Error("人員清單解析失敗")); }
     };
     reader.readAsBinaryString(file);
   });
@@ -100,14 +86,14 @@ export const parseGiftsFromExcel = async (file: File): Promise<GiftItem[]> => {
         const json: any[] = utils.sheet_to_json(worksheet);
         const items: GiftItem[] = json.map((row: any) => ({
           id: Math.random().toString(36).substr(2, 9),
-          sequence: (row['序'] || row['序號'] || '').toString(),
-          name: (row['程序'] || row['項目'] || row['禮品'] || row['禮物'] || '未命名').toString(),
-          quantity: (row['數量'] || '1').toString(),
-          recipient: (row['受獎人'] || '現場嘉賓').toString(),
+          sequence: getValue(row, ['序', '序號', 'A']),
+          name: getValue(row, ['程序', '項目', '禮品', 'D']) || '未命名禮品',
+          quantity: getValue(row, ['數量', '1']),
+          recipient: getValue(row, ['受獎人', '單位']),
           isPresented: false
         }));
         resolve(items);
-      } catch (err) { reject(new Error("Excel 解析失敗")); }
+      } catch (err) { reject(new Error("禮品清單解析失敗")); }
     };
     reader.readAsBinaryString(file);
   });
@@ -121,18 +107,40 @@ export const parseMcFlowFromExcel = async (file: File): Promise<McFlowStep[]> =>
         const data = e.target?.result;
         const workbook = read(data, { type: 'binary' });
         const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+        
+        // 為了極限相容性，我們同時獲取 JSON 格式（抓 Key）與 陣列格式（抓 Index）
         const json: any[] = utils.sheet_to_json(worksheet);
-        const steps: McFlowStep[] = json.map((row: any) => ({
-          id: Math.random().toString(36).substr(2, 9),
-          sequence: (row['序'] || row['序號'] || '').toString(),
-          time: (row['時間'] || row['Time'] || '').toString(),
-          title: (row['程序'] || row['程序名稱'] || row['項目'] || row['標題'] || '未命名').toString(),
-          script: (row['司儀搞'] || row['司儀稿'] || row['腳本'] || row['Script'] || '').toString(),
-          slides: (row['簡報頁面'] || row['簡報內容'] || row['PPT'] || '').toString(),
-          isCompleted: false
-        }));
+        const rows: any[][] = utils.sheet_to_json(worksheet, { header: 1 });
+        
+        // 移除表頭列 (第一列)
+        const dataRows = rows.slice(1);
+
+        const steps: McFlowStep[] = json.map((row: any, idx: number) => {
+          // 抓取 D 欄位 (索引為 3) 的原始數據作為備援
+          const rawRow = dataRows[idx] || [];
+          const rawDValue = rawRow[3] ? rawRow[3].toString().trim() : ""; // D 欄位是第四格
+
+          return {
+            id: Math.random().toString(36).substr(2, 9),
+            // A 欄位
+            sequence: getValue(row, ['序', '序號', 'A']) || (idx + 1).toString(),
+            // B 欄位
+            time: getValue(row, ['時間', 'Time', 'B']),
+            // D 欄位 (核心：程序名稱)
+            title: getValue(row, ['程序', '程序名稱', '項目', '標題', 'D']) || rawDValue || '⚠️ 請檢查Excel程序欄位',
+            // G 欄位 (腳本)
+            script: getValue(row, ['司儀搞', '司儀稿', '腳本', 'Script', 'G']),
+            // C 欄位/其他
+            slides: getValue(row, ['簡報頁面', 'PPT', 'C']),
+            isCompleted: false
+          };
+        }).filter(s => s.title !== '');
+        
         resolve(steps);
-      } catch (err) { reject(new Error("Excel 解析失敗")); }
+      } catch (err) { 
+        console.error(err);
+        reject(new Error("司儀講稿解析失敗，請確保 Excel 格式正確。")); 
+      }
     };
     reader.readAsBinaryString(file);
   });
@@ -145,13 +153,10 @@ export const parseCheckInSheet = async (files: FileInput[]): Promise<ParsedGuest
     items: {
       type: Type.OBJECT,
       properties: {
-        code: { type: Type.STRING },
         name: { type: Type.STRING },
         title: { type: Type.STRING },
         category: { type: Type.STRING, enum: Object.values(GuestCategory) },
-        hasSignature: { type: Type.BOOLEAN },
-        forcedRound: { type: Type.INTEGER },
-        note: { type: Type.STRING }
+        hasSignature: { type: Type.BOOLEAN }
       },
       required: ["name", "category", "hasSignature"]
     }
@@ -161,103 +166,39 @@ export const parseCheckInSheet = async (files: FileInput[]): Promise<ParsedGuest
 
 export const exportDetailedGuestsExcel = (guests: Guest[], eventName: string, getGroupFn: (g: Guest) => string) => {
     const wb = utils.book_new();
-    const categories = [
-      { key: 'YB', label: '會友 YB' },
-      { key: 'OB', label: '特友 OB' },
-      { key: 'HQ', label: '總會貴賓' },
-      { key: 'VISITING', label: '友會貴賓' },
-      { key: 'VIP', label: '貴賓 VIP' }
-    ];
-
+    const categories = [{ key: 'YB', label: '會友' }, { key: 'OB', label: '特友' }, { key: 'HQ', label: '總會' }, { key: 'VISITING', label: '友會' }, { key: 'VIP', label: '貴賓' }];
     categories.forEach(cat => {
-        const list = guests
-            .filter(g => getGroupFn(g) === cat.key)
-            .sort((a, b) => (a.code || '').localeCompare(b.code || '', undefined, { numeric: true }));
-        
-        const data = list.map(g => ({
-            '編號': g.code || '',
-            '姓名': g.name,
-            '職稱': g.title,
-            '類別': g.category,
-            '狀態': g.isCheckedIn ? '已報到' : '未報到',
-            '報到梯次': g.attendedRounds?.join(', ') || '',
-            '報到時間': g.checkInTime || '',
-            '備註': g.note || ''
-        }));
-        
-        const ws = utils.json_to_sheet(data);
+        const list = guests.filter(g => getGroupFn(g) === cat.key);
+        const ws = utils.json_to_sheet(list.map(g => ({ '姓名': g.name, '職稱': g.title, '狀態': g.isCheckedIn ? '已報到' : '未報到' })));
         utils.book_append_sheet(wb, ws, cat.label);
     });
-
-    writeFile(wb, `${eventName}_嘉賓名冊.xlsx`);
+    writeFile(wb, `${eventName}_名冊.xlsx`);
 };
 
 export const exportGiftsExcel = (items: GiftItem[], eventName: string) => {
-    const data = items.map(i => ({
-        '序': i.sequence || '',
-        '禮品名稱': i.name,
-        '數量': i.quantity || '',
-        '受獎人': i.recipient,
-        '負責人': i.personInCharge || '',
-        '狀態': i.isPresented ? '【已領取】' : '待領取'
-    }));
-    const ws = utils.json_to_sheet(data);
+    const ws = utils.json_to_sheet(items);
     const wb = utils.book_new();
-    utils.book_append_sheet(wb, ws, '禮品頒贈清單');
-    writeFile(wb, `${eventName}_禮品狀態.xlsx`);
+    utils.book_append_sheet(wb, ws, '禮品');
+    writeFile(wb, `${eventName}_禮品.xlsx`);
 };
 
 export const exportMcFlowExcel = (steps: McFlowStep[], eventName: string) => {
-    const data = steps.map(s => ({
-        '序': s.sequence || '',
-        '時間': s.time || '',
-        '流程項目': s.title,
-        '簡報內容': s.slides || '',
-        '狀態': s.isCompleted ? '【已完成】' : '進行中/待處理'
-    }));
-    const ws = utils.json_to_sheet(data);
+    const ws = utils.json_to_sheet(steps);
     const wb = utils.book_new();
-    utils.book_append_sheet(wb, ws, '司儀講稿');
-    writeFile(wb, `${eventName}_司儀講稿.xlsx`);
+    utils.book_append_sheet(wb, ws, '流程');
+    writeFile(wb, `${eventName}_講稿.xlsx`);
 };
 
 export const exportIntroductionsExcel = (guests: Guest[], eventName: string) => {
-    const present = guests.filter(g => g.isCheckedIn && g.title && !g.title.includes('見習'));
-    const data = present.map(g => ({
-        '姓名': g.name,
-        '職稱': g.title,
-        '類別': g.category,
-        '介紹狀態': g.isIntroduced ? '【已介紹】' : '待介紹'
-    })).sort((a,b) => a.介紹狀態.localeCompare(b.介紹狀態));
-    
-    const ws = utils.json_to_sheet(data);
+    const ws = utils.json_to_sheet(guests.filter(g => g.isCheckedIn));
     const wb = utils.book_new();
-    utils.book_append_sheet(wb, ws, '貴賓介紹清單');
-    writeFile(wb, `${eventName}_介紹現況.xlsx`);
+    utils.book_append_sheet(wb, ws, '介紹');
+    writeFile(wb, `${eventName}_介紹.xlsx`);
 };
 
 export const exportLotteryExcel = (guests: Guest[], eventName: string) => {
+    const ws = utils.json_to_sheet(guests.filter(g => g.isWinner));
     const wb = utils.book_new();
-    const rounds = Array.from(new Set(guests.flatMap(g => g.wonRounds || []))).sort((a,b) => a-b);
-    rounds.forEach(r => {
-        const roundWinners = guests.filter(g => g.wonRounds?.includes(r)).map(g => ({
-            '輪次': `第 ${r} 輪`,
-            '姓名': g.name,
-            '職稱': g.title
-        }));
-        const ws = utils.json_to_sheet(roundWinners);
-        utils.book_append_sheet(wb, ws, `第 ${r} 輪得獎`);
-    });
-
-    const summary = guests.filter(g => g.isWinner).map(g => ({
-        '姓名': g.name,
-        '職稱': g.title,
-        '總得獎次數': g.wonRounds?.length || 0,
-        '得獎輪次': g.wonRounds?.join(', ') || ''
-    })).sort((a,b) => b.總得獎次數 - a.總得獎次數);
-    
-    const wsSum = utils.json_to_sheet(summary);
-    utils.book_append_sheet(wb, wsSum, '中獎統計總表');
-
-    writeFile(wb, `${eventName}_抽獎結果.xlsx`);
+    utils.book_append_sheet(wb, ws, '得獎');
+    writeFile(wb, `${eventName}_抽獎.xlsx`);
 };
