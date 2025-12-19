@@ -8,7 +8,7 @@ import {
   Activity, CheckCircle2, Mic2, Award, ChevronRight,
   TrendingUp, RefreshCcw, Database, BellRing, Clock, FileBox,
   FileCheck2, Trophy, ClipboardList, ChevronDown, UserCheck, Users,
-  RotateCcw, AlertTriangle, Check, ListChecks
+  RotateCcw, AlertTriangle, Check, ListChecks, Edit3, ChevronUp
 } from 'lucide-react';
 import { 
   exportDetailedGuestsExcel, 
@@ -28,7 +28,11 @@ const FlowPanel: React.FC = () => {
   const [isUploading, setIsUploading] = useState(false);
   const [uploadType, setUploadType] = useState<'schedule' | 'gifts' | 'slides' | 'mcflow' | null>(null);
   
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  // 新增：流程摘要展開狀態與編輯狀態
+  const [isScheduleExpanded, setIsScheduleExpanded] = useState(false);
+  const [isEditingSchedule, setIsEditingSchedule] = useState(false);
+  const [editScheduleText, setEditScheduleText] = useState(settings.briefSchedule || '');
+
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleLoginSubmit = (e: React.FormEvent) => {
@@ -90,11 +94,11 @@ const FlowPanel: React.FC = () => {
 
   const dashboardData = useMemo(() => {
     const groups = [
-      { key: 'YB', label: 'YB', color: 'bg-blue-500' },
-      { key: 'OB', label: 'OB', color: 'bg-orange-500' },
-      { key: 'VIP', label: '貴賓', color: 'bg-purple-500' },
-      { key: 'VISITING', label: '友會', color: 'bg-green-500' },
-      { key: 'HQ', label: '總會', color: 'bg-indigo-400' },
+      { key: 'YB', label: '會友 YB', color: 'bg-blue-500' },
+      { key: 'OB', label: '特友 OB', color: 'bg-orange-500' },
+      { key: 'HQ', label: '總會貴賓', color: 'bg-indigo-500' },
+      { key: 'VISITING', label: '友會貴賓', color: 'bg-green-500' },
+      { key: 'VIP', label: '貴賓 VIP', color: 'bg-purple-500' },
     ];
 
     const stats = groups.map(group => {
@@ -186,18 +190,37 @@ const FlowPanel: React.FC = () => {
     }
   };
 
+  const handleSaveSchedule = async () => {
+    await updateSettings({ briefSchedule: editScheduleText });
+    setIsEditingSchedule(false);
+  };
+
+  const openEditSchedule = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setEditScheduleText(settings.briefSchedule || '');
+    setIsEditingSchedule(true);
+  };
+
   return (
-    <div className="p-4 md:p-8 max-w-3xl mx-auto space-y-6 pb-60 bg-[#F2F2F7] min-h-screen">
+    <div className="p-4 md:p-8 max-w-4xl mx-auto space-y-6 pb-60 bg-[#F2F2F7] min-h-screen">
       <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" />
 
       {/* 活動配置 */}
       <div className="bg-white rounded-[2.5rem] p-8 shadow-sm border border-white space-y-8">
         <div className="flex justify-between items-center">
            <div className="flex items-center gap-2"><Activity className="text-blue-500" size={18} strokeWidth={3} /><span className="text-gray-400 font-black tracking-widest text-[10px]">EVENT CONTROL</span></div>
-           <button onClick={() => isAdmin ? logoutAdmin() : setShowLoginModal(true)} className="p-3 bg-[#F2F2F7] rounded-2xl">
-             {isAdmin ? <Unlock size={20} className="text-[#007AFF]"/> : <Lock size={20} className="text-gray-300"/>}
-           </button>
+           <div className="flex items-center gap-3">
+             {isAdmin && (
+               <button onClick={openEditSchedule} className="p-3 bg-blue-50 text-blue-600 rounded-2xl hover:bg-blue-100 transition-colors">
+                 <Edit3 size={20} />
+               </button>
+             )}
+             <button onClick={() => isAdmin ? logoutAdmin() : setShowLoginModal(true)} className="p-3 bg-[#F2F2F7] rounded-2xl">
+               {isAdmin ? <Unlock size={20} className="text-[#007AFF]"/> : <Lock size={20} className="text-gray-300"/>}
+             </button>
+           </div>
         </div>
+        
         <input 
           type="text" 
           value={settings.eventName} 
@@ -206,62 +229,76 @@ const FlowPanel: React.FC = () => {
           placeholder="活動名稱"
           readOnly={!isAdmin}
         />
-        <div className="bg-[#F2F2F7] rounded-[2rem] p-6 relative group">
-           <textarea 
-              ref={textareaRef}
-              value={settings.briefSchedule || ''}
-              onChange={(e) => isAdmin && updateSettings({ briefSchedule: e.target.value })}
-              placeholder="活動流程摘要..."
-              className="w-full bg-transparent border-none text-xl font-light text-black focus:ring-0 p-0 resize-y min-h-[120px] custom-scrollbar"
-              readOnly={!isAdmin}
-           />
-           {isAdmin && (
-             <div className="absolute bottom-2 right-4 text-gray-300 pointer-events-none opacity-50">
-                <ChevronDown size={14} className="rotate-[-45deg]" />
-             </div>
-           )}
+
+        {/* 流程摘要顯示區塊：點擊切換展開/縮回 */}
+        <div 
+          onClick={() => setIsScheduleExpanded(!isScheduleExpanded)}
+          className={`bg-[#F2F2F7] rounded-[2rem] p-7 relative cursor-pointer group transition-all duration-300 ${isScheduleExpanded ? 'shadow-inner' : 'hover:bg-[#E8E8EE]'}`}
+        >
+           <div className={`text-xl font-light text-black whitespace-pre-wrap transition-all duration-300 ${isScheduleExpanded ? '' : 'line-clamp-4'}`}>
+              {settings.briefSchedule || (
+                <span className="text-gray-300 italic">點擊編輯或上傳活動流程摘要...</span>
+              )}
+           </div>
+           
+           <div className="mt-4 flex items-center justify-center text-gray-300 group-hover:text-blue-500 transition-colors">
+              {isScheduleExpanded ? (
+                <div className="flex items-center gap-1 text-[10px] font-black uppercase tracking-widest">
+                  <ChevronUp size={16} /> 點擊收合流程
+                </div>
+              ) : (
+                <div className="flex items-center gap-1 text-[10px] font-black uppercase tracking-widest">
+                  <ChevronDown size={16} /> 點擊展開全文
+                </div>
+              )}
+           </div>
         </div>
       </div>
 
-      {/* 智慧報到儀表板 */}
-      <div className="bg-white rounded-[3rem] p-10 shadow-sm border border-white space-y-8">
-        <div className="flex justify-between items-center">
-          <div className="flex items-center gap-3">
-             <TrendingUp size={20} className="text-blue-500" strokeWidth={3} />
-             <span className="text-[11px] font-black text-slate-400 tracking-wider uppercase">Real-time Check-in Analytics</span>
+      {/* 智慧報到儀表板 - 同步 AdminPanel 樣式 */}
+      <div className="bg-white rounded-[3rem] p-8 shadow-sm border border-white flex flex-col md:flex-row gap-8 relative overflow-hidden group">
+        <div className="absolute top-0 left-0 w-2 h-full bg-blue-500/10" />
+        
+        {/* 左側：大數據顯示 */}
+        <div className="flex-1 flex flex-col justify-between space-y-6">
+          <div className="flex items-center gap-2">
+            <Clock size={18} className="text-blue-500" />
+            <span className="text-[11px] font-black text-slate-400 tracking-wider uppercase">報到總覽數據分析</span>
           </div>
-          <div className="bg-blue-50 text-blue-600 px-4 py-1.5 rounded-full text-xs font-black">
-            報到率 {dashboardData.totalPercent}%
+          
+          <div className="flex items-baseline gap-4">
+            <span className="text-8xl font-black text-slate-900 tracking-tighter leading-none">{dashboardData.totalCheckedIn}</span>
+            <span className="text-2xl font-bold text-slate-300">/ {dashboardData.totalCount}</span>
           </div>
-        </div>
 
-        {/* 中心大數字區塊 */}
-        <div className="bg-gray-50 rounded-[2.5rem] p-12 text-center relative overflow-hidden group">
-          <div className="relative z-10">
-            <h1 className="text-8xl md:text-9xl font-black text-slate-900 tracking-tight leading-none">
-              {dashboardData.totalCheckedIn}
-            </h1>
-            <p className="text-xs font-bold text-gray-400 mt-4 tracking-widest uppercase">
-              已報到總人數 / {dashboardData.totalCount}
-            </p>
-          </div>
-          <div className="absolute bottom-0 left-0 h-2 bg-blue-500 transition-all duration-1000" style={{ width: `${dashboardData.totalPercent}%` }} />
-        </div>
-
-        {/* 下方分類列表 */}
-        <div className="space-y-4 px-4">
-          {dashboardData.stats.map((stat) => (
-            <div key={stat.key} className="flex items-center justify-between group">
-              <div className="flex items-center gap-4">
-                <div className={`w-2.5 h-2.5 rounded-full ${stat.color} shadow-sm group-hover:scale-125 transition-transform`} />
-                <span className="text-base font-black text-gray-500">{stat.label}</span>
-              </div>
-              <div className="flex items-baseline gap-1.5">
-                <span className="text-xl font-black text-slate-900">{stat.checkedIn}</span>
-                <span className="text-xs font-bold text-gray-300">/ {stat.total}</span>
-              </div>
+          <div className="mt-auto space-y-2">
+            <div className="flex justify-between items-end">
+               <span className="text-[9px] font-black text-blue-500 tracking-widest">REAL-TIME PROGRESS</span>
+               <p className="text-[11px] font-black text-blue-600">當前報到率 {dashboardData.totalPercent}%</p>
             </div>
-          ))}
+            <div className="w-full h-2.5 bg-gray-50 rounded-full overflow-hidden border border-gray-50 shadow-inner">
+              <div className="h-full bg-blue-500 transition-all duration-1000 shadow-[0_0_12px_rgba(59,130,246,0.5)]" style={{ width: `${dashboardData.totalPercent}%` }} />
+            </div>
+          </div>
+        </div>
+
+        {/* 右側：類別狀態分欄 */}
+        <div className="w-full md:w-auto md:min-w-[240px] border-l border-gray-50 pl-8 flex flex-col justify-center gap-4">
+           <h4 className="text-[9px] font-black text-gray-300 uppercase tracking-[0.2em] mb-2">Categories Status</h4>
+           <div className="grid grid-cols-2 gap-y-4 gap-x-6">
+              {dashboardData.stats.map(detail => (
+                <div key={detail.key} className="flex flex-col gap-0.5">
+                  <div className="flex items-center gap-1.5">
+                    <div className={`w-1.5 h-1.5 rounded-full ${detail.color}`} />
+                    <span className="text-[10px] font-black text-gray-400 uppercase truncate">{detail.label}</span>
+                  </div>
+                  <div className="flex items-baseline gap-1">
+                    <span className="text-lg font-black text-slate-700">{detail.checkedIn}</span>
+                    <span className="text-[10px] font-bold text-slate-200">/ {detail.total}</span>
+                  </div>
+                </div>
+              ))}
+           </div>
         </div>
       </div>
 
@@ -373,6 +410,32 @@ const FlowPanel: React.FC = () => {
             ))}
         </div>
       </div>
+
+      {/* 流程摘要編輯視窗 */}
+      {isEditingSchedule && (
+        <div className="fixed inset-0 ios-blur bg-black/40 z-[400] flex items-center justify-center p-6">
+          <div className="bg-white rounded-[3rem] p-8 w-full max-w-2xl shadow-2xl space-y-6 flex flex-col max-h-[90vh]">
+            <div className="flex justify-between items-center">
+              <h3 className="text-2xl font-black text-black">編輯活動流程摘要</h3>
+              <button onClick={() => setIsEditingSchedule(false)} className="p-2 text-gray-400 hover:text-black transition-colors">
+                <X size={24} />
+              </button>
+            </div>
+            
+            <textarea 
+              value={editScheduleText}
+              onChange={(e) => setEditScheduleText(e.target.value)}
+              placeholder="請輸入活動流程摘要細節..."
+              className="flex-1 w-full bg-[#F2F2F7] border-none rounded-[2rem] p-6 text-xl font-light text-black focus:ring-4 focus:ring-blue-500/10 outline-none resize-none custom-scrollbar"
+            />
+            
+            <div className="flex gap-4">
+              <button onClick={() => setIsEditingSchedule(false)} className="flex-1 py-4 font-black text-gray-400">取消</button>
+              <button onClick={handleSaveSchedule} className="flex-2 py-4 bg-blue-600 text-white font-black rounded-2xl shadow-xl shadow-blue-200 active:scale-95 transition-transform">儲存流程變更</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {isAdmin && (
         <div className="bg-white rounded-[2.5rem] p-8 border-2 border-red-50 flex gap-4 mt-8">
