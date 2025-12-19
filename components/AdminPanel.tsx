@@ -117,58 +117,58 @@ const AdminPanel: React.FC = () => {
   };
 
   return (
-    <div className="p-4 md:p-8 max-w-7xl mx-auto space-y-6 pb-48">
+    <div className="p-4 md:p-8 max-w-7xl mx-auto space-y-5 md:space-y-6 pb-48">
       {/* 頁面標題 */}
-      <div className="flex justify-between items-center mb-2 px-2">
+      <div className="flex justify-between items-center mb-1 px-1">
           <div>
-            <h2 className="text-3xl font-black text-black">報到管理</h2>
-            <p className="text-xs font-bold text-gray-400 uppercase tracking-widest leading-none mt-1">{settings.eventName}</p>
+            <h2 className="text-2xl md:text-3xl font-black text-black">報到管理</h2>
+            <p className="text-[10px] md:text-xs font-bold text-gray-400 uppercase tracking-widest leading-none mt-1">{settings.eventName}</p>
           </div>
-          <button onClick={() => isUnlocked ? logoutAdmin() : setShowLoginModal(true)} className="p-3 bg-white rounded-2xl shadow-sm border border-white">
-            {isUnlocked ? <Unlock size={20} className="text-[#007AFF]"/> : <Lock size={20} className="text-gray-300"/>}
+          <button onClick={() => isUnlocked ? logoutAdmin() : setShowLoginModal(true)} className="p-2.5 md:p-3 bg-white rounded-2xl shadow-sm border border-white">
+            {isUnlocked ? <Unlock size={18} className="text-[#007AFF]"/> : <Lock size={18} className="text-gray-300"/>}
           </button>
       </div>
 
-      {/* 頂部功能區塊 */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-5 items-stretch">
+      {/* 頂部功能區塊 - 手機版改為垂直堆疊或更緊湊的佈局 */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-5 items-stretch">
           {/* 左側：報到總覽 */}
-          <div className="md:col-span-2 bg-white rounded-[3rem] p-8 shadow-sm border border-white flex flex-col md:flex-row gap-8 relative overflow-hidden group">
-            <div className="absolute top-0 left-0 w-2 h-full bg-blue-500/10" />
+          <div className="md:col-span-2 bg-white rounded-[2rem] md:rounded-[3rem] p-6 md:p-8 shadow-sm border border-white flex flex-col md:flex-row gap-6 md:gap-8 relative overflow-hidden group">
+            <div className="absolute top-0 left-0 w-1.5 h-full bg-blue-500/10" />
             
-            <div className="flex-1 flex flex-col justify-between space-y-6">
+            <div className="flex-1 flex flex-col justify-between space-y-4 md:space-y-6">
               <div className="flex items-center gap-2">
-                <Clock size={18} className="text-blue-500" />
-                <span className="text-[11px] font-black text-slate-400 tracking-wider uppercase">報到總覽數據分析</span>
+                <Clock size={16} className="text-blue-500" />
+                <span className="text-[9px] md:text-[11px] font-black text-slate-400 tracking-wider uppercase">報到總覽數據分析</span>
               </div>
               
-              <div className="flex items-baseline gap-4">
-                <span className="text-8xl font-black text-slate-900 tracking-tighter leading-none">{statsOverview.totalChecked}</span>
-                <span className="text-2xl font-bold text-slate-300">/ {statsOverview.totalCount}</span>
+              <div className="flex items-baseline gap-2 md:gap-4">
+                <span className="text-5xl md:text-8xl font-black text-slate-900 tracking-tighter leading-none">{statsOverview.totalChecked}</span>
+                <span className="text-lg md:text-2xl font-bold text-slate-300">/ {statsOverview.totalCount}</span>
               </div>
 
               <div className="mt-auto space-y-2">
                 <div className="flex justify-between items-end">
-                   <span className="text-[9px] font-black text-blue-500 tracking-widest">REAL-TIME PROGRESS</span>
-                   <p className="text-[11px] font-black text-blue-600">當前報到率 {statsOverview.totalPercent}%</p>
+                   <span className="text-[8px] md:text-[9px] font-black text-blue-500 tracking-widest uppercase">Progress</span>
+                   <p className="text-[10px] md:text-[11px] font-black text-blue-600">{statsOverview.totalPercent}%</p>
                 </div>
-                <div className="w-full h-2.5 bg-gray-50 rounded-full overflow-hidden border border-gray-50 shadow-inner">
-                  <div className="h-full bg-blue-500 transition-all duration-1000 shadow-[0_0_12px_rgba(59,130,246,0.5)]" style={{ width: `${statsOverview.totalPercent}%` }} />
+                <div className="w-full h-2 bg-gray-50 rounded-full overflow-hidden border border-gray-50 shadow-inner">
+                  <div className="h-full bg-blue-500 transition-all duration-1000 shadow-[0_0_8px_rgba(59,130,246,0.4)]" style={{ width: `${statsOverview.totalPercent}%` }} />
                 </div>
               </div>
             </div>
 
-            <div className="w-full md:w-auto md:min-w-[280px] border-l border-gray-50 pl-8 flex flex-col justify-center gap-4">
-               <h4 className="text-[9px] font-black text-gray-300 uppercase tracking-[0.2em] mb-2">Categories Status</h4>
-               <div className="grid grid-cols-2 gap-y-4 gap-x-6">
+            <div className="w-full md:w-auto md:min-w-[280px] border-t md:border-t-0 md:border-l border-gray-50 pt-4 md:pt-0 md:pl-8 flex flex-col justify-center gap-3">
+               <h4 className="text-[8px] md:text-[9px] font-black text-gray-300 uppercase tracking-[0.2em] mb-1 md:mb-2">Categories</h4>
+               <div className="grid grid-cols-2 xs:grid-cols-3 md:grid-cols-2 gap-y-3 gap-x-4">
                   {statsOverview.details.map(detail => (
-                    <div key={detail.key} className="flex flex-col gap-0.5">
-                      <div className="flex items-center gap-1.5">
+                    <div key={detail.key} className="flex flex-col gap-0">
+                      <div className="flex items-center gap-1">
                         <div className={`w-1.5 h-1.5 rounded-full ${detail.color}`} />
-                        <span className="text-[10px] font-black text-gray-400 uppercase truncate">{detail.label}</span>
+                        <span className="text-[9px] md:text-[10px] font-black text-gray-400 uppercase truncate">{detail.label.replace('貴賓', '')}</span>
                       </div>
                       <div className="flex items-baseline gap-1">
-                        <span className="text-lg font-black text-slate-700">{detail.checked}</span>
-                        <span className="text-[10px] font-bold text-slate-200">/ {detail.total}</span>
+                        <span className="text-base md:text-lg font-black text-slate-700">{detail.checked}</span>
+                        <span className="text-[9px] font-bold text-slate-200">/ {detail.total}</span>
                       </div>
                     </div>
                   ))}
@@ -176,93 +176,91 @@ const AdminPanel: React.FC = () => {
             </div>
           </div>
 
-          {/* 右側：手動新增與搜尋 */}
-          <div className="md:col-span-1 flex flex-col gap-5">
+          {/* 右側：手動新增與搜尋 - 手機版縮小 Padding */}
+          <div className="md:col-span-1 flex flex-col gap-4">
             <button 
               onClick={() => triggerAction(() => setShowManualAdd(true))} 
-              className="bg-white p-8 rounded-[2.8rem] shadow-sm border border-white flex flex-col items-center justify-center gap-3 font-black text-blue-600 transition-all hover:bg-blue-50/30 active:scale-95 group flex-1"
+              className="bg-white p-5 md:p-8 rounded-[1.8rem] md:rounded-[2.8rem] shadow-sm border border-white flex flex-row md:flex-col items-center justify-center gap-3 font-black text-blue-600 transition-all hover:bg-blue-50/30 active:scale-95 group flex-1"
             >
-              <div className="w-16 h-16 bg-blue-50 text-blue-500 rounded-[1.8rem] flex items-center justify-center group-hover:scale-110 transition-transform shadow-sm">
-                <UserPlus size={32} />
+              <div className="w-10 h-10 md:w-16 md:h-16 bg-blue-50 text-blue-500 rounded-xl md:rounded-[1.8rem] flex items-center justify-center group-hover:scale-110 transition-transform shadow-sm shrink-0">
+                <UserPlus size={20} className="md:w-8 md:h-8" />
               </div>
-              <span className="text-lg tracking-tight">手動新增嘉賓名單</span>
+              <span className="text-sm md:text-lg tracking-tight">手動新增嘉賓名單</span>
             </button>
 
             <div className="relative group">
-              <div className="absolute left-7 top-1/2 -translate-y-1/2 text-gray-300 group-focus-within:text-blue-500 transition-colors z-10">
-                <Search size={28}/>
+              <div className="absolute left-5 md:left-7 top-1/2 -translate-y-1/2 text-gray-300 group-focus-within:text-blue-500 transition-colors z-10">
+                <Search size={20} className="md:w-7 md:h-7"/>
               </div>
               <input 
                 type="text" 
-                placeholder="搜尋嘉賓姓名、職稱或編號..." 
+                placeholder="搜尋姓名或編號..." 
                 value={searchTerm} 
                 onChange={e => setSearchTerm(e.target.value)} 
-                className="w-full pl-20 pr-8 py-8 bg-white rounded-[2.8rem] shadow-sm border border-white outline-none focus:ring-8 focus:ring-blue-500/5 transition-all text-xl font-medium text-slate-900 placeholder-slate-300" 
+                className="w-full pl-14 md:pl-20 pr-6 py-4 md:py-8 bg-white rounded-[1.8rem] md:rounded-[2.8rem] shadow-sm border border-white outline-none focus:ring-4 md:focus:ring-8 focus:ring-blue-500/5 transition-all text-sm md:text-xl font-medium text-slate-900 placeholder-slate-300" 
               />
             </div>
           </div>
       </div>
 
-      {/* 分類導覽標籤 - 實作 Sticky 置頂功能 */}
-      <div className={`sticky top-0 z-40 -mx-4 md:-mx-8 px-4 md:px-8 py-4 transition-all duration-300 ${isSticky ? 'ios-blur bg-white/70 shadow-lg border-b border-white/20' : ''}`}>
-        <div className="flex bg-white/50 backdrop-blur-md p-2 rounded-[2.2rem] overflow-x-auto gap-1.5 border border-white shadow-sm no-scrollbar">
+      {/* 分類導覽標籤 - 手機版縮小按鈕 Padding 與字體 */}
+      <div className={`sticky top-11 md:top-0 z-40 -mx-4 md:-mx-8 px-4 md:px-8 py-3 transition-all duration-300 ${isSticky ? 'ios-blur bg-white/70 shadow-md border-b border-white/20' : ''}`}>
+        <div className="flex bg-white/50 backdrop-blur-md p-1.5 md:p-2 rounded-[1.5rem] md:rounded-[2.2rem] overflow-x-auto gap-1 border border-white shadow-sm no-scrollbar">
             {groupedData.map(group => (
                 <button 
                   key={group.key} 
                   onClick={() => setActiveTab(group.key)} 
-                  className={`px-7 py-4 rounded-[1.8rem] font-black text-sm whitespace-nowrap transition-all flex items-center gap-2 ${activeTab === group.key ? 'bg-white text-slate-900 shadow-sm border border-gray-100' : 'text-slate-400 hover:text-slate-600'}`}
+                  className={`px-4 md:px-7 py-2.5 md:py-4 rounded-[1.2rem] md:rounded-[1.8rem] font-black text-[11px] md:text-sm whitespace-nowrap transition-all flex items-center gap-1.5 md:gap-2 ${activeTab === group.key ? 'bg-white text-slate-900 shadow-sm border border-gray-100' : 'text-slate-400 hover:text-slate-600'}`}
                 >
-                  <div className={`w-2.5 h-2.5 rounded-full ${group.key === 'YB' ? 'bg-blue-500' : group.key === 'OB' ? 'bg-orange-500' : group.key === 'HQ' ? 'bg-indigo-500' : group.key === 'VISITING' ? 'bg-green-500' : 'bg-purple-500'}`} />
-                  {group.title} 
-                  <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${activeTab === group.key ? 'bg-slate-100 text-slate-600' : 'text-slate-300'}`}>{group.totalCount}</span>
+                  <div className={`w-2 h-2 rounded-full ${group.key === 'YB' ? 'bg-blue-500' : group.key === 'OB' ? 'bg-orange-500' : group.key === 'HQ' ? 'bg-indigo-500' : group.key === 'VISITING' ? 'bg-green-500' : 'bg-purple-500'}`} />
+                  {group.title.split(' ')[0]} 
+                  <span className={`text-[9px] md:text-[11px] font-bold px-1.5 py-0.5 rounded-full ${activeTab === group.key ? 'bg-slate-100 text-slate-600' : 'text-slate-300'}`}>{group.totalCount}</span>
                 </button>
             ))}
         </div>
       </div>
 
-      {/* 嘉賓名單列表 */}
-      <div className="space-y-5">
+      {/* 嘉賓名單列表 - 縮小單元格 Padding */}
+      <div className="space-y-4">
           {groupedData.filter(g => g.key === activeTab).map(group => (
-              <div key={group.key} className="bg-white rounded-[3rem] shadow-sm border border-white overflow-hidden">
-                  <div className="px-10 py-6 border-b border-gray-50 flex justify-between items-center bg-slate-50/40">
-                    <div className="flex items-center gap-3">
-                      <group.icon size={20} className={group.color} />
-                      <h3 className={`font-black text-lg tracking-tight ${group.color}`}>{group.title} 名錄</h3>
+              <div key={group.key} className="bg-white rounded-[2rem] md:rounded-[3rem] shadow-sm border border-white overflow-hidden">
+                  <div className="px-6 md:px-10 py-4 md:py-6 border-b border-gray-50 flex justify-between items-center bg-slate-50/40">
+                    <div className="flex items-center gap-2">
+                      <group.icon size={16} className={group.color} />
+                      <h3 className={`font-black text-sm md:text-lg tracking-tight ${group.color}`}>{group.title} 名錄</h3>
                     </div>
-                    <div className="flex items-center gap-4">
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-xl font-black text-slate-900">{group.checkedCount}</span>
-                        <span className="text-xs font-bold text-slate-300">/ {group.totalCount} 已報到</span>
-                      </div>
+                    <div className="flex items-center gap-2">
+                        <span className="text-base md:text-xl font-black text-slate-900">{group.checkedCount}</span>
+                        <span className="text-[10px] font-bold text-slate-300">/ {group.totalCount}</span>
                     </div>
                   </div>
                   <div className="divide-y divide-gray-50">
                       {group.list.map((g, idx) => (
-                          <div key={g.id} className="px-8 py-7 flex items-center gap-5 hover:bg-slate-50/50 transition-colors group">
-                            <div className={`w-14 h-14 rounded-2xl border flex flex-col items-center justify-center transition-all ${g.isCheckedIn ? 'bg-blue-50 text-blue-600 border-blue-100 scale-105 shadow-sm' : 'bg-gray-50 text-gray-300 border-gray-100'}`}>
-                              <span className="text-[10px] font-black opacity-40 leading-none mb-0.5">ID</span>
-                              <span className="text-lg font-black leading-none">{g.code || idx + 1}</span>
+                          <div key={g.id} className="px-5 md:px-8 py-4 md:py-7 flex items-center gap-3 md:gap-5 hover:bg-slate-50/50 transition-colors group">
+                            <div className={`w-10 h-10 md:w-14 md:h-14 rounded-xl md:rounded-2xl border flex flex-col items-center justify-center transition-all shrink-0 ${g.isCheckedIn ? 'bg-blue-50 text-blue-600 border-blue-100 scale-105 shadow-sm' : 'bg-gray-50 text-gray-300 border-gray-100'}`}>
+                              <span className="text-[8px] md:text-[10px] font-black opacity-40 leading-none mb-0.5">ID</span>
+                              <span className="text-sm md:text-lg font-black leading-none">{g.code || idx + 1}</span>
                             </div>
                             <div className="flex-1 min-w-0">
-                                <p className={`font-black text-2xl tracking-tight ${g.isCheckedIn ? 'text-slate-900' : 'text-slate-300'}`}>{g.name}</p>
-                                <p className="text-sm text-slate-400 font-bold truncate mt-1">{g.title || '貴賓'}</p>
+                                <p className={`font-black text-lg md:text-2xl tracking-tight truncate ${g.isCheckedIn ? 'text-slate-900' : 'text-slate-300'}`}>{g.name}</p>
+                                <p className="text-[10px] md:text-sm text-slate-400 font-bold truncate mt-0.5 md:mt-1">{g.title || '貴賓'}</p>
                             </div>
-                            <div className="flex gap-2.5 items-center">
+                            <div className="flex gap-1.5 md:gap-2.5 items-center">
                                 {isAdmin && (
-                                  <button onClick={() => setEditingGuest({...g})} className="w-12 h-12 flex items-center justify-center bg-gray-50 text-gray-400 rounded-2xl hover:bg-gray-100 hover:text-gray-600 transition-all opacity-0 group-hover:opacity-100">
-                                    <Edit2 size={18}/>
+                                  <button onClick={() => setEditingGuest({...g})} className="hidden md:flex w-10 h-10 items-center justify-center bg-gray-50 text-gray-400 rounded-xl hover:bg-gray-100 hover:text-gray-600 transition-all opacity-0 group-hover:opacity-100">
+                                    <Edit2 size={16}/>
                                   </button>
                                 )}
-                                <div className="flex gap-1.5 p-1 bg-slate-50 rounded-[1.4rem] border border-gray-100">
+                                <div className="flex gap-1 p-0.5 md:p-1 bg-slate-50 rounded-[1rem] md:rounded-[1.4rem] border border-gray-100">
                                   <button 
                                     onClick={() => triggerAction(() => toggleCheckInRound(g.id, 1))} 
-                                    className={`w-14 h-14 rounded-2xl font-black text-sm transition-all active:scale-90 ${g.attendedRounds?.includes(1) ? 'bg-blue-600 text-white shadow-lg shadow-blue-200 ring-4 ring-blue-500/10' : 'bg-white text-slate-300 hover:text-slate-400'}`}
+                                    className={`w-10 h-10 md:w-14 md:h-14 rounded-xl md:rounded-2xl font-black text-xs md:text-sm transition-all active:scale-90 ${g.attendedRounds?.includes(1) ? 'bg-blue-600 text-white shadow-md' : 'bg-white text-slate-300'}`}
                                   >
                                     R1
                                   </button>
                                   <button 
                                     onClick={() => triggerAction(() => toggleCheckInRound(g.id, 2))} 
-                                    className={`w-14 h-14 rounded-2xl font-black text-sm transition-all active:scale-90 ${g.attendedRounds?.includes(2) ? 'bg-purple-600 text-white shadow-lg shadow-purple-200 ring-4 ring-purple-500/10' : 'bg-white text-slate-300 hover:text-slate-400'}`}
+                                    className={`w-10 h-10 md:w-14 md:h-14 rounded-xl md:rounded-2xl font-black text-xs md:text-sm transition-all active:scale-90 ${g.attendedRounds?.includes(2) ? 'bg-purple-600 text-white shadow-md' : 'bg-white text-slate-300'}`}
                                   >
                                     R2
                                   </button>
@@ -271,9 +269,9 @@ const AdminPanel: React.FC = () => {
                           </div>
                       ))}
                       {group.list.length === 0 && (
-                        <div className="py-24 text-center">
-                          <Users size={48} className="mx-auto text-slate-100 mb-4" />
-                          <p className="text-slate-300 font-black italic text-lg">查無符合條件的嘉賓</p>
+                        <div className="py-16 text-center">
+                          <Users size={32} className="mx-auto text-slate-100 mb-3" />
+                          <p className="text-slate-300 font-black italic text-sm">查無嘉賓</p>
                         </div>
                       )}
                   </div>
@@ -281,38 +279,38 @@ const AdminPanel: React.FC = () => {
           ))}
       </div>
 
-      {/* 手動新增視窗 */}
+      {/* 手動新增視窗 - 手機版尺寸調整 */}
       {showManualAdd && (
-        <div className="fixed inset-0 ios-blur bg-black/40 z-[300] flex items-center justify-center p-6">
-          <div className="bg-white rounded-[3rem] p-10 max-w-sm w-full shadow-2xl space-y-8 animate-in zoom-in-95 duration-200">
-            <div className="text-center space-y-2">
-              <h3 className="text-3xl font-black text-slate-900">手動新增嘉賓</h3>
-              <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Guest Registration</p>
+        <div className="fixed inset-0 ios-blur bg-black/40 z-[300] flex items-center justify-center p-4">
+          <div className="bg-white rounded-[2.5rem] p-8 w-full max-w-sm shadow-2xl space-y-6 animate-in zoom-in-95 duration-200">
+            <div className="text-center space-y-1">
+              <h3 className="text-2xl font-black text-slate-900">手動新增嘉賓</h3>
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Registration</p>
             </div>
-            <form onSubmit={handleManualSubmit} className="space-y-5">
-              <div className="space-y-2">
-                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest px-4">嘉賓全名</label>
+            <form onSubmit={handleManualSubmit} className="space-y-4">
+              <div className="space-y-1.5">
+                <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest px-3">嘉賓姓名</label>
                 <input 
                   type="text" 
                   value={manualGuest.name} 
                   onChange={e => setManualGuest({...manualGuest, name: e.target.value})} 
-                  className="w-full bg-slate-50 border-none rounded-[1.5rem] p-5 font-black text-xl outline-none focus:ring-4 focus:ring-blue-500/10" 
-                  placeholder="輸入嘉賓姓名"
+                  className="w-full bg-slate-50 border-none rounded-[1.2rem] p-4 font-black text-lg outline-none focus:ring-4 focus:ring-blue-500/10" 
+                  placeholder="輸入姓名"
                 />
               </div>
-              <div className="space-y-2">
-                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest px-4">職稱 / 頭銜</label>
+              <div className="space-y-1.5">
+                <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest px-3">職稱 / 頭銜</label>
                 <input 
                   type="text" 
                   value={manualGuest.title} 
                   onChange={e => setManualGuest({...manualGuest, title: e.target.value})} 
-                  className="w-full bg-slate-50 border-none rounded-[1.5rem] p-5 font-black text-xl outline-none focus:ring-4 focus:ring-blue-500/10" 
-                  placeholder="例如: 創會長、主委"
+                  className="w-full bg-slate-50 border-none rounded-[1.2rem] p-4 font-black text-lg outline-none focus:ring-4 focus:ring-blue-500/10" 
+                  placeholder="例如: 會長"
                 />
               </div>
-              <div className="flex gap-4 pt-4">
-                <button type="button" onClick={() => setShowManualAdd(false)} className="flex-1 py-5 font-black text-slate-400 hover:text-slate-600 transition-colors">取消</button>
-                <button type="submit" className="flex-1 py-5 bg-blue-600 text-white font-black rounded-[1.5rem] shadow-xl shadow-blue-200 active:scale-95 transition-transform">確定新增</button>
+              <div className="flex gap-3 pt-2">
+                <button type="button" onClick={() => setShowManualAdd(false)} className="flex-1 py-4 font-black text-slate-400 text-sm">取消</button>
+                <button type="submit" className="flex-1 py-4 bg-blue-600 text-white font-black rounded-[1.2rem] shadow-lg active:scale-95 text-sm">確定新增</button>
               </div>
             </form>
           </div>
@@ -322,27 +320,27 @@ const AdminPanel: React.FC = () => {
       {/* 授權登入視窗 */}
       {showLoginModal && (
         <div className="fixed inset-0 ios-blur bg-black/40 z-[250] flex items-center justify-center p-6">
-          <div className="bg-white rounded-[3rem] p-12 max-w-xs w-full shadow-2xl flex flex-col items-center gap-8 border border-white/20 animate-in fade-in duration-300">
-            <div className="w-20 h-20 bg-blue-50 text-blue-500 rounded-[2rem] flex items-center justify-center shadow-inner">
-              <Lock size={40} />
+          <div className="bg-white rounded-[2.5rem] p-10 w-full max-w-xs shadow-2xl flex flex-col items-center gap-6 border border-white/20">
+            <div className="w-16 h-16 bg-blue-50 text-blue-500 rounded-2xl flex items-center justify-center shadow-inner shrink-0">
+              <Lock size={32} />
             </div>
-            <div className="text-center space-y-2">
-              <h3 className="text-3xl font-black text-slate-900">權限解鎖</h3>
-              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Administration Access</p>
+            <div className="text-center space-y-1">
+              <h3 className="text-2xl font-black text-slate-900">權限解鎖</h3>
+              <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Admin Access</p>
             </div>
-            <form onSubmit={handleLoginSubmit} className="w-full space-y-6 text-center">
-              <p className="text-xs font-bold text-[#007AFF]">密碼提示：0000</p>
+            <form onSubmit={handleLoginSubmit} className="w-full space-y-5 text-center">
+              <p className="text-[10px] font-bold text-[#007AFF]">密碼提示：0000</p>
               <input 
                 type="password" 
                 placeholder="••••" 
                 value={loginPassword} 
                 onChange={e => setLoginPassword(e.target.value)} 
-                className="w-full bg-slate-50 border-none rounded-[1.8rem] py-7 px-4 text-center text-5xl font-black outline-none focus:ring-8 focus:ring-blue-500/5 transition-all tracking-widest" 
+                className="w-full bg-slate-50 border-none rounded-[1.5rem] py-5 px-4 text-center text-4xl font-black outline-none tracking-widest" 
                 autoFocus 
               />
-              <div className="flex gap-4 pt-4">
-                <button type="button" onClick={() => setShowLoginModal(false)} className="flex-1 py-5 font-black text-slate-300 text-sm">取消</button>
-                <button type="submit" className="flex-1 py-5 bg-slate-900 text-white font-black rounded-[1.5rem] shadow-2xl active:scale-95 transition-transform text-sm">解鎖權限</button>
+              <div className="flex gap-3 pt-2">
+                <button type="button" onClick={() => setShowLoginModal(false)} className="flex-1 py-4 font-black text-slate-300 text-xs">取消</button>
+                <button type="submit" className="flex-1 py-4 bg-slate-900 text-white font-black rounded-[1.2rem] shadow-xl active:scale-95 text-xs">解鎖權限</button>
               </div>
             </form>
           </div>

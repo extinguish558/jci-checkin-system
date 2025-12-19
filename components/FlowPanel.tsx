@@ -207,21 +207,21 @@ const FlowPanel: React.FC = () => {
   };
 
   return (
-    <div className="p-4 md:p-8 max-w-4xl mx-auto space-y-6 pb-60 bg-[#F2F2F7] min-h-screen">
+    <div className="p-4 md:p-8 max-w-4xl mx-auto space-y-5 md:space-y-6 pb-60 bg-[#F2F2F7] min-h-screen">
       <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" />
 
       {/* 活動配置 */}
-      <div className="bg-white rounded-[2.5rem] p-8 shadow-sm border border-white space-y-8">
+      <div className="bg-white rounded-[2rem] md:rounded-[2.5rem] p-6 md:p-8 shadow-sm border border-white space-y-6 md:space-y-8">
         <div className="flex justify-between items-center">
-           <div className="flex items-center gap-2"><Activity className="text-blue-500" size={18} strokeWidth={3} /><span className="text-gray-400 font-black tracking-widest text-[10px]">EVENT CONTROL</span></div>
-           <div className="flex items-center gap-3">
+           <div className="flex items-center gap-1.5"><Activity className="text-blue-500" size={14} md:size={18} strokeWidth={3} /><span className="text-gray-400 font-black tracking-widest text-[9px] md:text-[10px]">EVENT CONTROL</span></div>
+           <div className="flex items-center gap-2">
              {isAdmin && (
-               <button onClick={openEditSchedule} className="p-3 bg-blue-50 text-blue-600 rounded-2xl hover:bg-blue-100 transition-colors">
-                 <Edit3 size={20} />
+               <button onClick={openEditSchedule} className="p-2.5 bg-blue-50 text-blue-600 rounded-xl hover:bg-blue-100 transition-colors">
+                 <Edit3 size={18} />
                </button>
              )}
-             <button onClick={() => isAdmin ? logoutAdmin() : setShowLoginModal(true)} className="p-3 bg-[#F2F2F7] rounded-2xl">
-               {isAdmin ? <Unlock size={20} className="text-[#007AFF]"/> : <Lock size={20} className="text-gray-300"/>}
+             <button onClick={() => isAdmin ? logoutAdmin() : setShowLoginModal(true)} className="p-2.5 bg-[#F2F2F7] rounded-xl">
+               {isAdmin ? <Unlock size={18} className="text-[#007AFF]"/> : <Lock size={18} className="text-gray-300"/>}
              </button>
            </div>
         </div>
@@ -230,7 +230,7 @@ const FlowPanel: React.FC = () => {
           type="text" 
           value={settings.eventName} 
           onChange={(e) => isAdmin && updateSettings({ eventName: e.target.value })}
-          className="w-full bg-transparent border-none text-2xl md:text-4xl font-black text-black focus:ring-0 p-0"
+          className="w-full bg-transparent border-none text-xl md:text-4xl font-black text-black focus:ring-0 p-0"
           placeholder="活動名稱"
           readOnly={!isAdmin}
         />
@@ -238,68 +238,66 @@ const FlowPanel: React.FC = () => {
         {/* 流程摘要顯示區塊 */}
         <div 
           onClick={() => setIsScheduleExpanded(!isScheduleExpanded)}
-          className={`bg-[#F2F2F7] rounded-[2rem] p-7 relative cursor-pointer group transition-all duration-300 ${isScheduleExpanded ? 'shadow-inner' : 'hover:bg-[#E8E8EE]'}`}
+          className={`bg-[#F2F2F7] rounded-[1.5rem] md:rounded-[2rem] p-5 md:p-7 relative cursor-pointer group transition-all duration-300 ${isScheduleExpanded ? 'shadow-inner' : 'hover:bg-[#E8E8EE]'}`}
         >
-           <div className={`text-xl font-light text-black whitespace-pre-wrap transition-all duration-300 ${isScheduleExpanded ? '' : 'line-clamp-4'}`}>
+           <div className={`text-base md:text-xl font-light text-black whitespace-pre-wrap transition-all duration-300 ${isScheduleExpanded ? '' : 'line-clamp-3 md:line-clamp-4'}`}>
               {settings.briefSchedule || (
                 <span className="text-gray-300 italic">點擊編輯或上傳活動流程摘要...</span>
               )}
            </div>
            
-           <div className="mt-4 flex items-center justify-center text-gray-300 group-hover:text-blue-500 transition-colors">
+           <div className="mt-3 md:mt-4 flex items-center justify-center text-gray-300 group-hover:text-blue-500 transition-colors">
               {isScheduleExpanded ? (
-                <div className="flex items-center gap-1 text-[10px] font-black uppercase tracking-widest">
-                  <ChevronUp size={16} /> 點擊收合流程
+                <div className="flex items-center gap-1 text-[8px] md:text-[10px] font-black uppercase tracking-widest">
+                  <ChevronUp size={14} /> 收合
                 </div>
               ) : (
-                <div className="flex items-center gap-1 text-[10px] font-black uppercase tracking-widest">
-                  <ChevronDown size={16} /> 點擊展開全文
+                <div className="flex items-center gap-1 text-[8px] md:text-[10px] font-black uppercase tracking-widest">
+                  <ChevronDown size={14} /> 展開全文
                 </div>
               )}
            </div>
         </div>
       </div>
 
-      {/* 智慧報到儀表板 */}
-      <div className="bg-white rounded-[3rem] p-8 shadow-sm border border-white flex flex-col md:flex-row gap-8 relative overflow-hidden group">
-        <div className="absolute top-0 left-0 w-2 h-full bg-blue-500/10" />
+      {/* 智慧報到儀表板 - 手機版字體縮小 */}
+      <div className="bg-white rounded-[2rem] md:rounded-[3rem] p-6 md:p-8 shadow-sm border border-white flex flex-col md:flex-row gap-6 md:gap-8 relative overflow-hidden group">
+        <div className="absolute top-0 left-0 w-1.5 h-full bg-blue-500/10" />
         
-        {/* 左側：大數據顯示 */}
-        <div className="flex-1 flex flex-col justify-between space-y-6">
-          <div className="flex items-center gap-2">
-            <Clock size={18} className="text-blue-500" />
-            <span className="text-[11px] font-black text-slate-400 tracking-wider uppercase">報到總覽數據分析</span>
+        <div className="flex-1 flex flex-col justify-between space-y-4 md:space-y-6">
+          <div className="flex items-center gap-1.5">
+            <Clock size={16} className="text-blue-500" />
+            <span className="text-[9px] md:text-[11px] font-black text-slate-400 tracking-wider uppercase">報到數據分析</span>
           </div>
           
-          <div className="flex items-baseline gap-4">
-            <span className="text-8xl font-black text-slate-900 tracking-tighter leading-none">{dashboardData.totalCheckedIn}</span>
-            <span className="text-2xl font-bold text-slate-300">/ {dashboardData.totalCount}</span>
+          <div className="flex items-baseline gap-2 md:gap-4">
+            <span className="text-5xl md:text-8xl font-black text-slate-900 tracking-tighter leading-none">{dashboardData.totalCheckedIn}</span>
+            <span className="text-lg md:text-2xl font-bold text-slate-300">/ {dashboardData.totalCount}</span>
           </div>
 
-          <div className="mt-auto space-y-2">
+          <div className="mt-auto space-y-1.5 md:space-y-2">
             <div className="flex justify-between items-end">
-               <span className="text-[9px] font-black text-blue-500 tracking-widest">REAL-TIME PROGRESS</span>
-               <p className="text-[11px] font-black text-blue-600">當前報到率 {dashboardData.totalPercent}%</p>
+               <span className="text-[8px] md:text-[9px] font-black text-blue-500 tracking-widest uppercase">Progress</span>
+               <p className="text-[10px] md:text-[11px] font-black text-blue-600">{dashboardData.totalPercent}%</p>
             </div>
-            <div className="w-full h-2.5 bg-gray-50 rounded-full overflow-hidden border border-gray-50 shadow-inner">
-              <div className="h-full bg-blue-500 transition-all duration-1000 shadow-[0_0_12px_rgba(59,130,246,0.5)]" style={{ width: `${dashboardData.totalPercent}%` }} />
+            <div className="w-full h-2 md:h-2.5 bg-gray-50 rounded-full overflow-hidden border border-gray-50 shadow-inner">
+              <div className="h-full bg-blue-500 transition-all duration-1000 shadow-[0_0_8px_rgba(59,130,246,0.4)]" style={{ width: `${dashboardData.totalPercent}%` }} />
             </div>
           </div>
         </div>
 
-        {/* 右側：類別狀態分欄 */}
-        <div className="w-full md:w-auto md:min-w-[240px] border-l border-gray-50 pl-8 flex flex-col justify-center gap-4">
-           <h4 className="text-[9px] font-black text-gray-300 uppercase tracking-[0.2em] mb-2">Categories Status</h4>
-           <div className="grid grid-cols-2 gap-y-4 gap-x-6">
+        <div className="w-full md:w-auto md:min-w-[240px] border-t md:border-t-0 md:border-l border-gray-50 pt-4 md:pt-0 md:pl-8 flex flex-col justify-center gap-3">
+           <h4 className="text-[8px] md:text-[9px] font-black text-gray-300 uppercase tracking-[0.2em] mb-1 md:mb-2">Categories</h4>
+           <div className="grid grid-cols-3 xs:grid-cols-3 md:grid-cols-2 gap-y-3 gap-x-4">
               {dashboardData.stats.map(detail => (
-                <div key={detail.key} className="flex flex-col gap-0.5">
-                  <div className="flex items-center gap-1.5">
-                    <div className={`w-1.5 h-1.5 rounded-full ${detail.color}`} />
-                    <span className="text-[10px] font-black text-gray-400 uppercase truncate">{detail.label}</span>
+                <div key={detail.key} className="flex flex-col gap-0">
+                  <div className="flex items-center gap-1">
+                    <div className={`w-1 h-1 rounded-full ${detail.color}`} />
+                    <span className="text-[9px] md:text-[10px] font-black text-gray-400 uppercase truncate">{detail.label.split(' ')[0]}</span>
                   </div>
                   <div className="flex items-baseline gap-1">
-                    <span className="text-lg font-black text-slate-700">{detail.checkedIn}</span>
-                    <span className="text-[10px] font-bold text-slate-200">/ {detail.total}</span>
+                    <span className="text-base md:text-lg font-black text-slate-700">{detail.checkedIn}</span>
+                    <span className="text-[8px] font-bold text-slate-200">/ {detail.total}</span>
                   </div>
                 </div>
               ))}
@@ -307,116 +305,68 @@ const FlowPanel: React.FC = () => {
         </div>
       </div>
 
-      {/* 流程監控數據 */}
+      {/* 流程監控數據 - 手機版改為 Grid */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {/* 流程監控 */}
-        <div className="bg-white rounded-[2rem] p-6 shadow-sm border border-white flex flex-col gap-3 min-h-[180px]">
-             <div className="w-10 h-10 bg-blue-50 text-blue-500 rounded-xl flex items-center justify-center shrink-0"><ListTodo size={20} /></div>
+        <div className="bg-white rounded-[1.5rem] md:rounded-[2rem] p-5 md:p-6 shadow-sm border border-white flex flex-col gap-3 min-h-[160px] md:min-h-[180px]">
+             <div className="w-9 h-9 md:w-10 md:h-10 bg-blue-50 text-blue-500 rounded-xl flex items-center justify-center shrink-0"><ListTodo size={18} md:size={20} /></div>
              <div>
                 <div className="flex justify-between items-center mb-1">
-                  <h4 className="text-[10px] font-black text-gray-400 uppercase">當前流程</h4>
+                  <h4 className="text-[9px] md:text-[10px] font-black text-gray-400 uppercase">當前流程</h4>
                   <div className="flex items-center gap-2">
-                    <span className="text-[10px] font-black text-gray-300 tabular-nums">{liveStats.mc.current} / {liveStats.mc.total}</span>
-                    <span className="text-[10px] font-black text-blue-500 tabular-nums">{liveStats.mc.percent}%</span>
+                    <span className="text-[9px] md:text-[10px] font-black text-gray-300 tabular-nums">{liveStats.mc.current}/{liveStats.mc.total}</span>
+                    <span className="text-[9px] md:text-[10px] font-black text-blue-500 tabular-nums">{liveStats.mc.percent}%</span>
                   </div>
                 </div>
-                <p className="text-sm font-black text-black leading-tight line-clamp-1">{liveStats.mc.active}</p>
+                <p className="text-sm md:text-base font-black text-black leading-tight line-clamp-1">{liveStats.mc.active}</p>
              </div>
              {liveStats.mc.previews.length > 0 && (
-               <div className="space-y-1 mt-1 opacity-50">
-                 <h5 className="text-[9px] font-bold text-gray-400">活動預告：</h5>
-                 {liveStats.mc.previews.map((p, idx) => (
-                   <p key={idx} className="text-[10px] font-bold text-gray-600 truncate">· {p}</p>
+               <div className="space-y-0.5 mt-0.5 opacity-50">
+                 {liveStats.mc.previews.slice(0, 1).map((p, idx) => (
+                   <p key={idx} className="text-[9px] md:text-[10px] font-bold text-gray-600 truncate">預告: {p}</p>
                  ))}
                </div>
              )}
-             <div className="w-full h-1 bg-gray-50 rounded-full mt-auto"><div className="h-full bg-blue-500 transition-all duration-500 shadow-[0_0_8px_rgba(59,130,246,0.3)]" style={{ width: `${liveStats.mc.percent}%` }} /></div>
+             <div className="w-full h-1 bg-gray-50 rounded-full mt-auto"><div className="h-full bg-blue-500 transition-all duration-500" style={{ width: `${liveStats.mc.percent}%` }} /></div>
         </div>
 
         {/* 禮品監控 */}
-        <div className="bg-white rounded-[2rem] p-6 shadow-sm border border-white flex flex-col gap-3 min-h-[180px]">
-             <div className="w-10 h-10 bg-orange-50 text-orange-500 rounded-xl flex items-center justify-center shrink-0"><Award size={20} /></div>
+        <div className="bg-white rounded-[1.5rem] md:rounded-[2rem] p-5 md:p-6 shadow-sm border border-white flex flex-col gap-3 min-h-[160px] md:min-h-[180px]">
+             <div className="w-9 h-9 md:w-10 md:h-10 bg-orange-50 text-orange-500 rounded-xl flex items-center justify-center shrink-0"><Award size={18} md:size={20} /></div>
              <div>
                 <div className="flex justify-between items-center mb-1">
-                  <h4 className="text-[10px] font-black text-gray-400 uppercase">當前禮品</h4>
+                  <h4 className="text-[9px] md:text-[10px] font-black text-gray-400 uppercase">禮品進度</h4>
                   <div className="flex items-center gap-2">
-                    <span className="text-[10px] font-black text-gray-300 tabular-nums">{liveStats.gifts.current} / {liveStats.gifts.total}</span>
-                    <span className="text-[10px] font-black text-orange-500 tabular-nums">{liveStats.gifts.percent}%</span>
+                    <span className="text-[9px] md:text-[10px] font-black text-gray-300 tabular-nums">{liveStats.gifts.current}/{liveStats.gifts.total}</span>
+                    <span className="text-[9px] md:text-[10px] font-black text-orange-500 tabular-nums">{liveStats.gifts.percent}%</span>
                   </div>
                 </div>
-                <p className="text-sm font-black text-black leading-tight line-clamp-1">{liveStats.gifts.active}</p>
+                <p className="text-sm md:text-base font-black text-black leading-tight line-clamp-1">{liveStats.gifts.active}</p>
              </div>
-             {liveStats.gifts.previews.length > 0 && (
-               <div className="space-y-1 mt-1 opacity-50">
-                 <h5 className="text-[9px] font-bold text-gray-400">活動預告：</h5>
-                 {liveStats.gifts.previews.map((p, idx) => (
-                   <p key={idx} className="text-[10px] font-bold text-gray-600 truncate">· {p}</p>
-                 ))}
-               </div>
-             )}
-             <div className="w-full h-1 bg-gray-50 rounded-full mt-auto"><div className="h-full bg-orange-500 transition-all duration-500 shadow-[0_0_8px_rgba(249,115,22,0.3)]" style={{ width: `${liveStats.gifts.percent}%` }} /></div>
+             <div className="w-full h-1 bg-gray-50 rounded-full mt-auto"><div className="h-full bg-orange-500 transition-all duration-500" style={{ width: `${liveStats.gifts.percent}%` }} /></div>
         </div>
 
         {/* 待介紹監控 */}
-        <div className="bg-white rounded-[2rem] p-6 shadow-sm border border-white flex flex-col gap-3 min-h-[180px]">
-             <div className="w-10 h-10 bg-purple-50 text-purple-500 rounded-xl flex items-center justify-center shrink-0"><Mic2 size={20} /></div>
+        <div className="bg-white rounded-[1.5rem] md:rounded-[2rem] p-5 md:p-6 shadow-sm border border-white flex flex-col gap-3 min-h-[160px] md:min-h-[180px]">
+             <div className="w-9 h-9 md:w-10 md:h-10 bg-purple-50 text-purple-500 rounded-xl flex items-center justify-center shrink-0"><Mic2 size={18} md:size={20} /></div>
              <div className="flex flex-col gap-1">
                 <div className="flex justify-between items-center">
-                    <h4 className="text-[10px] font-black text-gray-400 uppercase">當前介紹 ({liveStats.vips.count})</h4>
+                    <h4 className="text-[9px] md:text-[10px] font-black text-gray-400 uppercase">貴賓介紹</h4>
                     <div className="flex items-center gap-2">
-                      <span className="text-[10px] font-black text-gray-300 tabular-nums">{liveStats.vips.current} / {liveStats.vips.total}</span>
-                      <span className="text-[10px] font-black text-purple-500 tabular-nums">{liveStats.vips.percent}%</span>
+                      <span className="text-[9px] md:text-[10px] font-black text-gray-300 tabular-nums">{liveStats.vips.current}/{liveStats.vips.total}</span>
+                      <span className="text-[9px] md:text-[10px] font-black text-purple-500 tabular-nums">{liveStats.vips.percent}%</span>
                     </div>
                 </div>
-                <p className="text-sm font-black text-black leading-tight line-clamp-1">{liveStats.vips.active}</p>
+                <p className="text-sm md:text-base font-black text-black leading-tight line-clamp-1">{liveStats.vips.active}</p>
              </div>
-             {liveStats.vips.previews.length > 0 && (
-               <div className="space-y-1 mt-1 opacity-50">
-                 <h5 className="text-[9px] font-bold text-gray-400">活動預告：</h5>
-                 {liveStats.vips.previews.map((p, idx) => (
-                   <p key={idx} className="text-[10px] font-bold text-gray-600 truncate">· {p}</p>
-                 ))}
-               </div>
-             )}
-             <div className="w-full h-1 bg-gray-50 rounded-full mt-auto"><div className="h-full bg-purple-500 transition-all duration-500 shadow-[0_0_8px_rgba(168,85,247,0.3)]" style={{ width: `${liveStats.vips.percent}%` }} /></div>
+             <div className="w-full h-1 bg-gray-50 rounded-full mt-auto"><div className="h-full bg-purple-500 transition-all duration-500" style={{ width: `${liveStats.vips.percent}%` }} /></div>
         </div>
       </div>
 
-      {/* 檔案資源區 */}
-      <div className="space-y-4">
-        <h4 className="px-6 text-[10px] font-black text-gray-400 uppercase tracking-widest">雲端檔案同步</h4>
-        <div className="grid grid-cols-1 gap-3">
-          {(['schedule', 'mcflow', 'gifts', 'slides'] as const).map((type) => {
-            const file = (settings.flowFiles || []).find(f => f.type === type);
-            const labels = { schedule: '活動流程表', mcflow: '司儀腳本', gifts: '得獎禮品', slides: '大會簡報' };
-            return (
-              <div key={type} className="bg-white rounded-[2rem] p-4 flex items-center gap-4 shadow-sm border border-white transition-transform active:scale-[0.99]">
-                 <div className="w-12 h-12 rounded-2xl bg-gray-50 text-gray-400 flex items-center justify-center">
-                    {type === 'schedule' ? <FileText size={20}/> : type === 'mcflow' ? <FileBox size={20}/> : type === 'gifts' ? <FileSpreadsheet size={20}/> : <Presentation size={20}/>}
-                 </div>
-                 <div className="flex-1 min-w-0">
-                    <h3 className="font-black text-black text-sm">{labels[type]}</h3>
-                    <div className="text-[10px] text-gray-400 truncate">{file ? file.name : '尚未上傳'}</div>
-                 </div>
-                 <div className="flex items-center gap-2">
-                    {isAdmin && (
-                      <>
-                        {file && <button onClick={() => removeFlowFile(file.id)} className="p-2 text-red-400 transition-colors hover:text-red-600"><Trash2 size={18}/></button>}
-                        <button onClick={() => triggerUpload(type)} className="p-2 text-blue-500 transition-colors hover:text-blue-700">{isUploading && uploadType === type ? <Loader2 size={18} className="animate-spin" /> : <Upload size={18} />}</button>
-                      </>
-                    )}
-                    {file && <button onClick={() => handlePreview(file)} className="p-2 text-gray-400 transition-colors hover:text-gray-600"><Download size={18}/></button>}
-                 </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* 系統報表匯出區塊 */}
-      <div className="space-y-4 pt-6">
-        <h4 className="px-6 text-[10px] font-black text-gray-400 uppercase tracking-widest">系統報表匯出 (Excel 下載)</h4>
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+      {/* 系統報表匯出區塊 - 手機版縮小 Padding */}
+      <div className="space-y-3 pt-4">
+        <h4 className="px-4 text-[9px] md:text-[10px] font-black text-gray-400 uppercase tracking-widest">系統報表下載</h4>
+        <div className="grid grid-cols-2 xs:grid-cols-3 md:grid-cols-5 gap-2.5">
             {[
                 { label: '嘉賓名冊', icon: ClipboardList, color: 'text-blue-500', fn: () => exportDetailedGuestsExcel(guests, settings.eventName, getTargetGroup) },
                 { label: '禮品狀態', icon: Award, color: 'text-orange-500', fn: () => exportGiftsExcel(settings.giftItems || [], settings.eventName) },
@@ -424,99 +374,30 @@ const FlowPanel: React.FC = () => {
                 { label: '介紹現況', icon: Mic2, color: 'text-purple-500', fn: () => exportIntroductionsExcel(guests, settings.eventName) },
                 { label: '抽獎結果', icon: Trophy, color: 'text-amber-500', fn: () => exportLotteryExcel(guests, settings.eventName) }
             ].map(report => (
-                <button key={report.label} onClick={report.fn} className="bg-white p-4 rounded-3xl shadow-sm border border-white flex flex-col items-center justify-center gap-2 transition-all hover:scale-105 active:scale-95 group">
-                    <report.icon size={20} className={`${report.color} group-hover:scale-110 transition-transform`} />
-                    <span className="text-[10px] font-black text-gray-500">{report.label}</span>
+                <button key={report.label} onClick={report.fn} className="bg-white p-3.5 md:p-4 rounded-2xl md:rounded-3xl shadow-sm border border-white flex flex-col items-center justify-center gap-1.5 transition-all active:scale-95 group">
+                    <report.icon size={18} className={`${report.color} md:w-5 md:h-5`} />
+                    <span className="text-[9px] md:text-[10px] font-black text-gray-500 truncate w-full px-1">{report.label}</span>
                 </button>
             ))}
         </div>
       </div>
 
-      {/* 流程摘要編輯視窗 */}
-      {isEditingSchedule && (
-        <div className="fixed inset-0 ios-blur bg-black/40 z-[400] flex items-center justify-center p-6">
-          <div className="bg-white rounded-[3rem] p-8 w-full max-w-2xl shadow-2xl space-y-6 flex flex-col max-h-[90vh]">
-            <div className="flex justify-between items-center">
-              <h3 className="text-2xl font-black text-black">編輯活動流程摘要</h3>
-              <button onClick={() => setIsEditingSchedule(false)} className="p-2 text-gray-400 hover:text-black transition-colors">
-                <X size={24} />
-              </button>
-            </div>
-            
-            <textarea 
-              value={editScheduleText}
-              onChange={(e) => setEditScheduleText(e.target.value)}
-              placeholder="請輸入活動流程摘要細節..."
-              className="flex-1 w-full bg-[#F2F2F7] border-none rounded-[2rem] p-6 text-xl font-light text-black focus:ring-4 focus:ring-blue-500/10 outline-none resize-none custom-scrollbar"
-            />
-            
-            <div className="flex gap-4">
-              <button onClick={() => setIsEditingSchedule(false)} className="flex-1 py-4 font-black text-gray-400">取消</button>
-              <button onClick={handleSaveSchedule} className="flex-2 py-4 bg-blue-600 text-white font-black rounded-2xl shadow-xl shadow-blue-200 active:scale-95 transition-transform">儲存流程變更</button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {isAdmin && (
-        <div className="bg-white rounded-[2.5rem] p-8 border-2 border-red-50 flex gap-4 mt-8">
-          <button onClick={() => setShowResetModal(true)} className="flex-1 bg-red-50 text-red-600 p-5 rounded-2xl font-black text-sm active:scale-95 transition-transform flex items-center justify-center gap-2"><RotateCcw size={18}/>重置活動紀錄</button>
-          <button onClick={clearAllData} className="flex-1 bg-gray-900 text-white p-5 rounded-2xl font-black text-sm active:scale-95 transition-transform">完全清空系統</button>
-        </div>
-      )}
-
-      {/* 重置選單彈出視窗 */}
-      {showResetModal && (
-        <div className="fixed inset-0 ios-blur bg-black/40 z-[300] flex items-center justify-center p-6">
-          <div className="bg-white rounded-[3rem] p-8 w-full max-w-sm shadow-2xl space-y-8">
-            <div className="text-center space-y-2">
-              <div className="w-16 h-16 bg-red-50 text-red-500 rounded-3xl flex items-center justify-center mx-auto mb-4">
-                <RotateCcw size={32} />
-              </div>
-              <h3 className="text-2xl font-black text-black">選擇重置範圍</h3>
-              <p className="text-xs font-bold text-gray-400">僅重置紀錄狀態，<span className="text-red-500">保留檔案與名單資料</span></p>
-            </div>
-
-            <div className="space-y-3">
-              {[
-                { id: 'flow', label: '司儀流程紀錄', icon: ListChecks },
-                { id: 'gifts', label: '禮品頒贈狀態', icon: Award },
-                { id: 'checkin', label: '嘉賓報到狀態', icon: UserCheck },
-                { id: 'lottery', label: '抽獎得獎紀錄', icon: Trophy },
-              ].map(opt => (
-                <button 
-                  key={opt.id} 
-                  onClick={() => setResetOptions(prev => ({ ...prev, [opt.id]: !(prev as any)[opt.id] }))}
-                  className={`w-full p-5 rounded-2xl border-2 flex items-center justify-between transition-all ${ (resetOptions as any)[opt.id] ? 'bg-blue-50 border-blue-500' : 'bg-white border-gray-100'}`}
-                >
-                  <div className="flex items-center gap-4">
-                    <opt.icon size={20} className={(resetOptions as any)[opt.id] ? 'text-blue-600' : 'text-gray-300'} />
-                    <span className={`font-black text-sm ${ (resetOptions as any)[opt.id] ? 'text-blue-700' : 'text-gray-400'}`}>{opt.label}</span>
-                  </div>
-                  <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center ${ (resetOptions as any)[opt.id] ? 'bg-blue-500 border-blue-500 text-white' : 'border-gray-200'}`}>
-                    { (resetOptions as any)[opt.id] && <Check size={14} strokeWidth={4} /> }
-                  </div>
-                </button>
-              ))}
-            </div>
-
-            <div className="flex gap-4">
-              <button onClick={() => setShowResetModal(false)} className="flex-1 py-4 font-black text-gray-400 text-sm">取消</button>
-              <button onClick={handleExecuteReset} className="flex-1 py-4 bg-red-500 text-white font-black rounded-2xl text-sm shadow-lg shadow-red-200 active:scale-95 transition-transform">執行重置</button>
-            </div>
-          </div>
+        <div className="bg-white rounded-[2rem] p-6 border border-red-50 flex flex-col md:flex-row gap-3 mt-6">
+          <button onClick={() => setShowResetModal(true)} className="flex-1 bg-red-50 text-red-600 p-4 rounded-xl font-black text-xs active:scale-95 transition-transform flex items-center justify-center gap-2"><RotateCcw size={16}/>重置紀錄</button>
+          <button onClick={clearAllData} className="flex-1 bg-gray-900 text-white p-4 rounded-xl font-black text-xs active:scale-95 transition-transform">清空系統</button>
         </div>
       )}
 
       {showLoginModal && (
         <div className="fixed inset-0 ios-blur bg-black/40 z-[250] flex items-center justify-center p-6">
-          <div className="bg-white rounded-[3rem] p-10 max-w-xs w-full shadow-2xl flex flex-col items-center gap-8 border border-white/20">
-            <h3 className="text-2xl font-black text-black">管理員授權</h3>
-            <form onSubmit={handleLoginSubmit} className="w-full space-y-6">
-              <input type="password" placeholder="••••" value={loginPassword} onChange={e => setLoginPassword(e.target.value)} className="w-full bg-[#F2F2F7] border-none rounded-2xl py-6 px-4 text-center text-4xl font-black focus:ring-4 focus:ring-blue-500/20 outline-none" autoFocus />
-              <div className="flex gap-4">
-                <button type="button" onClick={() => setShowLoginModal(false)} className="flex-1 py-4 font-black text-gray-400">取消</button>
-                <button type="submit" className="flex-1 py-4 bg-blue-600 text-white font-black rounded-[1.2rem] shadow-xl active:scale-95">確認</button>
+          <div className="bg-white rounded-[2.5rem] p-8 w-full max-w-xs shadow-2xl flex flex-col items-center gap-6 border border-white/20">
+            <h3 className="text-xl font-black text-black">管理員授權</h3>
+            <form onSubmit={handleLoginSubmit} className="w-full space-y-5">
+              <input type="password" placeholder="••••" value={loginPassword} onChange={e => setLoginPassword(e.target.value)} className="w-full bg-[#F2F2F7] border-none rounded-2xl py-5 px-4 text-center text-4xl font-black outline-none" autoFocus />
+              <div className="flex gap-3">
+                <button type="button" onClick={() => setShowLoginModal(false)} className="flex-1 py-4 font-black text-gray-400 text-xs">取消</button>
+                <button type="submit" className="flex-1 py-4 bg-blue-600 text-white font-black rounded-xl shadow-lg active:scale-95 text-xs">確認</button>
               </div>
             </form>
           </div>
