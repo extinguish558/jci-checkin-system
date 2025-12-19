@@ -48,66 +48,66 @@ const McFlowPanel: React.FC = () => {
   }, [steps]);
 
   return (
-    <div className="p-4 md:p-8 max-w-4xl mx-auto space-y-6 pb-32 relative">
+    <div className="p-4 md:p-8 max-w-4xl mx-auto space-y-4 md:space-y-6 pb-32 relative">
       <div className="flex justify-between items-start">
         <div>
-          <h2 className="text-3xl font-black text-black">司儀流程管理</h2>
-          <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mt-1">PROGRAM FLOW</p>
+          <h2 className="text-xl md:text-3xl font-black text-black">司儀流程管理</h2>
+          <p className="text-[9px] md:text-xs font-bold text-gray-400 uppercase tracking-widest mt-0.5 md:mt-1">PROGRAM FLOW</p>
         </div>
-        <button onClick={() => isUnlocked ? logoutAdmin() : setShowLoginModal(true)} className="p-3 bg-white rounded-2xl shadow-sm">
-          {isUnlocked ? <Unlock size={20} className="text-[#007AFF]"/> : <Lock size={20} className="text-gray-300"/>}
+        <button onClick={() => isUnlocked ? logoutAdmin() : setShowLoginModal(true)} className="p-2 md:p-3 bg-white rounded-xl md:rounded-2xl shadow-sm">
+          {isUnlocked ? <Unlock size={18} className="text-[#007AFF]"/> : <Lock size={18} className="text-gray-300"/>}
         </button>
       </div>
 
-      {/* 智慧縮放流程進度儀表板 - 背景改為透明 */}
-      <div className={`sticky top-0 z-30 -mx-4 md:-mx-8 px-4 md:px-8 py-2 transition-all duration-300 ${isSticky ? 'ios-blur bg-white/70 shadow-lg border-b border-white/20' : ''}`}>
-        <div className={`bg-transparent rounded-[2.5rem] transition-all duration-500 overflow-hidden ${isSticky ? 'p-4 rounded-2xl scale-[0.98]' : 'p-8'}`}>
-          <div className={`flex justify-between items-end transition-all ${isSticky ? 'mb-2' : 'mb-6'}`}>
-            <div className="space-y-1">
-              <div className="flex items-center gap-2 text-blue-500">
-                <Activity size={isSticky ? 14 : 18} />
-                <span className={`font-black uppercase tracking-widest ${isSticky ? 'text-[8px]' : 'text-[10px]'}`}>當前活動執行進度</span>
+      {/* 智慧縮放流程進度儀表板 - 手機版縮小 Padding */}
+      <div className={`sticky top-0 z-30 -mx-4 md:-mx-8 px-4 md:px-8 py-2 transition-all duration-300 ${isSticky ? 'ios-blur bg-white/70 shadow-md border-b border-white/20' : ''}`}>
+        <div className={`bg-transparent transition-all duration-500 overflow-hidden ${isSticky ? 'p-3 md:p-4 rounded-xl md:rounded-2xl scale-[0.98]' : 'p-4 md:p-8'}`}>
+          <div className={`flex justify-between items-end transition-all ${isSticky ? 'mb-1 md:mb-2' : 'mb-3 md:mb-6'}`}>
+            <div className="space-y-0.5 md:space-y-1">
+              <div className="flex items-center gap-1.5 text-blue-500">
+                <Activity size={isSticky ? 12 : 16} />
+                <span className={`font-black uppercase tracking-widest ${isSticky ? 'text-[7px]' : 'text-[9px] md:text-[10px]'}`}>當前活動執行進度</span>
               </div>
-              <div className="flex items-baseline gap-2">
-                <span className={`font-black text-slate-900 transition-all ${isSticky ? 'text-2xl' : 'text-5xl'}`}>{stats.completed}</span>
-                <span className={`font-bold text-slate-300 transition-all ${isSticky ? 'text-xs' : 'text-xl'}`}>/ {stats.total}</span>
+              <div className="flex items-baseline gap-1 md:gap-2">
+                <span className={`font-black text-slate-900 transition-all ${isSticky ? 'text-xl' : 'text-3xl md:text-5xl'}`}>{stats.completed}</span>
+                <span className={`font-bold text-slate-300 transition-all ${isSticky ? 'text-[9px]' : 'text-xs md:text-xl'}`}>/ {stats.total}</span>
               </div>
             </div>
             <div className="text-right">
-              <div className={`font-black text-slate-400 uppercase transition-all ${isSticky ? 'text-[8px]' : 'text-[10px] mb-1'}`}>完成率</div>
-              <div className={`font-black text-blue-600 transition-all ${isSticky ? 'text-lg' : 'text-2xl'}`}>{stats.percent}%</div>
+              <div className={`font-black text-slate-400 uppercase transition-all ${isSticky ? 'text-[7px]' : 'text-[9px] md:text-[10px] mb-0.5 md:mb-1'}`}>完成率</div>
+              <div className={`font-black text-blue-600 transition-all ${isSticky ? 'text-base' : 'text-xl md:text-2xl'}`}>{stats.percent}%</div>
             </div>
           </div>
           
-          <div className={`w-full bg-black/5 rounded-full overflow-hidden border border-black/5 shadow-inner transition-all ${isSticky ? 'h-1.5' : 'h-3'}`}>
+          <div className={`w-full bg-black/5 rounded-full overflow-hidden border border-black/5 shadow-inner transition-all ${isSticky ? 'h-1' : 'h-2 md:h-3'}`}>
             <div 
-              className="h-full bg-blue-500 transition-all duration-1000 shadow-[0_0_12px_rgba(59,130,246,0.4)]" 
+              className="h-full bg-blue-500 transition-all duration-1000 shadow-[0_0_8px_rgba(59,130,246,0.4)]" 
               style={{ width: `${stats.percent}%` }} 
             />
           </div>
         </div>
       </div>
 
-      <div className="space-y-6">
+      <div className="space-y-4 md:space-y-6">
         {steps.map((step) => (
-          <div key={step.id} onClick={() => triggerAction(() => toggleMcFlowStep(step.id))} className={`rounded-[2.5rem] border transition-all cursor-pointer overflow-hidden ${step.isCompleted ? 'bg-gray-100 opacity-60' : 'bg-white shadow-sm border-white'}`}>
-             <div className="p-6 flex items-center gap-6 border-b border-gray-50">
-               <div className={`w-14 h-14 rounded-2xl flex items-center justify-center font-black text-2xl ${step.isCompleted ? 'bg-gray-200 text-gray-400' : 'bg-blue-50 text-blue-600'}`}>{step.sequence || '-'}</div>
+          <div key={step.id} onClick={() => triggerAction(() => toggleMcFlowStep(step.id))} className={`rounded-[1.5rem] md:rounded-[2.5rem] border transition-all cursor-pointer overflow-hidden ${step.isCompleted ? 'bg-gray-100 opacity-60' : 'bg-white shadow-sm border-white'}`}>
+             <div className="p-4 md:p-6 flex items-center gap-4 md:gap-6 border-b border-gray-50">
+               <div className={`w-10 h-10 md:w-14 md:h-14 rounded-xl md:rounded-2xl flex items-center justify-center font-black text-lg md:text-2xl ${step.isCompleted ? 'bg-gray-200 text-gray-400' : 'bg-blue-50 text-blue-600'}`}>{step.sequence || '-'}</div>
                <div className="flex-1">
-                  <div className="text-[10px] font-black text-gray-400 uppercase tracking-widest">時間</div>
-                  <div className="text-xl font-black">{step.time || '--:--'}</div>
+                  <div className="text-[8px] md:text-[10px] font-black text-gray-400 uppercase tracking-widest">時間</div>
+                  <div className="text-base md:text-xl font-black">{step.time || '--:--'}</div>
                </div>
-               {step.isCompleted ? <CheckCircle2 size={28} className="text-green-600" /> : <Circle size={28} className="text-gray-200" />}
+               {step.isCompleted ? <CheckCircle2 size={24} className="text-green-600" /> : <Circle size={24} className="text-gray-200" />}
              </div>
-             <div className="p-6 space-y-4">
+             <div className="p-4 md:p-6 space-y-3 md:space-y-4">
                <div>
-                  <div className="flex items-center gap-2 mb-1"><Presentation size={14} className="text-purple-400"/><span className="text-[10px] font-black text-gray-400 uppercase">簡報</span></div>
-                  <h3 className="text-xl font-black">{step.slides || step.title}</h3>
+                  <div className="flex items-center gap-1.5 md:gap-2 mb-0.5 md:mb-1"><Presentation size={12} className="text-purple-400"/><span className="text-[8px] md:text-[10px] font-black text-gray-400 uppercase">簡報</span></div>
+                  <h3 className="text-base md:text-xl font-black">{step.slides || step.title}</h3>
                </div>
                {step.script && (
                  <div>
-                    <div className="flex items-center gap-2 mb-1"><FileText size={14} className="text-blue-500"/><span className="text-[10px] font-black text-gray-400 uppercase">腳本</span></div>
-                    <p className="text-sm font-bold text-gray-600 whitespace-pre-wrap">{step.script}</p>
+                    <div className="flex items-center gap-1.5 md:gap-2 mb-0.5 md:mb-1"><FileText size={12} className="text-blue-500"/><span className="text-[8px] md:text-[10px] font-black text-gray-400 uppercase">腳本</span></div>
+                    <p className="text-xs md:text-sm font-bold text-gray-600 whitespace-pre-wrap">{step.script}</p>
                  </div>
                )}
              </div>
@@ -118,14 +118,14 @@ const McFlowPanel: React.FC = () => {
 
       {showLoginModal && (
         <div className="fixed inset-0 ios-blur bg-black/40 z-[250] flex items-center justify-center p-6">
-          <div className="bg-white rounded-[2.5rem] p-8 max-xs w-full shadow-2xl flex flex-col items-center gap-6">
-            <h3 className="text-xl font-black text-black">功能授權</h3>
+          <div className="bg-white rounded-[2rem] p-6 w-full max-w-xs shadow-2xl flex flex-col items-center gap-4 border border-white/20">
+            <h3 className="text-lg font-black text-black text-center">功能授權</h3>
             <form onSubmit={handleLoginSubmit} className="w-full space-y-4 text-center">
-              <p className="text-xs font-bold text-[#007AFF]">密碼提示：2222</p>
-              <input type="password" placeholder="輸入密碼" value={loginPassword} onChange={e => setLoginPassword(e.target.value)} className="w-full bg-[#F2F2F7] border-none rounded-2xl py-5 px-4 text-center text-3xl font-black outline-none" autoFocus />
-              <div className="flex gap-3 pt-4">
-                <button type="button" onClick={() => setShowLoginModal(false)} className="flex-1 py-4 font-black text-gray-400">取消</button>
-                <button type="submit" className="flex-1 py-4 bg-blue-600 text-white font-black rounded-2xl">確認</button>
+              <p className="text-[10px] font-bold text-[#007AFF]">密碼提示：2222</p>
+              <input type="password" placeholder="••••" value={loginPassword} onChange={e => setLoginPassword(e.target.value)} className="w-full bg-[#F2F2F7] border-none rounded-2xl py-4 px-4 text-center text-3xl font-black outline-none" autoFocus />
+              <div className="flex gap-2 pt-2">
+                <button type="button" onClick={() => setShowLoginModal(false)} className="flex-1 py-3 font-black text-gray-400 text-[10px]">取消</button>
+                <button type="submit" className="flex-1 py-3 bg-blue-600 text-white font-black rounded-xl text-[10px]">確認</button>
               </div>
             </form>
           </div>
