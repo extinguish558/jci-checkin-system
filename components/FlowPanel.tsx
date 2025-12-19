@@ -43,7 +43,7 @@ const FlowPanel: React.FC = () => {
   const downloadStoredFile = (type: string) => {
     const file = settings.flowFiles?.find(f => f.type === type);
     if (!file || (!file.data && !file.url)) {
-      alert("尚未上傳或找不到此類型的檔案資源");
+      alert("尚未上傳流程檔案，請聯繫管理員上傳 Excel 流程。");
       return;
     }
     if (file.url) {
@@ -171,7 +171,6 @@ const FlowPanel: React.FC = () => {
     const totalPresent = presentGuests.length;
     const percent = totalPresent > 0 ? Math.round((introduced / totalPresent) * 100) : 0;
 
-    // 取得接下來待介紹的 4 位 (依照介紹權重排序)
     const toHalfWidth = (str: string) => str.replace(/[\uff01-\uff5e]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) - 0xfee0)).replace(/\u3000/g, ' ');
     const getWeight = (g: Guest): number => {
       const t = toHalfWidth((g.title || '') + (g.category || '')).toLowerCase();
@@ -307,7 +306,7 @@ const FlowPanel: React.FC = () => {
           )}
         </div>
 
-        {/* 2. 禮品頒發進度 (整合當前獎項 + 接續 4 個) */}
+        {/* 2. 禮品頒發進度 */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           <div className="bg-white rounded-[2.5rem] p-8 shadow-sm border border-white space-y-6">
             <div className="flex items-center justify-between">
@@ -318,7 +317,6 @@ const FlowPanel: React.FC = () => {
               <span className="text-lg font-black text-orange-600">{giftMonitoring.percent}%</span>
             </div>
             
-            {/* 當前獎項標題 */}
             <div className="space-y-1">
               <span className="text-[10px] font-black text-gray-300 uppercase tracking-widest">當前頒發獎項</span>
               <h3 className="text-xl md:text-2xl font-black text-slate-900 leading-tight">
@@ -408,7 +406,7 @@ const FlowPanel: React.FC = () => {
               ].map(item => (
                 <button key={item.type} onClick={() => { setCurrentUploadType(item.type as any); fileInputRef.current?.click(); }} className="flex items-start gap-4 p-5 bg-slate-50 border border-slate-100 rounded-[1.8rem] hover:bg-white hover:border-blue-200 group active:scale-[0.98] text-left">
                   <div className={`shrink-0 w-12 h-12 rounded-2xl bg-${item.color}-100 flex items-center justify-center group-hover:scale-110`}><item.icon size={24} className={`text-${item.color}-600`} /></div>
-                  <div className="flex-1 space-y-1"><span className="block text-sm font-black text-slate-800">{item.label}</span><p className="text-[10px] font-bold text-slate-400 italic italic">{item.desc}</p></div>
+                  <div className="flex-1 space-y-1"><span className="block text-sm font-black text-slate-800">{item.label}</span><p className="text-[10px] font-bold text-slate-400 italic">{item.desc}</p></div>
                 </button>
               ))}
             </div>
@@ -425,7 +423,6 @@ const FlowPanel: React.FC = () => {
             </div>
           </div>
 
-          {/* 報表匯出 - 僅管理員可見 */}
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2">
             {[
               { label: '報到總表', icon: ClipboardList, fn: () => exportDetailedGuestsExcel(guests, settings.eventName, getTargetGroup) },
