@@ -1,5 +1,5 @@
 
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { useEvent } from '../context/EventContext';
 import { Guest, GuestCategory } from '../types';
 import { Search, Clock, Shield, Globe, Handshake, LayoutGrid, Lock, Unlock, UserPlus, X, Edit2, Trash2, PieChart, Users, ChevronRight } from 'lucide-react';
@@ -16,10 +16,21 @@ const AdminPanel: React.FC = () => {
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [loginPassword, setLoginPassword] = useState("");
   const [activeTab, setActiveTab] = useState<string>('YB');
+  const [isSticky, setIsSticky] = useState(false);
 
   const [showManualAdd, setShowManualAdd] = useState(false);
   const [manualGuest, setManualGuest] = useState({ name: '', title: '', category: GuestCategory.MEMBER_YB });
   const [editingGuest, setEditingGuest] = useState<Guest | null>(null);
+
+  // 監聽捲動狀態以切換置頂樣式
+  useEffect(() => {
+    const handleScroll = (e: any) => {
+      setIsSticky(e.target.scrollTop > 400);
+    };
+    const mainEl = document.querySelector('main');
+    mainEl?.addEventListener('scroll', handleScroll);
+    return () => mainEl?.removeEventListener('scroll', handleScroll);
+  }, []);
 
   const handleLoginSubmit = (e: React.FormEvent) => {
       e.preventDefault();
@@ -84,7 +95,7 @@ const AdminPanel: React.FC = () => {
         { key: 'YB', title: '會友 YB', color: 'text-blue-500', icon: LayoutGrid },
         { key: 'OB', title: '特友 OB', color: 'text-orange-500', icon: Clock },
         { key: 'HQ', title: '總會貴賓', color: 'text-indigo-500', icon: Globe },
-        { key: 'VISITING', title: '友會貴賓', color: 'text-green-500', icon: Handshake },
+        { key: 'VISITING', title: '友會來訪', color: 'text-green-500', icon: Handshake },
         { key: 'VIP', title: '貴賓 VIP', color: 'text-purple-500', icon: Shield },
       ];
       return groupConfig.map(config => {
@@ -118,13 +129,12 @@ const AdminPanel: React.FC = () => {
           </button>
       </div>
 
-      {/* 頂部功能區塊：左側報到總覽佔 2/3，右側操作佔 1/3 */}
+      {/* 頂部功能區塊 */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-5 items-stretch">
-          {/* 左側：報到總覽 (寬度 2/3) */}
+          {/* 左側：報到總覽 */}
           <div className="md:col-span-2 bg-white rounded-[3rem] p-8 shadow-sm border border-white flex flex-col md:flex-row gap-8 relative overflow-hidden group">
             <div className="absolute top-0 left-0 w-2 h-full bg-blue-500/10" />
             
-            {/* 左側：大數據顯示 */}
             <div className="flex-1 flex flex-col justify-between space-y-6">
               <div className="flex items-center gap-2">
                 <Clock size={18} className="text-blue-500" />
@@ -147,7 +157,6 @@ const AdminPanel: React.FC = () => {
               </div>
             </div>
 
-            {/* 右側：類別狀態分欄 (放在總數據右邊) */}
             <div className="w-full md:w-auto md:min-w-[280px] border-l border-gray-50 pl-8 flex flex-col justify-center gap-4">
                <h4 className="text-[9px] font-black text-gray-300 uppercase tracking-[0.2em] mb-2">Categories Status</h4>
                <div className="grid grid-cols-2 gap-y-4 gap-x-6">
@@ -167,9 +176,8 @@ const AdminPanel: React.FC = () => {
             </div>
           </div>
 
-          {/* 右側：手動新增與搜尋 (寬度 1/3) */}
+          {/* 右側：手動新增與搜尋 */}
           <div className="md:col-span-1 flex flex-col gap-5">
-            {/* 手動新增按鈕 */}
             <button 
               onClick={() => triggerAction(() => setShowManualAdd(true))} 
               className="bg-white p-8 rounded-[2.8rem] shadow-sm border border-white flex flex-col items-center justify-center gap-3 font-black text-blue-600 transition-all hover:bg-blue-50/30 active:scale-95 group flex-1"
@@ -180,7 +188,6 @@ const AdminPanel: React.FC = () => {
               <span className="text-lg tracking-tight">手動新增嘉賓名單</span>
             </button>
 
-            {/* 搜尋框 */}
             <div className="relative group">
               <div className="absolute left-7 top-1/2 -translate-y-1/2 text-gray-300 group-focus-within:text-blue-500 transition-colors z-10">
                 <Search size={28}/>
@@ -196,19 +203,21 @@ const AdminPanel: React.FC = () => {
           </div>
       </div>
 
-      {/* 分類導覽標籤 */}
-      <div className="flex bg-white/50 backdrop-blur-md p-2 rounded-[2.2rem] overflow-x-auto gap-1.5 border border-white shadow-sm no-scrollbar mt-4">
-          {groupedData.map(group => (
-              <button 
-                key={group.key} 
-                onClick={() => setActiveTab(group.key)} 
-                className={`px-7 py-4 rounded-[1.8rem] font-black text-sm whitespace-nowrap transition-all flex items-center gap-2 ${activeTab === group.key ? 'bg-white text-slate-900 shadow-sm border border-gray-100' : 'text-slate-400 hover:text-slate-600'}`}
-              >
-                <div className={`w-2 h-2 rounded-full ${group.key === 'YB' ? 'bg-blue-500' : group.key === 'OB' ? 'bg-orange-500' : group.key === 'HQ' ? 'bg-indigo-500' : group.key === 'VISITING' ? 'bg-green-500' : 'bg-purple-500'}`} />
-                {group.title} 
-                <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${activeTab === group.key ? 'bg-slate-100 text-slate-600' : 'text-slate-300'}`}>{group.totalCount}</span>
-              </button>
-          ))}
+      {/* 分類導覽標籤 - 實作 Sticky 置頂功能 */}
+      <div className={`sticky top-0 z-40 -mx-4 md:-mx-8 px-4 md:px-8 py-4 transition-all duration-300 ${isSticky ? 'ios-blur bg-white/70 shadow-lg border-b border-white/20' : ''}`}>
+        <div className="flex bg-white/50 backdrop-blur-md p-2 rounded-[2.2rem] overflow-x-auto gap-1.5 border border-white shadow-sm no-scrollbar">
+            {groupedData.map(group => (
+                <button 
+                  key={group.key} 
+                  onClick={() => setActiveTab(group.key)} 
+                  className={`px-7 py-4 rounded-[1.8rem] font-black text-sm whitespace-nowrap transition-all flex items-center gap-2 ${activeTab === group.key ? 'bg-white text-slate-900 shadow-sm border border-gray-100' : 'text-slate-400 hover:text-slate-600'}`}
+                >
+                  <div className={`w-2.5 h-2.5 rounded-full ${group.key === 'YB' ? 'bg-blue-500' : group.key === 'OB' ? 'bg-orange-500' : group.key === 'HQ' ? 'bg-indigo-500' : group.key === 'VISITING' ? 'bg-green-500' : 'bg-purple-500'}`} />
+                  {group.title} 
+                  <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${activeTab === group.key ? 'bg-slate-100 text-slate-600' : 'text-slate-300'}`}>{group.totalCount}</span>
+                </button>
+            ))}
+        </div>
       </div>
 
       {/* 嘉賓名單列表 */}
