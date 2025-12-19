@@ -1,5 +1,5 @@
 
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { useEvent } from '../context/EventContext';
 import { GuestCategory, Guest } from '../types';
 import { CheckCircle2, Circle, Mic2, Lock, Unlock, ArrowLeft, RotateCcw } from 'lucide-react';
@@ -55,6 +55,14 @@ const McPanel: React.FC = () => {
   const [filterRound, setFilterRound] = useState<number | 'all'>('all');
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [loginPassword, setLoginPassword] = useState("");
+
+  // 當組件掛載（切換至此分頁）時，強制將容器捲動至最上方
+  useEffect(() => {
+    const mainEl = document.querySelector('main');
+    if (mainEl) {
+      mainEl.scrollTop = 0;
+    }
+  }, []);
 
   const handleLoginSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -179,14 +187,22 @@ const McPanel: React.FC = () => {
   return (
     <div className="w-full flex flex-col p-4 md:p-8 space-y-6 pb-32 bg-[#F2F2F7] min-h-screen">
         {/* 頂部操作列 */}
-        <div className="bg-white rounded-[2.5rem] shadow-sm p-6 md:p-8 border border-white flex flex-col md:flex-row justify-between items-center gap-6">
-            <div className="flex items-center gap-3"><Mic2 size={24} className="text-[#007AFF]" /><h2 className="text-2xl font-black text-black">司儀播報模式</h2></div>
+        <div className="bg-white rounded-[2.5rem] shadow-sm p-6 md:p-8 border border-white flex flex-col md:flex-row justify-between items-center gap-6 relative">
+            <div className="flex items-center gap-3 self-start md:self-auto">
+                <Mic2 size={24} className="text-[#007AFF]" />
+                <h2 className="text-2xl font-black text-black">司儀播報模式</h2>
+            </div>
             <div className="flex gap-2 bg-gray-100 p-1 rounded-2xl w-full md:w-auto">
                 {[{ label: '全部', val: 'all' as const }, { label: 'R1 梯次', val: 1 }, { label: 'R2 梯次', val: 2 }].map(btn => (
                     <button key={btn.label} onClick={() => setFilterRound(btn.val)} className={`flex-1 md:px-6 py-2.5 rounded-xl text-[11px] font-black transition-all ${filterRound === btn.val ? 'bg-white text-[#007AFF] shadow-sm' : 'text-gray-400'}`}>{btn.label}</button>
                 ))}
             </div>
-            <button onClick={() => isUnlocked ? logoutAdmin() : setShowLoginModal(true)} className="p-3 bg-[#F2F2F7] rounded-2xl shrink-0">
+            
+            {/* 根據需求移動解鎖按鈕到右上角 */}
+            <button 
+                onClick={() => isUnlocked ? logoutAdmin() : setShowLoginModal(true)} 
+                className="absolute top-6 right-6 p-2.5 md:p-3 bg-gray-50 hover:bg-gray-100 rounded-2xl shrink-0 transition-all active:scale-90"
+            >
                 {isUnlocked ? <Unlock size={20} className="text-[#007AFF]"/> : <Lock size={20} className="text-gray-300"/>}
             </button>
         </div>

@@ -34,6 +34,14 @@ const FlowPanel: React.FC = () => {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // 當組件掛載（切換至此分頁）時，強制將容器捲動至最上方
+  useEffect(() => {
+    const mainEl = document.querySelector('main');
+    if (mainEl) {
+      mainEl.scrollTop = 0;
+    }
+  }, []);
+
   const handleLoginSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (loginAdmin(loginPassword)) {

@@ -1,5 +1,5 @@
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useEvent } from '../context/EventContext';
 import { Trophy, Play, Sparkles, PartyPopper, Lock, Unlock, Users, ChevronDown } from 'lucide-react';
 import { Guest } from '../types';
@@ -13,6 +13,14 @@ const LotteryPanel: React.FC = () => {
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [loginPassword, setLoginPassword] = useState("");
   const [drawCount, setDrawCount] = useState<number>(1);
+
+  // 當組件掛載（切換至此分頁）時，強制將容器捲動至最上方
+  useEffect(() => {
+    const mainEl = document.querySelector('main');
+    if (mainEl) {
+      mainEl.scrollTop = 0;
+    }
+  }, []);
 
   const handleLoginSubmit = (e: React.FormEvent) => {
     e.preventDefault();

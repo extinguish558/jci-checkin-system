@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { useEvent } from '../context/EventContext';
 import { Guest, GuestCategory } from '../types';
@@ -19,6 +20,14 @@ const AdminPanel: React.FC = () => {
 
   const [showManualAdd, setShowManualAdd] = useState(false);
   const [manualGuest, setManualGuest] = useState({ name: '', title: '', category: GuestCategory.MEMBER_YB });
+
+  // 當組件掛載（切換至此分頁）時，強制將容器捲動至最上方
+  useEffect(() => {
+    const mainEl = document.querySelector('main');
+    if (mainEl) {
+      mainEl.scrollTop = 0;
+    }
+  }, []);
 
   // 監聽捲動狀態以切換置頂樣式
   useEffect(() => {
