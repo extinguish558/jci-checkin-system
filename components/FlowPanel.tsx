@@ -28,7 +28,6 @@ const FlowPanel: React.FC = () => {
   const [isUploading, setIsUploading] = useState(false);
   const [uploadType, setUploadType] = useState<'schedule' | 'gifts' | 'slides' | 'mcflow' | null>(null);
   
-  // 新增：流程摘要展開狀態與編輯狀態
   const [isScheduleExpanded, setIsScheduleExpanded] = useState(false);
   const [isEditingSchedule, setIsEditingSchedule] = useState(false);
   const [editScheduleText, setEditScheduleText] = useState(settings.briefSchedule || '');
@@ -125,24 +124,30 @@ const FlowPanel: React.FC = () => {
     const unpresentedGifts = giftItems.filter(i => !i.isPresented);
     
     const checkedInVips = guests.filter(g => g.isCheckedIn && g.title && !g.title.includes('見習'));
-    const remainingVips = checkedInVips.filter(g => !g.isIntroduced);
     const introducedVipsCount = checkedInVips.filter(g => g.isIntroduced).length;
+    const remainingVips = checkedInVips.filter(g => !g.isIntroduced);
 
     return {
       mc: { 
         active: uncompletedMc[0]?.title || '流程已結束', 
         previews: uncompletedMc.slice(1, 3).map(s => s.title),
+        current: mcCompletedCount,
+        total: mcSteps.length,
         percent: mcSteps.length > 0 ? Math.round((mcCompletedCount / mcSteps.length) * 100) : 0 
       },
       gifts: { 
         active: unpresentedGifts[0]?.name || '頒獎已結束', 
         previews: unpresentedGifts.slice(1, 3).map(i => i.name),
+        current: giftsPresentedCount,
+        total: giftItems.length,
         percent: giftItems.length > 0 ? Math.round((giftsPresentedCount / giftItems.length) * 100) : 0 
       },
       vips: { 
         count: remainingVips.length,
         active: remainingVips[0]?.name || '介紹已結束',
         previews: remainingVips.slice(1, 3).map(g => g.name),
+        current: introducedVipsCount,
+        total: checkedInVips.length,
         percent: checkedInVips.length > 0 ? Math.round((introducedVipsCount / checkedInVips.length) * 100) : 0 
       }
     };
@@ -230,7 +235,7 @@ const FlowPanel: React.FC = () => {
           readOnly={!isAdmin}
         />
 
-        {/* 流程摘要顯示區塊：點擊切換展開/縮回 */}
+        {/* 流程摘要顯示區塊 */}
         <div 
           onClick={() => setIsScheduleExpanded(!isScheduleExpanded)}
           className={`bg-[#F2F2F7] rounded-[2rem] p-7 relative cursor-pointer group transition-all duration-300 ${isScheduleExpanded ? 'shadow-inner' : 'hover:bg-[#E8E8EE]'}`}
@@ -255,7 +260,7 @@ const FlowPanel: React.FC = () => {
         </div>
       </div>
 
-      {/* 智慧報到儀表板 - 同步 AdminPanel 樣式 */}
+      {/* 智慧報到儀表板 */}
       <div className="bg-white rounded-[3rem] p-8 shadow-sm border border-white flex flex-col md:flex-row gap-8 relative overflow-hidden group">
         <div className="absolute top-0 left-0 w-2 h-full bg-blue-500/10" />
         
@@ -308,7 +313,13 @@ const FlowPanel: React.FC = () => {
         <div className="bg-white rounded-[2rem] p-6 shadow-sm border border-white flex flex-col gap-3 min-h-[180px]">
              <div className="w-10 h-10 bg-blue-50 text-blue-500 rounded-xl flex items-center justify-center shrink-0"><ListTodo size={20} /></div>
              <div>
-                <h4 className="text-[10px] font-black text-gray-400 uppercase mb-1">當前流程</h4>
+                <div className="flex justify-between items-center mb-1">
+                  <h4 className="text-[10px] font-black text-gray-400 uppercase">當前流程</h4>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-black text-gray-300 tabular-nums">{liveStats.mc.current} / {liveStats.mc.total}</span>
+                    <span className="text-[10px] font-black text-blue-500 tabular-nums">{liveStats.mc.percent}%</span>
+                  </div>
+                </div>
                 <p className="text-sm font-black text-black leading-tight line-clamp-1">{liveStats.mc.active}</p>
              </div>
              {liveStats.mc.previews.length > 0 && (
@@ -319,14 +330,20 @@ const FlowPanel: React.FC = () => {
                  ))}
                </div>
              )}
-             <div className="w-full h-1 bg-gray-50 rounded-full mt-auto"><div className="h-full bg-blue-500 transition-all duration-500" style={{ width: `${liveStats.mc.percent}%` }} /></div>
+             <div className="w-full h-1 bg-gray-50 rounded-full mt-auto"><div className="h-full bg-blue-500 transition-all duration-500 shadow-[0_0_8px_rgba(59,130,246,0.3)]" style={{ width: `${liveStats.mc.percent}%` }} /></div>
         </div>
 
         {/* 禮品監控 */}
         <div className="bg-white rounded-[2rem] p-6 shadow-sm border border-white flex flex-col gap-3 min-h-[180px]">
              <div className="w-10 h-10 bg-orange-50 text-orange-500 rounded-xl flex items-center justify-center shrink-0"><Award size={20} /></div>
              <div>
-                <h4 className="text-[10px] font-black text-gray-400 uppercase mb-1">當前禮品</h4>
+                <div className="flex justify-between items-center mb-1">
+                  <h4 className="text-[10px] font-black text-gray-400 uppercase">當前禮品</h4>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-black text-gray-300 tabular-nums">{liveStats.gifts.current} / {liveStats.gifts.total}</span>
+                    <span className="text-[10px] font-black text-orange-500 tabular-nums">{liveStats.gifts.percent}%</span>
+                  </div>
+                </div>
                 <p className="text-sm font-black text-black leading-tight line-clamp-1">{liveStats.gifts.active}</p>
              </div>
              {liveStats.gifts.previews.length > 0 && (
@@ -337,17 +354,21 @@ const FlowPanel: React.FC = () => {
                  ))}
                </div>
              )}
-             <div className="w-full h-1 bg-gray-50 rounded-full mt-auto"><div className="h-full bg-orange-500 transition-all duration-500" style={{ width: `${liveStats.gifts.percent}%` }} /></div>
+             <div className="w-full h-1 bg-gray-50 rounded-full mt-auto"><div className="h-full bg-orange-500 transition-all duration-500 shadow-[0_0_8px_rgba(249,115,22,0.3)]" style={{ width: `${liveStats.gifts.percent}%` }} /></div>
         </div>
 
         {/* 待介紹監控 */}
         <div className="bg-white rounded-[2rem] p-6 shadow-sm border border-white flex flex-col gap-3 min-h-[180px]">
              <div className="w-10 h-10 bg-purple-50 text-purple-500 rounded-xl flex items-center justify-center shrink-0"><Mic2 size={20} /></div>
-             <div className="flex justify-between items-start">
-                <div className="min-w-0">
-                    <h4 className="text-[10px] font-black text-gray-400 uppercase mb-1">當前待介紹 ({liveStats.vips.count})</h4>
-                    <p className="text-sm font-black text-black leading-tight line-clamp-1">{liveStats.vips.active}</p>
+             <div className="flex flex-col gap-1">
+                <div className="flex justify-between items-center">
+                    <h4 className="text-[10px] font-black text-gray-400 uppercase">當前介紹 ({liveStats.vips.count})</h4>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] font-black text-gray-300 tabular-nums">{liveStats.vips.current} / {liveStats.vips.total}</span>
+                      <span className="text-[10px] font-black text-purple-500 tabular-nums">{liveStats.vips.percent}%</span>
+                    </div>
                 </div>
+                <p className="text-sm font-black text-black leading-tight line-clamp-1">{liveStats.vips.active}</p>
              </div>
              {liveStats.vips.previews.length > 0 && (
                <div className="space-y-1 mt-1 opacity-50">
@@ -357,7 +378,7 @@ const FlowPanel: React.FC = () => {
                  ))}
                </div>
              )}
-             <div className="w-full h-1 bg-gray-50 rounded-full mt-auto"><div className="h-full bg-purple-500 transition-all duration-500" style={{ width: `${liveStats.vips.percent}%` }} /></div>
+             <div className="w-full h-1 bg-gray-50 rounded-full mt-auto"><div className="h-full bg-purple-500 transition-all duration-500 shadow-[0_0_8px_rgba(168,85,247,0.3)]" style={{ width: `${liveStats.vips.percent}%` }} /></div>
         </div>
       </div>
 
