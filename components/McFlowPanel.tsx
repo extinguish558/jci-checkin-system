@@ -47,6 +47,19 @@ const McFlowPanel: React.FC = () => {
     return { total, completed, percent };
   }, [steps]);
 
+  // 自動定位到當前進度：搜尋第一個未完成的步驟並捲動至視窗中
+  useEffect(() => {
+    const firstUncompleted = steps.find(s => !s.isCompleted);
+    if (firstUncompleted) {
+      setTimeout(() => {
+        const el = document.getElementById(`step-${firstUncompleted.id}`);
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      }, 300);
+    }
+  }, []); // 僅在元件掛載時執行一次
+
   return (
     <div className="p-4 md:p-8 max-w-4xl mx-auto space-y-4 md:space-y-6 pb-32 relative">
       <div className="flex justify-between items-start">
@@ -90,7 +103,12 @@ const McFlowPanel: React.FC = () => {
 
       <div className="space-y-4 md:space-y-6">
         {steps.map((step) => (
-          <div key={step.id} onClick={() => triggerAction(() => toggleMcFlowStep(step.id))} className={`rounded-[1.5rem] md:rounded-[2.5rem] border transition-all cursor-pointer overflow-hidden ${step.isCompleted ? 'bg-gray-100 opacity-60' : 'bg-white shadow-sm border-white'}`}>
+          <div 
+            key={step.id} 
+            id={`step-${step.id}`}
+            onClick={() => triggerAction(() => toggleMcFlowStep(step.id))} 
+            className={`rounded-[1.5rem] md:rounded-[2.5rem] border transition-all cursor-pointer overflow-hidden ${step.isCompleted ? 'bg-gray-100 opacity-60' : 'bg-white shadow-sm border-white'}`}
+          >
              <div className="p-4 md:p-6 flex items-center gap-4 md:gap-6 border-b border-gray-50">
                <div className={`w-10 h-10 md:w-14 md:h-14 rounded-xl md:rounded-2xl flex items-center justify-center font-black text-lg md:text-2xl ${step.isCompleted ? 'bg-gray-200 text-gray-400' : 'bg-blue-50 text-blue-600'}`}>{step.sequence || '-'}</div>
                <div className="flex-1">
