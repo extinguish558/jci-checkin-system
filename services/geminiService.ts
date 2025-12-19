@@ -101,7 +101,7 @@ export const parseGiftsFromExcel = async (file: File): Promise<GiftItem[]> => {
         const items: GiftItem[] = json.map((row: any) => ({
           id: Math.random().toString(36).substr(2, 9),
           sequence: (row['序'] || row['序號'] || '').toString(),
-          name: (row['項目'] || row['禮品'] || '未命名').toString(),
+          name: (row['程序'] || row['項目'] || row['禮品'] || row['禮物'] || '未命名').toString(),
           quantity: (row['數量'] || '1').toString(),
           recipient: (row['受獎人'] || '現場嘉賓').toString(),
           isPresented: false
@@ -124,11 +124,11 @@ export const parseMcFlowFromExcel = async (file: File): Promise<McFlowStep[]> =>
         const json: any[] = utils.sheet_to_json(worksheet);
         const steps: McFlowStep[] = json.map((row: any) => ({
           id: Math.random().toString(36).substr(2, 9),
-          sequence: (row['序'] || '').toString(),
-          time: (row['時間'] || '').toString(),
-          title: (row['項目'] || row['標題'] || '未命名').toString(),
-          script: (row['司儀搞'] || row['司儀稿'] || '').toString(),
-          slides: (row['簡報頁面'] || '').toString(),
+          sequence: (row['序'] || row['序號'] || '').toString(),
+          time: (row['時間'] || row['Time'] || '').toString(),
+          title: (row['程序'] || row['程序名稱'] || row['項目'] || row['標題'] || '未命名').toString(),
+          script: (row['司儀搞'] || row['司儀稿'] || row['腳本'] || row['Script'] || '').toString(),
+          slides: (row['簡報頁面'] || row['簡報內容'] || row['PPT'] || '').toString(),
           isCompleted: false
         }));
         resolve(steps);

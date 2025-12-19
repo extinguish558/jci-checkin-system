@@ -3,7 +3,7 @@ import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useEvent } from '../context/EventContext';
 import { 
   CheckCircle2, Circle, Lock, Unlock, Presentation, FileText, 
-  ListTodo, Activity, FileUp, Trash2, Loader2, Info
+  ListTodo, Activity, FileUp, Trash2, Loader2, Info, Clock
 } from 'lucide-react';
 import { parseMcFlowFromExcel } from '../services/geminiService';
 
@@ -43,16 +43,13 @@ const McFlowPanel: React.FC = () => {
   };
 
   const handleClearRequest = async () => {
-    console.log("Trash button clicked");
     if (window.confirm("【全數清空警告】\n確定要刪除雲端上的所有司儀講稿嗎？\n這將重置所有看板（含流程、禮品看板）的進度紀錄，不可復原。")) {
-        console.log("Confirmation confirmed, starting clearMcFlowOnly...");
         setUploadProgress("正在清空講稿資料...");
         try {
             await clearMcFlowOnly();
-            alert("講稿已從雲端全數移除。");
+            alert("講稿已全數清空。");
         } catch (e: any) {
-            console.error("Clear error:", e);
-            alert("清空動作發生錯誤: " + e.message);
+            alert("清空動作失敗。");
         } finally {
             setUploadProgress(null);
         }
@@ -63,7 +60,7 @@ const McFlowPanel: React.FC = () => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (!window.confirm(`偵測到新 Excel：${file.name}\n確定要上傳並【完全覆蓋】雲端上的舊講稿嗎？\n這會重置當前所有人的執行進度。`)) {
+    if (!window.confirm(`偵測到新 Excel：${file.name}\n確定要上傳並【完全覆蓋】目前的講稿嗎？`)) {
       if (fileInputRef.current) fileInputRef.current.value = '';
       return;
     }
@@ -72,11 +69,7 @@ const McFlowPanel: React.FC = () => {
     setUploadProgress("正在解析 Excel 文件...");
 
     try {
-      // 1. 解析 Excel
-      console.log("Parsing Excel...");
       const steps = await parseMcFlowFromExcel(file);
-      
-      // 2. 構造檔案標記
       const metaFile = {
         id: Math.random().toString(36).substr(2, 9),
         name: file.name,
@@ -86,21 +79,17 @@ const McFlowPanel: React.FC = () => {
         uploadTime: new Date().toISOString(),
       };
 
-      // 3. 雲端覆蓋更新
-      setUploadProgress("正在將講稿同步至雲端...");
+      setUploadProgress("正在同步至雲端...");
       const filteredFiles = (settings.flowFiles || []).filter(f => f.type !== 'mcflow_file');
       
-      // 直接使用 updateSettings 寫入，EventContext 已有硬重置鎖
       await updateSettings({ 
         mcFlowSteps: steps, 
         flowFiles: [...filteredFiles, metaFile] 
       });
 
-      console.log("McFlow uploaded and synced.");
       setUploadProgress("講稿同步完成！");
       setTimeout(() => setUploadProgress(null), 2000);
     } catch (error: any) {
-      console.error("Upload error:", error);
       alert("講稿解析或同步失敗: " + error.message);
       setUploadProgress(null);
     } finally {
@@ -118,7 +107,7 @@ const McFlowPanel: React.FC = () => {
     return { total, completed, percent };
   }, [steps]);
 
-  // 自動定位功能保持不變
+  // 自動定位功能
   useEffect(() => {
     if (steps.length > 0) {
       const firstUncompleted = steps.find(s => !s.isCompleted);
@@ -213,23 +202,51 @@ const McFlowPanel: React.FC = () => {
             onClick={() => isUnlocked && toggleMcFlowStep(step.id)} 
             className={`rounded-[1.5rem] md:rounded-[2.5rem] border transition-all cursor-pointer overflow-hidden ${step.isCompleted ? 'bg-gray-100 opacity-60' : 'bg-white shadow-sm border-white hover:border-blue-100 active:scale-[0.99]'}`}
           >
+             {/* 上半部：A (序號), B (時間), C (狀態) */}
              <div className="p-4 md:p-6 flex items-center gap-4 md:gap-6 border-b border-gray-50 bg-slate-50/30">
-               <div className={`w-10 h-10 md:w-14 md:h-14 rounded-xl md:rounded-2xl flex items-center justify-center font-black text-lg md:text-2xl transition-colors ${step.isCompleted ? 'bg-gray-200 text-gray-400' : 'bg-blue-600 text-white shadow-md'}`}>{step.sequence || '-'}</div>
+               {/* A: 序號 */}
+               <div className={`w-10 h-10 md:w-14 md:h-14 rounded-xl md:rounded-2xl flex items-center justify-center font-black text-lg md:text-2xl transition-colors shrink-0 ${step.isCompleted ? 'bg-gray-200 text-gray-400' : 'bg-blue-600 text-white shadow-md'}`}>
+                 {step.sequence || '-'}
+               </div>
+               
+               {/* B: 時間計畫 */}
                <div className="flex-1">
-                  <div className="text-[8px] md:text-[10px] font-black text-gray-400 uppercase tracking-widest">時間計畫</div>
-                  <div className="text-base md:text-xl font-black">{step.time || '--:--'}</div>
+                  <div className="text-[8px] md:text-[10px] font-black text-gray-400 uppercase tracking-widest flex items-center gap-1">
+                    <Clock size={10} /> 時間計畫
+                  </div>
+                  <div className="text-base md:text-xl font-black text-slate-800">{step.time || '--:--'}</div>
                </div>
-               {step.isCompleted ? <CheckCircle2 size={28} className="text-green-600" /> : <Circle size={28} className="text-gray-200" />}
+               
+               {/* C: 狀態 */}
+               <div className="shrink-0">
+                 {step.isCompleted ? <CheckCircle2 size={32} className="text-green-600" /> : <Circle size={32} className="text-gray-200" />}
+               </div>
              </div>
-             <div className="p-4 md:p-6 space-y-3 md:space-y-5">
-               <div>
-                  <div className="flex items-center gap-1.5 md:gap-2 mb-1"><Presentation size={14} className="text-purple-400"/><span className="text-[8px] md:text-[10px] font-black text-gray-400 uppercase">簡報項目 / 標題</span></div>
-                  <h3 className="text-base md:text-2xl font-black tracking-tight">{step.slides || step.title}</h3>
+
+             {/* 下半部：D (程序/標題), G (腳本) */}
+             <div className="p-4 md:p-6 space-y-4 md:space-y-6">
+               {/* D: 程序標題 */}
+               <div className="px-1">
+                  <div className="flex items-center gap-1.5 md:gap-2 mb-1.5 text-gray-400">
+                    <Presentation size={14} className="text-purple-400"/>
+                    <span className="text-[8px] md:text-[10px] font-black uppercase tracking-widest">簡報項目 / 程序名稱</span>
+                  </div>
+                  <h3 className={`text-base md:text-2xl font-black tracking-tight leading-tight ${step.isCompleted ? 'text-gray-400 line-through' : 'text-slate-900'}`}>
+                    {step.title || '未命名項目'}
+                  </h3>
+                  {step.slides && <p className="text-[10px] md:text-xs text-blue-500 font-bold mt-1">簡報頁面：{step.slides}</p>}
                </div>
+
+               {/* G: 司儀口播腳本 */}
                {step.script && (
-                 <div className="bg-blue-50/50 p-4 rounded-2xl border border-blue-100/30">
-                    <div className="flex items-center gap-1.5 md:gap-2 mb-1.5"><FileText size={14} className="text-blue-500"/><span className="text-[8px] md:text-[10px] font-black text-gray-400 uppercase">司儀口播腳本</span></div>
-                    <p className="text-xs md:text-base font-bold text-gray-700 leading-relaxed whitespace-pre-wrap">{step.script}</p>
+                 <div className="bg-blue-50/50 p-4 md:p-6 rounded-2xl md:rounded-[2rem] border border-blue-100/30 shadow-inner">
+                    <div className="flex items-center gap-1.5 md:gap-2 mb-2 md:mb-3">
+                      <FileText size={14} className="text-blue-500"/>
+                      <span className="text-[8px] md:text-[10px] font-black text-gray-400 uppercase tracking-widest">司儀口播腳本</span>
+                    </div>
+                    <p className="text-xs md:text-lg font-bold text-gray-700 leading-relaxed whitespace-pre-wrap">
+                      {step.script}
+                    </p>
                  </div>
                )}
              </div>
