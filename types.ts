@@ -13,7 +13,7 @@ export enum GuestCategory {
 export interface FlowFile {
   id: string;
   name: string;
-  type: 'schedule' | 'gifts' | 'slides' | 'mcflow'; // 新增 mcflow
+  type: 'schedule' | 'gifts_file' | 'slides' | 'mcflow_file' | 'guests_file'; 
   mimeType: string;
   size: number;
   uploadTime: string;
@@ -57,7 +57,7 @@ export interface Guest {
   isWinner: boolean;
   wonRounds: number[];
   winRound?: number;
-  wonTimes?: Record<string, string>; // 新增：紀錄每一輪得獎的具體時間 { "1": "ISO_STRING" }
+  wonTimes?: Record<string, string>; 
 }
 
 export interface SystemSettings {

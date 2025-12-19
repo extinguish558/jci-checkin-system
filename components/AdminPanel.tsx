@@ -136,7 +136,7 @@ const AdminPanel: React.FC = () => {
     <div className="flex flex-col min-h-full">
       {/* 分類導覽標籤 - 最頂端 Sticky */}
       <div className={`sticky top-0 z-40 px-4 md:px-8 py-2 md:py-3 transition-all duration-300 ${isSticky ? 'ios-blur bg-white/70 shadow-md border-b border-white/20' : 'bg-[#F2F2F7]'}`}>
-        <div className="flex bg-white/50 backdrop-blur-md p-1 rounded-[1.2rem] md:rounded-[2.2rem] overflow-x-auto gap-1 border border-white shadow-sm no-scrollbar">
+        <div className="flex bg-white/50 backdrop-blur-md p-1 rounded-[1.2rem] md:rounded-[2.2rem] overflow-x-auto md:overflow-x-visible gap-1 border border-white shadow-sm no-scrollbar md:justify-center">
             {groupedData.map(group => (
                 <button 
                   key={group.key} 
@@ -281,7 +281,7 @@ const AdminPanel: React.FC = () => {
                         {group.list.length === 0 && (
                           <div className="py-16 text-center">
                             <Users size={32} className="mx-auto text-slate-100 mb-3" />
-                            <p className="text-slate-300 font-black italic text-sm">查無嘉賓</p>
+                            <p className="text-slate-300 font-black italic text-sm">查與嘉賓</p>
                           </div>
                         )}
                     </div>

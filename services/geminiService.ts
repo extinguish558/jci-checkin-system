@@ -14,7 +14,14 @@ export interface FileInput {
 }
 
 async function callGemini(aiParts: any[], systemInstruction: string, responseSchema: any) {
+  // 每次調用時初始化，確保讀取到最新的環境變數
+  if (!process.env.API_KEY) {
+      console.error("Gemini API Key is missing in process.env");
+      throw new Error("系統環境變數中未偵測到有效的 API KEY，請檢查設定。");
+  }
+  
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  
   try {
     const response = await ai.models.generateContent({
       model: 'gemini-3-pro-preview',
@@ -26,11 +33,20 @@ async function callGemini(aiParts: any[], systemInstruction: string, responseSch
         thinkingConfig: { thinkingBudget: 0 }
       },
     });
-    if (!response.text) throw new Error("模型未回傳任何內容。");
+    
+    if (!response || !response.text) {
+        throw new Error("模型回傳空內容，請檢查圖片清晰度或網絡連線。");
+    }
+    
     return JSON.parse(response.text);
   } catch (error: any) {
     console.error("Gemini API Error Detail:", error);
-    throw new Error(`Gemini API 調用失敗: ${error.message || '未知錯誤'}`);
+    // 針對常見錯誤進行中文語義化處理
+    let errMsg = error.message || '未知錯誤';
+    if (errMsg.includes("API_KEY_INVALID")) errMsg = "API KEY 無效或已過期";
+    if (errMsg.includes("Quota exceeded")) errMsg = "API 調用次數已達今日上限";
+    
+    throw new Error(`AI 解析失敗: ${errMsg}`);
   }
 }
 
@@ -143,9 +159,6 @@ export const parseCheckInSheet = async (files: FileInput[]): Promise<ParsedGuest
   return await callGemini(aiParts, SYSTEM_INSTRUCTION_CHECK_IN, schema);
 };
 
-// --- 新增的 Excel 匯出功能 ---
-
-// 1. 報到管理匯出 (多分頁、依編號排序)
 export const exportDetailedGuestsExcel = (guests: Guest[], eventName: string, getGroupFn: (g: Guest) => string) => {
     const wb = utils.book_new();
     const categories = [
@@ -176,10 +189,9 @@ export const exportDetailedGuestsExcel = (guests: Guest[], eventName: string, ge
         utils.book_append_sheet(wb, ws, cat.label);
     });
 
-    writeFile(wb, `${eventName}_嘉賓名冊詳情.xlsx`);
+    writeFile(wb, `${eventName}_嘉賓名冊.xlsx`);
 };
 
-// 2. 禮品頒贈匯出
 export const exportGiftsExcel = (items: GiftItem[], eventName: string) => {
     const data = items.map(i => ({
         '序': i.sequence || '',
@@ -192,10 +204,9 @@ export const exportGiftsExcel = (items: GiftItem[], eventName: string) => {
     const ws = utils.json_to_sheet(data);
     const wb = utils.book_new();
     utils.book_append_sheet(wb, ws, '禮品頒贈清單');
-    writeFile(wb, `${eventName}_禮品頒贈狀態.xlsx`);
+    writeFile(wb, `${eventName}_禮品狀態.xlsx`);
 };
 
-// 3. 司儀流程匯出
 export const exportMcFlowExcel = (steps: McFlowStep[], eventName: string) => {
     const data = steps.map(s => ({
         '序': s.sequence || '',
@@ -206,11 +217,10 @@ export const exportMcFlowExcel = (steps: McFlowStep[], eventName: string) => {
     }));
     const ws = utils.json_to_sheet(data);
     const wb = utils.book_new();
-    utils.book_append_sheet(wb, ws, '活動流程表');
-    writeFile(wb, `${eventName}_司儀流程進度.xlsx`);
+    utils.book_append_sheet(wb, ws, '司儀講稿');
+    writeFile(wb, `${eventName}_司儀講稿.xlsx`);
 };
 
-// 4. 貴賓介紹匯出 (已介紹/未介紹)
 export const exportIntroductionsExcel = (guests: Guest[], eventName: string) => {
     const present = guests.filter(g => g.isCheckedIn && g.title && !g.title.includes('見習'));
     const data = present.map(g => ({
@@ -223,14 +233,11 @@ export const exportIntroductionsExcel = (guests: Guest[], eventName: string) => 
     const ws = utils.json_to_sheet(data);
     const wb = utils.book_new();
     utils.book_append_sheet(wb, ws, '貴賓介紹清單');
-    writeFile(wb, `${eventName}_貴賓介紹現況.xlsx`);
+    writeFile(wb, `${eventName}_介紹現況.xlsx`);
 };
 
-// 5. 抽獎儀表匯出
 export const exportLotteryExcel = (guests: Guest[], eventName: string) => {
     const wb = utils.book_new();
-    
-    // 分輪得獎名單
     const rounds = Array.from(new Set(guests.flatMap(g => g.wonRounds || []))).sort((a,b) => a-b);
     rounds.forEach(r => {
         const roundWinners = guests.filter(g => g.wonRounds?.includes(r)).map(g => ({
@@ -242,7 +249,6 @@ export const exportLotteryExcel = (guests: Guest[], eventName: string) => {
         utils.book_append_sheet(wb, ws, `第 ${r} 輪得獎`);
     });
 
-    // 統計分頁
     const summary = guests.filter(g => g.isWinner).map(g => ({
         '姓名': g.name,
         '職稱': g.title,
@@ -253,18 +259,5 @@ export const exportLotteryExcel = (guests: Guest[], eventName: string) => {
     const wsSum = utils.json_to_sheet(summary);
     utils.book_append_sheet(wb, wsSum, '中獎統計總表');
 
-    writeFile(wb, `${eventName}_抽獎結果報表.xlsx`);
-};
-
-export const exportToExcel = (guests: Guest[], eventName: string) => {
-    const wb = utils.book_new();
-    const data = guests.map(g => ({
-        '編號': g.code || '',
-        '姓名': g.name,
-        '職稱': g.title,
-        '狀態': g.isCheckedIn ? '已報到' : '未報到'
-    }));
-    const ws = utils.json_to_sheet(data);
-    utils.book_append_sheet(wb, ws, '報到明細');
-    writeFile(wb, `${eventName}_報到明細.xlsx`);
+    writeFile(wb, `${eventName}_抽獎結果.xlsx`);
 };

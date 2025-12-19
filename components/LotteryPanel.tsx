@@ -1,15 +1,21 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { useEvent } from '../context/EventContext';
-import { Trophy, Play, Sparkles, PartyPopper, Lock, Unlock, Users, ChevronDown } from 'lucide-react';
+import { Trophy, Play, Sparkles, PartyPopper, Lock, Unlock, Users, ChevronDown, RotateCcw, Loader2 } from 'lucide-react';
 import { Guest } from '../types';
 
 const LotteryPanel: React.FC = () => {
-  const { drawWinner, guests, settings, jumpToLotteryRound, isAdmin, unlockedSections, loginAdmin, logoutAdmin } = useEvent();
+  const { 
+    drawWinner, guests, settings, jumpToLotteryRound, 
+    isAdmin, unlockedSections, loginAdmin, logoutAdmin,
+    resetLottery, removeWinnerFromRound
+  } = useEvent();
+  
   const isUnlocked = isAdmin || unlockedSections.lottery;
   
   const [batchWinners, setBatchWinners] = useState<Guest[]>([]);
   const [isAnimating, setIsAnimating] = useState(false);
+  const [isResetting, setIsResetting] = useState(false);
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [loginPassword, setLoginPassword] = useState("");
   const [drawCount, setDrawCount] = useState<number>(1);
@@ -82,6 +88,23 @@ const LotteryPanel: React.FC = () => {
     }, 2000);
   };
 
+  const handleRemoveWinner = (guestId: string, round: number, name: string) => {
+    if (window.confirm(`確定要撤回「${name}」在第 ${round} 輪的中獎紀錄嗎？`)) {
+        removeWinnerFromRound(guestId, round);
+    }
+  };
+
+  const handleHardReset = async () => {
+      if (!isUnlocked) { setShowLoginModal(true); return; }
+      setIsResetting(true);
+      try {
+          await resetLottery();
+          setBatchWinners([]);
+      } finally {
+          setIsResetting(false);
+      }
+  };
+
   return (
     <div className="min-h-screen bg-[#F2F2F7] flex flex-col items-center pb-40 px-4">
       <div className="w-full max-w-5xl py-8 md:py-12 space-y-8">
@@ -105,7 +128,18 @@ const LotteryPanel: React.FC = () => {
                  <button key={r} onClick={() => isUnlocked ? jumpToLotteryRound(r) : setShowLoginModal(true)} className={`w-10 h-10 rounded-xl font-black text-sm transition-all ${currentRound === r ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400 hover:bg-gray-200'}`}>{r}</button>
                ))}
              </div>
-             <button onClick={() => isUnlocked ? logoutAdmin() : setShowLoginModal(true)} className="p-3 bg-[#F2F2F7] rounded-2xl">
+             
+             {/* 重置按鈕：開放給已解鎖使用者，並加入 Loading 狀態 */}
+             <button 
+               onClick={handleHardReset}
+               disabled={isResetting}
+               className={`p-3 rounded-2xl transition-all active:scale-95 ${isResetting ? 'bg-gray-100 text-gray-300' : 'bg-red-50 text-red-600 hover:bg-red-100'}`}
+               title="重置今日得獎紀錄"
+             >
+               {isResetting ? <Loader2 size={20} className="animate-spin" /> : <RotateCcw size={20} />}
+             </button>
+
+             <button onClick={() => isUnlocked ? logoutAdmin() : setShowLoginModal(true)} className="p-3 bg-[#F2F2F7] rounded-2xl transition-all">
                {isUnlocked ? <Unlock size={20} className="text-indigo-600"/> : <Lock size={20} className="text-gray-300"/>}
              </button>
           </div>
@@ -226,7 +260,18 @@ const LotteryPanel: React.FC = () => {
                                             <div className={`text-[9px] font-black px-2 py-0.5 rounded uppercase tracking-tighter ${isMultiWinnerRound ? 'bg-blue-200 text-blue-700' : 'bg-indigo-100 text-indigo-600'}`}>
                                                 {isMultiWinnerRound ? 'Batch Winner' : 'Single Draw'}
                                             </div>
-                                            <div className="text-[9px] font-bold text-slate-300 tabular-nums">ROUND {group.round}</div>
+                                            <div className="text-[9px] font-bold text-slate-300 tabular-nums mb-1">ROUND {group.round}</div>
+                                            
+                                            {/* 撤回按鈕：點擊返回功能 */}
+                                            {isUnlocked && (
+                                                <button 
+                                                    onClick={() => handleRemoveWinner(w.id, group.round, w.name)}
+                                                    className="flex items-center gap-1.5 px-3 py-1 bg-red-50 text-red-600 rounded-lg border border-red-100 hover:bg-red-100 transition-colors active:scale-95"
+                                                >
+                                                    <RotateCcw size={10} strokeWidth={3} />
+                                                    <span className="text-[9px] font-black">撤回</span>
+                                                </button>
+                                            )}
                                         </div>
                                     </div>
                                 ))}

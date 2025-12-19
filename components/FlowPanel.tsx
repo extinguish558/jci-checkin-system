@@ -8,49 +8,128 @@ import {
   Activity, CheckCircle2, Mic2, Award, ChevronRight,
   TrendingUp, RefreshCcw, Database, BellRing, Clock, FileBox,
   FileCheck2, Trophy, ClipboardList, ChevronDown, UserCheck, Users,
-  RotateCcw, AlertTriangle, Check, ListChecks, Edit3, ChevronUp
+  RotateCcw, AlertTriangle, Check, ListChecks, Edit3, ChevronUp, Link, Wifi, WifiOff, FileUp, Move, PieChart, Info
 } from 'lucide-react';
 import { 
   exportDetailedGuestsExcel, 
   exportGiftsExcel, 
   exportMcFlowExcel, 
   exportIntroductionsExcel, 
-  exportLotteryExcel 
+  exportLotteryExcel,
+  parseGuestsFromExcel,
+  parseGiftsFromExcel,
+  parseMcFlowFromExcel
 } from '../services/geminiService';
 
 const FlowPanel: React.FC = () => {
-  const { settings, updateSettings, addFlowFile, removeFlowFile, isAdmin, loginAdmin, logoutAdmin, guests, resetSpecificRecords, clearAllData } = useEvent();
+  const { 
+    settings, updateSettings, addFlowFile, removeFlowFile, isAdmin, loginAdmin, logoutAdmin, guests, 
+    overwriteGuestsFromDraft, addGuestsFromDraft, clearAllData, clearGuestsOnly, clearGiftsOnly, clearMcFlowOnly,
+    resetGlobalEventState, isCloudConnected 
+  } = useEvent();
   const [showLoginModal, setShowLoginModal] = useState(false); 
-  const [showResetModal, setShowResetModal] = useState(false);
-  const [resetOptions, setResetOptions] = useState({ flow: false, gifts: false, checkin: false, lottery: false });
-  
   const [loginPassword, setLoginPassword] = useState("");
   const [isUploading, setIsUploading] = useState(false);
-  const [uploadType, setUploadType] = useState<'schedule' | 'gifts' | 'slides' | 'mcflow' | null>(null);
-  
+  const [uploadProgress, setUploadProgress] = useState<string | null>(null);
   const [isScheduleExpanded, setIsScheduleExpanded] = useState(false);
-  const [isEditingSchedule, setIsEditingSchedule] = useState(false);
-  const [editScheduleText, setEditScheduleText] = useState(settings.briefSchedule || '');
-
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [currentUploadType, setCurrentUploadType] = useState<'guests_file' | 'gifts_file' | 'mcflow_file' | 'schedule' | 'slides' | null>(null);
+  const [importMode, setImportMode] = useState<'add' | 'overwrite'>('add');
 
-  // 當組件掛載（切換至此分頁）時，強制將容器捲動至最上方
   useEffect(() => {
     const mainEl = document.querySelector('main');
-    if (mainEl) {
-      mainEl.scrollTop = 0;
-    }
+    if (mainEl) mainEl.scrollTop = 0;
   }, []);
 
-  const handleLoginSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (loginAdmin(loginPassword)) {
-        setShowLoginModal(false);
-        setLoginPassword("");
-    } else {
-        alert("密碼錯誤");
+  const downloadStoredFile = (type: string) => {
+    const file = settings.flowFiles?.find(f => f.type === type);
+    if (!file || (!file.data && !file.url)) {
+      alert("尚未上傳或找不到此類型的檔案資源");
+      return;
+    }
+    if (file.url) {
+      window.open(file.url, '_blank');
+      return;
+    }
+    if (file.data) {
+      const link = document.createElement('a');
+      link.href = file.data;
+      link.download = file.name;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
     }
   };
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !currentUploadType) return;
+
+    let confirmMsg = "";
+    if (currentUploadType === 'guests_file' && importMode === 'overwrite') confirmMsg = "您選擇了「覆蓋全新名單」。將刪除雲端所有報到紀錄，確定嗎？";
+    else if (currentUploadType === 'gifts_file') confirmMsg = "將刪除並替換目前的禮品資料，確定嗎？";
+    else if (currentUploadType === 'mcflow_file') confirmMsg = "將刪除並替換目前的流程講稿資料，確定嗎？";
+
+    if (confirmMsg && !window.confirm(confirmMsg)) {
+        if (fileInputRef.current) fileInputRef.current.value = '';
+        return;
+    }
+
+    setIsUploading(true);
+    setUploadProgress(`正在解析 ${file.name}...`);
+
+    try {
+      const metaFile: FlowFile = {
+        id: Math.random().toString(36).substr(2, 9),
+        name: file.name,
+        type: currentUploadType,
+        mimeType: file.type,
+        size: file.size,
+        uploadTime: new Date().toISOString(),
+      };
+
+      if (currentUploadType === 'guests_file') {
+        const drafts = await parseGuestsFromExcel(file);
+        if (importMode === 'overwrite') await overwriteGuestsFromDraft(drafts, new Date());
+        else await addGuestsFromDraft(drafts, new Date());
+      } else if (currentUploadType === 'gifts_file') {
+        // 先歸零再上傳
+        await updateSettings({ giftItems: [], flowFiles: (settings.flowFiles || []).filter(f => f.type !== 'gifts_file') });
+        const items = await parseGiftsFromExcel(file);
+        await updateSettings({ giftItems: items });
+      } else if (currentUploadType === 'mcflow_file') {
+        // 重要：先歸零再上傳
+        await updateSettings({ mcFlowSteps: [], flowFiles: (settings.flowFiles || []).filter(f => f.type !== 'mcflow_file') });
+        const steps = await parseMcFlowFromExcel(file);
+        await updateSettings({ mcFlowSteps: steps });
+      } else if (currentUploadType === 'schedule' || currentUploadType === 'slides') {
+        const reader = new FileReader();
+        reader.readAsDataURL(file);
+        reader.onload = async () => {
+          metaFile.data = reader.result as string;
+          await addFlowFile(metaFile);
+        };
+      }
+      
+      if (currentUploadType !== 'guests_file' && currentUploadType !== 'schedule' && currentUploadType !== 'slides') {
+          await addFlowFile(metaFile);
+      }
+    } catch (error: any) {
+      alert("上傳失敗: " + error.message);
+    } finally {
+      setIsUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      setTimeout(() => setUploadProgress(null), 3000);
+    }
+  };
+
+  const handleDetailedClear = async (action: () => Promise<void>) => {
+    if (!isAdmin) { setShowLoginModal(true); return; }
+    try {
+        await action();
+        alert('雲端資料清理成功，已同步至所有設備。');
+    } catch (e: any) { alert('清理失敗: ' + e.message); }
+  }
 
   const getTargetGroup = (g: Guest): string => {
     const title = g.title || '';
@@ -59,289 +138,167 @@ const FlowPanel: React.FC = () => {
     if (category.includes('YB') || category.includes('會友')) return 'YB';
     if (category.includes('OB') || category.includes('特友')) return 'OB';
     const govKeywords = ['政府', '議會', '立委', '市長', '縣長', '局長', '議員', '主任'];
-    const isGovStrict = govKeywords.some(k => fullInfo.includes(k));
-    if ((category === GuestCategory.GOV_OFFICIAL || isGovStrict) && !fullInfo.includes('總會') && !fullInfo.includes('分會')) return 'VIP';
+    if (govKeywords.some(k => fullInfo.includes(k)) && !fullInfo.includes('分會')) return 'VIP';
     if (category.includes('總會') || title.includes('總會')) return 'HQ';
-    if (category.includes('友會') || title.includes('會') || title.includes('聯誼') || title.includes('友好')) return 'VISITING';
+    if (category.includes('友會') || title.includes('會')) return 'VISITING';
     return 'VIP';
   };
 
-  const dashboardData = useMemo(() => {
-    const groups = [
-      { key: 'YB', label: '會友 YB', color: 'bg-blue-500' },
-      { key: 'OB', label: '特友 OB', color: 'bg-orange-500' },
-      { key: 'HQ', label: '總會貴賓', color: 'bg-indigo-500' },
-      { key: 'VISITING', label: '友會貴賓', color: 'bg-green-500' },
-      { key: 'VIP', label: '貴賓 VIP', color: 'bg-purple-500' },
-    ];
-
-    const stats = groups.map(group => {
-      const groupGuests = guests.filter(g => getTargetGroup(g) === group.key);
-      const checkedIn = groupGuests.filter(g => g.isCheckedIn).length;
-      const total = groupGuests.length;
-      return { ...group, checkedIn, total };
+  const registrationStats = useMemo(() => {
+    const categories = [{ key: 'YB', label: '會友 YB', color: 'bg-blue-500' }, { key: 'OB', label: '特友 OB', color: 'bg-orange-500' }, { key: 'HQ', label: '總會貴賓', color: 'bg-indigo-500' }, { key: 'VISITING', label: '友會貴賓', color: 'bg-green-500' }, { key: 'VIP', label: '貴賓 VIP', color: 'bg-purple-500' }];
+    const details = categories.map(cat => {
+      const groupGuests = guests.filter(g => getTargetGroup(g) === cat.key);
+      return { ...cat, checked: groupGuests.filter(g => g.isCheckedIn).length, total: groupGuests.length };
     });
-
-    const totalCheckedIn = guests.filter(g => g.isCheckedIn).length;
-    const totalCount = guests.length;
-    const totalPercent = totalCount > 0 ? Math.round((totalCheckedIn / totalCount) * 100) : 0;
-
-    return { stats, totalCheckedIn, totalCount, totalPercent };
+    const totalChecked = guests.filter(g => g.isCheckedIn).length;
+    return { details, totalChecked, totalCount: guests.length, totalPercent: guests.length > 0 ? Math.round((totalChecked / guests.length) * 100) : 0 };
   }, [guests]);
 
-  const liveStats = useMemo(() => {
+  const flowProgress = useMemo(() => {
     const mcSteps = settings.mcFlowSteps || [];
-    const mcCompletedCount = mcSteps.filter(s => s.isCompleted).length;
-    const uncompletedMc = mcSteps.filter(s => !s.isCompleted);
-    
-    const giftItems = settings.giftItems || [];
-    const giftsPresentedCount = giftItems.filter(i => i.isPresented).length;
-    const unpresentedGifts = giftItems.filter(i => !i.isPresented);
-    
-    const checkedInVips = guests.filter(g => g.isCheckedIn && g.title && !g.title.includes('見習'));
-    const introducedVipsCount = checkedInVips.filter(g => g.isIntroduced).length;
-    const remainingVips = checkedInVips.filter(g => !g.isIntroduced);
+    const uncompleted = mcSteps.filter(s => !s.isCompleted);
+    const current = uncompleted[0] || { title: '活動流程已全部結束', time: '' };
+    return { current, previews: uncompleted.slice(1, 5), isSpeechStep: current.title.includes('致詞') };
+  }, [settings.mcFlowSteps]);
 
-    return {
-      mc: { 
-        active: uncompletedMc[0]?.title || '流程已結束', 
-        previews: uncompletedMc.slice(1, 3).map(s => s.title),
-        current: mcCompletedCount,
-        total: mcSteps.length,
-        percent: mcSteps.length > 0 ? Math.round((mcCompletedCount / mcSteps.length) * 100) : 0 
-      },
-      gifts: { 
-        active: unpresentedGifts[0]?.name || '頒獎已結束', 
-        previews: unpresentedGifts.slice(1, 3).map(i => i.name),
-        current: giftsPresentedCount,
-        total: giftItems.length,
-        percent: giftItems.length > 0 ? Math.round((giftsPresentedCount / giftItems.length) * 100) : 0 
-      },
-      vips: { 
-        count: remainingVips.length,
-        active: remainingVips[0]?.name || '介紹已結束',
-        previews: remainingVips.slice(1, 3).map(g => g.name),
-        current: introducedVipsCount,
-        total: checkedInVips.length,
-        percent: checkedInVips.length > 0 ? Math.round((introducedVipsCount / checkedInVips.length) * 100) : 0 
-      }
-    };
-  }, [settings, guests]);
+  const giftStats = useMemo(() => {
+    const items = settings.giftItems || [];
+    return { total: items.length, completed: items.filter(i => i.isPresented).length, percent: items.length > 0 ? Math.round((items.filter(i => i.isPresented).length / items.length) * 100) : 0 };
+  }, [settings.giftItems]);
 
-  const openEditSchedule = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    setEditScheduleText(settings.briefSchedule || '');
-    setIsEditingSchedule(true);
+  const mcActivityStats = useMemo(() => {
+    const steps = settings.mcFlowSteps || [];
+    return { total: steps.length, completed: steps.filter(s => s.isCompleted).length, percent: steps.length > 0 ? Math.round((steps.filter(s => s.isCompleted).length / steps.length) * 100) : 0 };
+  }, [settings.mcFlowSteps]);
+
+  const handleLoginSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (loginAdmin(loginPassword)) { setShowLoginModal(false); setLoginPassword(""); }
+    else alert("密碼錯誤");
   };
 
   return (
-    <div className="p-4 md:p-8 max-w-4xl mx-auto space-y-4 md:space-y-6 pb-60 bg-[#F2F2F7] min-h-screen">
-      <input type="file" ref={fileInputRef} className="hidden" />
+    <div className="p-4 md:p-8 max-w-4xl mx-auto space-y-6 pb-60 bg-[#F2F2F7] min-h-screen">
+      <input type="file" ref={fileInputRef} onChange={handleFileUpload} className="hidden" />
 
-      {/* 活動配置 */}
-      <div className="bg-white rounded-[1.8rem] md:rounded-[2.5rem] p-5 md:p-8 shadow-sm border border-white space-y-4 md:space-y-8">
+      {/* 頂部區域 */}
+      <div className="bg-white rounded-[2.5rem] p-8 shadow-sm border border-white space-y-6">
         <div className="flex justify-between items-center">
-           <div className="flex items-center gap-1.5">
-             <Activity className="text-blue-500" size={16} strokeWidth={3} />
-             <span className="text-gray-400 font-black tracking-widest text-[8px] md:text-[10px]">EVENT CONTROL</span>
+           <div className="flex items-center gap-2">
+             <Activity className="text-blue-500" size={20} strokeWidth={3} />
+             <span className="text-gray-400 font-black tracking-widest text-xs">EVENT DASHBOARD</span>
            </div>
            <div className="flex items-center gap-2">
-             {isAdmin && (
-               <button onClick={openEditSchedule} className="p-2 md:p-2.5 bg-blue-50 text-blue-600 rounded-xl hover:bg-blue-100 transition-colors">
-                 <Edit3 size={16} />
-               </button>
-             )}
-             <button onClick={() => isAdmin ? logoutAdmin() : setShowLoginModal(true)} className="p-2 md:p-2.5 bg-[#F2F2F7] rounded-xl">
-               {isAdmin ? <Unlock size={16} className="text-[#007AFF]"/> : <Lock size={16} className="text-gray-300"/>}
+             <div className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-black ${isCloudConnected ? 'bg-green-50 text-green-600' : 'bg-red-50 text-red-600'}`}>
+                <Wifi size={12}/> {isCloudConnected ? '雲端同步中' : '斷線/離線'}
+             </div>
+             <button onClick={() => isAdmin ? logoutAdmin() : setShowLoginModal(true)} className="p-2.5 bg-[#F2F2F7] rounded-xl">
+               {isAdmin ? <Unlock size={18} className="text-[#007AFF]"/> : <Lock size={18} className="text-gray-300"/>}
              </button>
            </div>
         </div>
-        
-        <input 
-          type="text" 
-          value={settings.eventName} 
-          onChange={(e) => isAdmin && updateSettings({ eventName: e.target.value })}
-          className="w-full bg-transparent border-none text-xl md:text-4xl font-black text-black focus:ring-0 p-0"
-          placeholder="活動名稱"
-          readOnly={!isAdmin}
-        />
-
-        {/* 流程摘要 */}
-        <div 
-          onClick={() => setIsScheduleExpanded(!isScheduleExpanded)}
-          className={`bg-[#F2F2F7] rounded-[1.2rem] md:rounded-[2rem] p-4 md:p-7 relative cursor-pointer group transition-all duration-300 ${isScheduleExpanded ? 'shadow-inner' : 'hover:bg-[#E8E8EE]'}`}
-        >
-           <div className={`text-sm md:text-xl font-light text-black whitespace-pre-wrap transition-all duration-300 ${isScheduleExpanded ? '' : 'line-clamp-2 md:line-clamp-4'}`}>
-              {settings.briefSchedule || (
-                <span className="text-gray-300 italic">點擊編輯活動流程摘要...</span>
-              )}
-           </div>
-           <div className="mt-2 md:mt-4 flex items-center justify-center text-gray-300 group-hover:text-blue-500 transition-colors">
-              {isScheduleExpanded ? (
-                <div className="flex items-center gap-1 text-[7px] md:text-[10px] font-black uppercase tracking-widest"><ChevronUp size={12} /> 收合</div>
-              ) : (
-                <div className="flex items-center gap-1 text-[7px] md:text-[10px] font-black uppercase tracking-widest"><ChevronDown size={12} /> 展開全文</div>
-              )}
-           </div>
+        <h1 className="text-3xl md:text-4xl font-black text-black">{settings.eventName}</h1>
+        <div onClick={() => setIsScheduleExpanded(!isScheduleExpanded)} className="bg-[#F2F2F7] rounded-3xl p-6 relative cursor-pointer hover:bg-[#E8E8EE] transition-all">
+          <p className={`text-lg font-light leading-relaxed ${isScheduleExpanded ? '' : 'line-clamp-3'}`}>
+            {settings.briefSchedule || "尚無活動內容摘要"}
+          </p>
+          <div className="flex justify-center mt-3 text-gray-300"><ChevronDown size={20} className={isScheduleExpanded ? 'rotate-180' : ''}/></div>
         </div>
       </div>
 
-      {/* 智慧報到儀表板 - 手機版高度縮小 */}
-      <div className="bg-white rounded-[1.8rem] md:rounded-[3rem] p-5 md:p-8 shadow-sm border border-white flex flex-col md:flex-row gap-4 md:gap-8 relative overflow-hidden group">
-        <div className="absolute top-0 left-0 w-1 h-full bg-blue-500/10" />
+      {/* 看板區域 */}
+      <div className="space-y-4">
+        <div className="flex items-center gap-3 px-4"><TrendingUp size={24} className="text-blue-600"/><h4 className="text-xl font-black text-slate-800">活動即時看板</h4></div>
         
-        <div className="flex-1 flex flex-col justify-between space-y-3 md:space-y-6">
-          <div className="flex items-center gap-1.5">
-            <Clock size={14} className="text-blue-500" />
-            <span className="text-[8px] md:text-[11px] font-black text-slate-400 tracking-wider uppercase">報到數據分析</span>
-          </div>
-          
-          <div className="flex items-baseline gap-2 md:gap-4">
-            <span className="text-4xl md:text-8xl font-black text-slate-900 tracking-tighter leading-none">{dashboardData.totalCheckedIn}</span>
-            <span className="text-sm md:text-2xl font-bold text-slate-300">/ {dashboardData.totalCount}</span>
-          </div>
-
-          <div className="mt-auto space-y-1 md:space-y-2">
-            <div className="flex justify-between items-end">
-               <span className="text-[7px] md:text-[9px] font-black text-blue-500 tracking-widest uppercase">Progress</span>
-               <p className="text-[9px] md:text-[11px] font-black text-blue-600">{dashboardData.totalPercent}%</p>
-            </div>
-            <div className="w-full h-1.5 md:h-2.5 bg-gray-50 rounded-full overflow-hidden border border-gray-50 shadow-inner">
-              <div className="h-full bg-blue-500 transition-all duration-1000 shadow-[0_0_8px_rgba(59,130,246,0.4)]" style={{ width: `${dashboardData.totalPercent}%` }} />
+        {/* 報到數據 */}
+        <div className="bg-white rounded-[2.5rem] p-8 shadow-sm border border-white flex flex-col md:flex-row gap-6 md:gap-8 relative overflow-hidden">
+          <div className="absolute top-0 left-0 w-1.5 h-full bg-blue-500/10" />
+          <div className="flex-1 flex flex-col justify-between space-y-4">
+            <div className="flex items-center gap-2"><Clock size={16} className="text-blue-500"/><span className="text-[10px] font-black text-slate-400 tracking-wider uppercase">報到總覽數據</span></div>
+            <div className="flex items-baseline gap-2"><span className="text-5xl md:text-7xl font-black text-slate-900 tracking-tighter leading-none">{registrationStats.totalChecked}</span><span className="text-lg font-bold text-slate-300">/ {registrationStats.totalCount}</span></div>
+            <div className="mt-auto space-y-2">
+              <div className="flex justify-between items-end"><span className="text-[8px] font-black text-blue-500 uppercase tracking-widest">Progress</span><p className="text-[10px] font-black text-blue-600">{registrationStats.totalPercent}%</p></div>
+              <div className="w-full h-2 bg-gray-50 rounded-full overflow-hidden border border-gray-50 shadow-inner"><div className="h-full bg-blue-500 transition-all duration-1000" style={{ width: `${registrationStats.totalPercent}%` }} /></div>
             </div>
           </div>
+          <div className="w-full md:w-auto md:min-w-[280px] border-t md:border-t-0 md:border-l border-gray-50 pt-4 md:pt-0 md:pl-8 flex flex-col justify-center gap-3">
+             <div className="grid grid-cols-2 gap-y-3 gap-x-4">
+                {registrationStats.details.map(detail => (
+                  <div key={detail.key} className="flex flex-col gap-0">
+                    <div className="flex items-center gap-1"><div className={`w-1.5 h-1.5 rounded-full ${detail.color}`} /><span className="text-[9px] font-black text-gray-400 uppercase">{detail.label.replace('貴賓', '')}</span></div>
+                    <div className="flex items-baseline gap-1"><span className="text-base font-black text-slate-700">{detail.checked}</span><span className="text-[9px] font-bold text-slate-200">/ {detail.total}</span></div>
+                  </div>
+                ))}
+             </div>
+          </div>
         </div>
 
-        <div className="w-full md:w-auto md:min-w-[240px] border-t md:border-t-0 md:border-l border-gray-50 pt-3 md:pt-0 md:pl-8 flex flex-col justify-center gap-2 md:gap-3">
-           <h4 className="text-[7px] md:text-[9px] font-black text-gray-300 uppercase tracking-[0.2em] mb-0.5 md:mb-2">Categories</h4>
-           <div className="grid grid-cols-3 md:grid-cols-2 gap-y-2 gap-x-3">
-              {dashboardData.stats.map(detail => (
-                <div key={detail.key} className="flex flex-col gap-0">
-                  <div className="flex items-center gap-1">
-                    <div className={`w-1 h-1 rounded-full ${detail.color}`} />
-                    <span className="text-[8px] md:text-[10px] font-black text-gray-400 uppercase truncate">{detail.label.split(' ')[0]}</span>
-                  </div>
-                  <div className="flex items-baseline gap-1">
-                    <span className="text-sm md:text-lg font-black text-slate-700">{detail.checkedIn}</span>
-                    <span className="text-[7px] font-bold text-slate-200">/ {detail.total}</span>
-                  </div>
-                </div>
-              ))}
-           </div>
+        {/* 司儀監控 */}
+        <div className={`bg-white p-6 md:p-8 rounded-[2.5rem] shadow-sm border-2 transition-all relative overflow-hidden ${flowProgress.isSpeechStep ? 'border-red-500 shadow-[0_0_15px_rgba(239,68,68,0.15)]' : 'border-white'}`}>
+          {flowProgress.isSpeechStep && <div className="absolute top-0 right-0 bg-red-600 text-white font-black px-4 py-1.5 rounded-bl-2xl text-[10px] md:text-xs">提醒：移動司儀台</div>}
+          <div className="flex items-center justify-between mb-4"><div className={`flex items-center gap-2 ${flowProgress.isSpeechStep ? 'text-red-600' : 'text-blue-600'}`}><ListChecks size={20} strokeWidth={3} /><span className="font-black uppercase tracking-widest text-xs">司儀流程監控</span></div></div>
+          <div className="flex items-start gap-4 mb-6"><div className={`w-1 h-8 rounded-full animate-pulse mt-1 ${flowProgress.isSpeechStep ? 'bg-red-600' : 'bg-blue-600'}`} /><h3 className={`text-xl md:text-2xl font-black leading-tight flex-1 ${flowProgress.isSpeechStep ? 'text-red-700' : 'text-slate-900'}`}>{flowProgress.current.title}</h3></div>
         </div>
       </div>
 
-      {/* 流程監控數據 - 手機版高度縮小一半，顯示兩個預告 */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3 md:gap-4">
-        {/* 當前流程監控 */}
-        <div className="bg-white rounded-[1.2rem] md:rounded-[2rem] p-4 md:p-6 shadow-sm border border-white flex flex-col gap-2 md:gap-3 min-h-[110px] md:min-h-[180px]">
-             {/* Use Tailwind classes for responsive icon sizing to fix 'md:size' error */}
-             <div className="w-8 h-8 md:w-10 md:h-10 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center shrink-0"><ListTodo className="w-4 h-4 md:w-5 md:h-5" /></div>
-             <div className="flex-1 min-w-0">
-                <div className="flex justify-between items-center mb-0.5">
-                  <h4 className="text-[8px] md:text-[10px] font-black text-gray-400 uppercase">當前流程</h4>
-                  <div className="flex items-center gap-1.5 md:gap-2">
-                    <span className="text-[8px] md:text-[10px] font-black text-gray-300 tabular-nums">{liveStats.mc.current}/{liveStats.mc.total}</span>
-                    <span className="text-[8px] md:text-[10px] font-black text-blue-500 tabular-nums">{liveStats.mc.percent}%</span>
-                  </div>
-                </div>
-                <p className="text-xs md:text-base font-black text-black leading-tight truncate md:line-clamp-1">{liveStats.mc.active}</p>
-                {liveStats.mc.previews.length > 0 && (
-                  <div className="space-y-0.5 mt-1.5 md:mt-2 opacity-60">
-                    {liveStats.mc.previews.slice(0, 2).map((p, idx) => (
-                      <p key={idx} className="text-[7px] md:text-[10px] font-bold text-gray-500 truncate">預告: {p}</p>
-                    ))}
-                  </div>
-                )}
-             </div>
-             <div className="w-full h-1 bg-gray-50 rounded-full mt-auto"><div className="h-full bg-blue-500 transition-all duration-500" style={{ width: `${liveStats.mc.percent}%` }} /></div>
-        </div>
-
-        {/* 禮品監控 */}
-        <div className="bg-white rounded-[1.2rem] md:rounded-[2rem] p-4 md:p-6 shadow-sm border border-white flex flex-col gap-2 md:gap-3 min-h-[110px] md:min-h-[180px]">
-             {/* Use Tailwind classes for responsive icon sizing to fix 'md:size' error */}
-             <div className="w-8 h-8 md:w-10 md:h-10 bg-orange-50 text-orange-500 rounded-xl flex items-center justify-center shrink-0"><Award className="w-4 h-4 md:w-5 md:h-5" /></div>
-             <div className="flex-1 min-w-0">
-                <div className="flex justify-between items-center mb-0.5">
-                  <h4 className="text-[8px] md:text-[10px] font-black text-gray-400 uppercase">禮品進度</h4>
-                  <div className="flex items-center gap-1.5 md:gap-2">
-                    <span className="text-[8px] md:text-[10px] font-black text-gray-300 tabular-nums">{liveStats.gifts.current}/{liveStats.gifts.total}</span>
-                    <span className="text-[8px] md:text-[10px] font-black text-orange-500 tabular-nums">{liveStats.gifts.percent}%</span>
-                  </div>
-                </div>
-                <p className="text-xs md:text-base font-black text-black leading-tight truncate md:line-clamp-1">{liveStats.gifts.active}</p>
-                {liveStats.gifts.previews.length > 0 && (
-                  <div className="space-y-0.5 mt-1.5 md:mt-2 opacity-60">
-                    {liveStats.gifts.previews.slice(0, 2).map((p, idx) => (
-                      <p key={idx} className="text-[7px] md:text-[10px] font-bold text-gray-500 truncate">預告: {p}</p>
-                    ))}
-                  </div>
-                )}
-             </div>
-             <div className="w-full h-1 bg-gray-50 rounded-full mt-auto"><div className="h-full bg-orange-500 transition-all duration-500" style={{ width: `${liveStats.gifts.percent}%` }} /></div>
-        </div>
-
-        {/* 貴賓介紹監控 */}
-        <div className="bg-white rounded-[1.2rem] md:rounded-[2rem] p-4 md:p-6 shadow-sm border border-white flex flex-col gap-2 md:gap-3 min-h-[110px] md:min-h-[180px]">
-             {/* Use Tailwind classes for responsive icon sizing to fix 'md:size' error */}
-             <div className="w-8 h-8 md:w-10 md:h-10 bg-purple-50 text-purple-600 rounded-xl flex items-center justify-center shrink-0"><Mic2 className="w-4 h-4 md:w-5 md:h-5" /></div>
-             <div className="flex-1 min-w-0">
-                <div className="flex justify-between items-center mb-0.5">
-                    <h4 className="text-[8px] md:text-[10px] font-black text-gray-400 uppercase">貴賓介紹</h4>
-                    <div className="flex items-center gap-1.5 md:gap-2">
-                      <span className="text-[8px] md:text-[10px] font-black text-gray-300 tabular-nums">{liveStats.vips.current}/{liveStats.vips.total}</span>
-                      <span className="text-[8px] md:text-[10px] font-black text-purple-500 tabular-nums">{liveStats.vips.percent}%</span>
-                    </div>
-                </div>
-                <p className="text-xs md:text-base font-black text-black leading-tight truncate md:line-clamp-1">{liveStats.vips.active}</p>
-                {liveStats.vips.previews.length > 0 && (
-                  <div className="space-y-0.5 mt-1.5 md:mt-2 opacity-60">
-                    {liveStats.vips.previews.slice(0, 2).map((g, idx) => (
-                      <p key={idx} className="text-[7px] md:text-[10px] font-bold text-gray-500 truncate">預告: {g}</p>
-                    ))}
-                  </div>
-                )}
-             </div>
-             <div className="w-full h-1 bg-gray-50 rounded-full mt-auto"><div className="h-full bg-purple-500 transition-all duration-500" style={{ width: `${liveStats.vips.percent}%` }} /></div>
-        </div>
-      </div>
-
-      {/* 系統報表匯出 */}
-      <div className="space-y-2 md:space-y-3 pt-2 md:pt-4">
-        <h4 className="px-4 text-[8px] md:text-[10px] font-black text-gray-400 uppercase tracking-widest">系統報表下載</h4>
-        <div className="grid grid-cols-2 xs:grid-cols-3 md:grid-cols-5 gap-2 md:gap-2.5">
-            {[
-                { label: '嘉賓名冊', icon: ClipboardList, color: 'text-blue-500', fn: () => exportDetailedGuestsExcel(guests, settings.eventName, getTargetGroup) },
-                { label: '禮品狀態', icon: Award, color: 'text-orange-500', fn: () => exportGiftsExcel(settings.giftItems || [], settings.eventName) },
-                { label: '活動流程', icon: ListTodo, color: 'text-indigo-500', fn: () => exportMcFlowExcel(settings.mcFlowSteps || [], settings.eventName) },
-                { label: '介紹現況', icon: Mic2, color: 'text-purple-500', fn: () => exportIntroductionsExcel(guests, settings.eventName) },
-                { label: '抽獎結果', icon: Trophy, color: 'text-amber-500', fn: () => exportLotteryExcel(guests, settings.eventName) }
-            ].map(report => (
-                <button key={report.label} onClick={report.fn} className="bg-white p-3 md:p-4 rounded-xl md:rounded-3xl shadow-sm border border-white flex flex-col items-center justify-center gap-1 md:gap-1.5 transition-all active:scale-95 group">
-                    <report.icon size={16} className={`${report.color} md:w-5 md:h-5`} />
-                    <span className="text-[8px] md:text-[10px] font-black text-gray-500 truncate w-full px-1">{report.label}</span>
-                </button>
-            ))}
-        </div>
-      </div>
-
+      {/* 管理功能 */}
       {isAdmin && (
-        <div className="bg-white rounded-[1.5rem] p-4 md:p-6 border border-red-50 flex flex-col md:flex-row gap-2 md:gap-3 mt-4">
-          <button onClick={() => setShowResetModal(true)} className="flex-1 bg-red-50 text-red-600 p-3 md:p-4 rounded-xl font-black text-[10px] md:text-xs active:scale-95 transition-transform flex items-center justify-center gap-2"><RotateCcw size={14}/>重置紀錄</button>
-          <button onClick={clearAllData} className="flex-1 bg-gray-900 text-white p-3 md:p-4 rounded-xl font-black text-[10px] md:text-xs active:scale-95 transition-transform">清空系統</button>
-        </div>
+        <>
+          <div className="bg-white rounded-[2.5rem] p-8 border border-white shadow-sm space-y-8">
+            <div className="flex items-center gap-3"><FileUp size={24} className="text-blue-600" /><h4 className="text-xl font-black text-slate-800">人員名冊維護</h4></div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <button onClick={() => { setCurrentUploadType('guests_file'); setImportMode('add'); fileInputRef.current?.click(); }} className="flex flex-col items-center justify-center p-8 bg-blue-50 border-2 border-dashed border-blue-200 rounded-3xl group transition-all active:scale-95"><Users className="mb-2 text-blue-600 group-hover:scale-110" size={32} /><span className="text-lg font-black text-blue-900">累加/更新名單</span></button>
+              <button onClick={() => { setCurrentUploadType('guests_file'); setImportMode('overwrite'); fileInputRef.current?.click(); }} className="flex flex-col items-center justify-center p-8 bg-red-50 border-2 border-dashed border-red-100 rounded-3xl group transition-all active:scale-95"><RotateCcw className="mb-2 text-red-600 group-hover:rotate-180" size={32} /><span className="text-lg font-black text-red-900">覆蓋全新名單</span></button>
+            </div>
+            {uploadProgress && <div className="flex items-center justify-center gap-2 py-4 bg-blue-500/10 rounded-2xl animate-pulse"><Loader2 className="animate-spin text-blue-600" size={20} /><span className="text-sm font-black text-blue-600">{uploadProgress}</span></div>}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {[
+                { type: 'gifts_file', label: '上傳禮品清單', icon: Award, color: 'orange', desc: '替換「禮品頒贈」頁面資料。' },
+                { type: 'schedule', label: '上傳流程檔案', icon: ListTodo, color: 'emerald', desc: '更新活動詳細流程文件。' },
+                { type: 'slides', label: '上傳簡報檔案', icon: Presentation, color: 'purple', desc: '更新活動呈現簡報。' },
+              ].map(item => (
+                <button key={item.type} onClick={() => { setCurrentUploadType(item.type as any); fileInputRef.current?.click(); }} className="flex items-start gap-4 p-5 bg-slate-50 border border-slate-100 rounded-[1.8rem] hover:bg-white hover:border-blue-200 group active:scale-[0.98] text-left">
+                  <div className={`shrink-0 w-12 h-12 rounded-2xl bg-${item.color}-100 flex items-center justify-center group-hover:scale-110`}><item.icon size={24} className={`text-${item.color}-600`} /></div>
+                  <div className="flex-1 space-y-1"><span className="block text-sm font-black text-slate-800">{item.label}</span><p className="text-[10px] font-bold text-slate-400 italic italic">{item.desc}</p></div>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="bg-slate-900 rounded-[2.5rem] p-8 text-white space-y-6">
+            <div className="flex items-center gap-3"><RefreshCcw size={24} className="text-red-400" /><h4 className="text-xl font-black">日常維護與重置</h4></div>
+            <div className="space-y-4">
+              <button onClick={() => resetGlobalEventState()} className="w-full flex items-center justify-center gap-3 p-5 bg-white/10 hover:bg-white/20 rounded-2xl transition-all border border-white/10 group"><RotateCcw size={20} className="text-red-400 group-hover:rotate-[-90deg]" /><div className="text-left"><p className="font-black text-sm">重置今日活動進度</p><p className="text-[9px] text-white/40">不含名單</p></div></button>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <button onClick={() => handleDetailedClear(clearGuestsOnly)} className="flex flex-col items-center justify-center gap-2 p-5 bg-red-600/20 hover:bg-red-600/40 rounded-2xl border border-red-500/20 group"><Users size={24} className="text-red-400 group-hover:scale-110" /><p className="font-black text-sm">報到名單清除</p></button>
+                <button onClick={() => handleDetailedClear(clearGiftsOnly)} className="flex flex-col items-center justify-center gap-2 p-5 bg-red-600/20 hover:bg-red-600/40 rounded-2xl border border-red-500/20 group"><Award size={24} className="text-red-400 group-hover:scale-110" /><p className="font-black text-sm">禮品資料清除</p></button>
+              </div>
+            </div>
+          </div>
+        </>
       )}
 
+      {/* 報表匯出 */}
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2">
+        {[
+          { label: '報到總表', icon: ClipboardList, fn: () => exportDetailedGuestsExcel(guests, settings.eventName, getTargetGroup) },
+          { label: '禮品狀態', icon: Award, fn: () => exportGiftsExcel(settings.giftItems || [], settings.eventName) },
+          { label: '介紹現況', icon: Mic2, fn: () => exportIntroductionsExcel(guests, settings.eventName) },
+          { label: '抽獎結果', icon: Trophy, fn: () => exportLotteryExcel(guests, settings.eventName) },
+          { label: '司儀講稿', icon: FileText, fn: () => exportMcFlowExcel(settings.mcFlowSteps || [], settings.eventName) },
+          { label: '流程檔案', icon: ListTodo, fn: () => downloadStoredFile('schedule') }
+        ].map(item => (
+          <button key={item.label} onClick={item.fn} className="bg-white p-4 rounded-2xl shadow-sm border border-white flex flex-col items-center gap-2 hover:bg-slate-50 transition-all"><item.icon size={18} className="text-blue-500" /><span className="text-[10px] font-black text-slate-500">{item.label}</span></button>
+        ))}
+      </div>
+
       {showLoginModal && (
-        <div className="fixed inset-0 ios-blur bg-black/40 z-[250] flex items-center justify-center p-6">
-          <div className="bg-white rounded-[2rem] p-6 w-full max-w-xs shadow-2xl flex flex-col items-center gap-4 border border-white/20">
-            <h3 className="text-lg font-black text-black">管理員授權</h3>
+        <div className="fixed inset-0 ios-blur bg-black/40 z-[300] flex items-center justify-center p-6">
+          <div className="bg-white rounded-[2rem] p-8 w-full max-w-xs shadow-2xl flex flex-col items-center gap-6">
+            <h3 className="text-xl font-black text-black text-center">管理權限解鎖</h3>
             <form onSubmit={handleLoginSubmit} className="w-full space-y-4">
-              <input type="password" placeholder="••••" value={loginPassword} onChange={e => setLoginPassword(e.target.value)} className="w-full bg-[#F2F2F7] border-none rounded-2xl py-4 px-4 text-center text-3xl font-black outline-none" autoFocus />
-              <div className="flex gap-2">
-                <button type="button" onClick={() => setShowLoginModal(false)} className="flex-1 py-3 font-black text-gray-400 text-[10px]">取消</button>
-                <button type="submit" className="flex-1 py-3 bg-blue-600 text-white font-black rounded-xl shadow-lg active:scale-95 text-[10px]">確認</button>
-              </div>
+              <input type="password" placeholder="••••" value={loginPassword} onChange={e => setLoginPassword(e.target.value)} className="w-full bg-[#F2F2F7] border-none rounded-2xl py-5 px-4 text-center text-4xl font-black outline-none" autoFocus />
+              <div className="flex gap-2 pt-2"><button type="button" onClick={() => setShowLoginModal(false)} className="flex-1 py-4 font-black text-gray-400">取消</button><button type="submit" className="flex-1 py-4 bg-blue-600 text-white font-black rounded-2xl">確認</button></div>
             </form>
           </div>
         </div>

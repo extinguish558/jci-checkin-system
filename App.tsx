@@ -7,7 +7,7 @@ import LotteryPanel from './components/LotteryPanel';
 import FlowPanel from './components/FlowPanel';
 import McFlowPanel from './components/McFlowPanel';
 import GiftsPanel from './components/GiftsPanel';
-import { ClipboardList, Mic2, Gift, ScrollText, ChevronUp, ListChecks, Award, Clock } from 'lucide-react';
+import { ClipboardList, Mic2, Gift, ScrollText, ChevronUp, ListChecks, Award, Clock, FileText } from 'lucide-react';
 
 // 內部組件以便使用 EventContext
 const AppContent: React.FC = () => {
@@ -77,8 +77,8 @@ const AppContent: React.FC = () => {
               <span className="text-[8px] md:text-[10px] font-black tracking-tighter">禮品頒贈</span>
             </button>
             <button onClick={() => setActiveTab('mcflow')} className={`flex flex-col items-center gap-0.5 md:gap-1.5 transition-all flex-1 ${activeTab === 'mcflow' ? 'text-[#007AFF]' : 'text-gray-400'}`}>
-              <ListChecks size={activeTab === 'mcflow' ? 20 : 18} className={`md:w-6 md:h-6 transition-transform ${activeTab === 'mcflow' ? 'scale-110 drop-shadow-[0_0_8px_rgba(0,122,255,0.5)]' : ''}`} />
-              <span className="text-[8px] md:text-[10px] font-black tracking-tighter">司儀流程</span>
+              <FileText size={activeTab === 'mcflow' ? 20 : 18} className={`md:w-6 md:h-6 transition-transform ${activeTab === 'mcflow' ? 'scale-110 drop-shadow-[0_0_8px_rgba(0,122,255,0.5)]' : ''}`} />
+              <span className="text-[8px] md:text-[10px] font-black tracking-tighter">司儀講稿</span>
             </button>
             <button onClick={() => setActiveTab('mc')} className={`flex flex-col items-center gap-0.5 md:gap-1.5 transition-all flex-1 ${activeTab === 'mc' ? 'text-[#007AFF]' : 'text-gray-400'}`}>
               <Mic2 size={activeTab === 'mc' ? 20 : 18} className={`md:w-6 md:h-6 transition-transform ${activeTab === 'mc' ? 'scale-110 drop-shadow-[0_0_8px_rgba(0,122,255,0.5)]' : ''}`} />

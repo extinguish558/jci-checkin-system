@@ -1,3 +1,4 @@
+
 import firebase from "firebase/compat/app";
 import "firebase/compat/firestore";
 
@@ -13,28 +14,30 @@ const firebaseConfig = {
 };
 
 // 檢查使用者是否已經設定了真實的 Project ID
-const isConfigured = firebaseConfig.projectId && !firebaseConfig.projectId.includes("您的專案ID");
+const isConfigured = firebaseConfig.projectId && firebaseConfig.projectId !== "" && !firebaseConfig.projectId.includes("您的專案ID");
 
-let appInstance = null;
-let dbInstance = null;
+let appInstance: firebase.app.App | null = null;
+let dbInstance: firebase.firestore.Firestore | null = null;
 
 if (isConfigured) {
     try {
-        // 確保不重複初始化
         if (!firebase.apps.length) {
             appInstance = firebase.initializeApp(firebaseConfig);
-            console.log("Firebase initialized successfully");
         } else {
             appInstance = firebase.app();
         }
         
-        // 取得 Firestore 實例
         dbInstance = appInstance.firestore();
+        
+        // 啟用離線持久化（選用，但在此系統中我們傾向於即時同步）
+        // dbInstance.settings({ cacheSizeBytes: firebase.firestore.CACHE_SIZE_UNLIMITED });
+        
+        console.log("Firebase/Firestore initialized with project:", firebaseConfig.projectId);
     } catch (e) {
         console.error("Firebase initialization error:", e);
     }
 } else {
-    console.warn("Firebase 尚未設定！系統將以「單機模式」運作。");
+    console.warn("Firebase 尚未設定或 Project ID 無效！系統將以單機模式運作。");
 }
 
 export const app = appInstance;
