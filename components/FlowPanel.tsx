@@ -1,4 +1,3 @@
-
 import React, { useRef, useState, useEffect, useMemo } from 'react';
 import { useEvent } from '../context/EventContext';
 import { FlowFile, GuestCategory, Guest } from '../types';
@@ -142,6 +141,56 @@ const FlowPanel: React.FC = () => {
     return 'VIP';
   };
 
+  // 1. 司儀流程監控數據
+  const flowMonitoring = useMemo(() => {
+    const steps = settings.mcFlowSteps || [];
+    const uncompleted = steps.filter(s => !s.isCompleted);
+    const current = uncompleted[0] || { title: '活動流程已全部結束', time: '' };
+    const upcoming = uncompleted.slice(1, 5);
+    return { current, upcoming };
+  }, [settings.mcFlowSteps]);
+
+  // 2. 禮品頒發進度數據 (當前獎項 + 接續 4 個)
+  const giftMonitoring = useMemo(() => {
+    const items = settings.giftItems || [];
+    const total = items.length;
+    const completed = items.filter(i => i.isPresented).length;
+    const percent = total > 0 ? Math.round((completed / total) * 100) : 0;
+    
+    const unpresented = items.filter(i => !i.isPresented);
+    const currentGift = unpresented[0] || null;
+    const next4Gifts = unpresented.slice(1, 5);
+    
+    return { completed, total, percent, currentGift, next4Gifts };
+  }, [settings.giftItems]);
+
+  // 3. 貴賓介紹進度數據
+  const introMonitoring = useMemo(() => {
+    const presentGuests = guests.filter(g => g.isCheckedIn);
+    const introduced = presentGuests.filter(g => g.isIntroduced).length;
+    const totalPresent = presentGuests.length;
+    const percent = totalPresent > 0 ? Math.round((introduced / totalPresent) * 100) : 0;
+
+    // 取得接下來待介紹的 4 位 (依照介紹權重排序)
+    const toHalfWidth = (str: string) => str.replace(/[\uff01-\uff5e]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) - 0xfee0)).replace(/\u3000/g, ' ');
+    const getWeight = (g: Guest): number => {
+      const t = toHalfWidth((g.title || '') + (g.category || '')).toLowerCase();
+      if (t.includes('政府') || t.includes('議會')) return 1;
+      if (t.includes('總會')) return 2;
+      if (t.includes('會長')) return 3;
+      if (t.includes('主席')) return 4;
+      if (t.includes('友會') || t.includes('兄弟會')) return 5;
+      return 10;
+    };
+
+    const upcoming = presentGuests
+      .filter(g => !g.isIntroduced)
+      .sort((a, b) => getWeight(a) - getWeight(b))
+      .slice(0, 4);
+
+    return { introduced, totalPresent, percent, upcoming };
+  }, [guests]);
+
   const registrationStats = useMemo(() => {
     const categories = [{ key: 'YB', label: '會友 YB', color: 'bg-blue-500' }, { key: 'OB', label: '特友 OB', color: 'bg-orange-500' }, { key: 'HQ', label: '總會貴賓', color: 'bg-indigo-500' }, { key: 'VISITING', label: '友會貴賓', color: 'bg-green-500' }, { key: 'VIP', label: '貴賓 VIP', color: 'bg-purple-500' }];
     const details = categories.map(cat => {
@@ -151,14 +200,6 @@ const FlowPanel: React.FC = () => {
     const totalChecked = guests.filter(g => g.isCheckedIn).length;
     return { details, totalChecked, totalCount: guests.length, totalPercent: guests.length > 0 ? Math.round((totalChecked / guests.length) * 100) : 0 };
   }, [guests]);
-
-  const flowProgress = useMemo(() => {
-    const mcSteps = settings.mcFlowSteps || [];
-    const uncompleted = mcSteps.filter(s => !s.isCompleted);
-    const current = uncompleted[0] || { title: '活動流程已全部結束', time: '' };
-    const previews = uncompleted.slice(1, 5);
-    return { current, previews, isSpeechStep: current.title.includes('致詞') };
-  }, [settings.mcFlowSteps]);
 
   const handleLoginSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -199,6 +240,7 @@ const FlowPanel: React.FC = () => {
       <div className="space-y-4">
         <div className="flex items-center gap-3 px-4"><TrendingUp size={24} className="text-blue-600"/><h4 className="text-xl font-black text-slate-800">活動即時看板</h4></div>
         
+        {/* 報到總覽卡片 */}
         <div className="bg-white rounded-[2.5rem] p-8 shadow-sm border border-white flex flex-col md:flex-row gap-6 md:gap-8 relative overflow-hidden">
           <div className="absolute top-0 left-0 w-1.5 h-full bg-blue-500/10" />
           <div className="flex-1 flex flex-col justify-between space-y-4">
@@ -218,13 +260,135 @@ const FlowPanel: React.FC = () => {
                   </div>
                 ))}
              </div>
+             {/* 所有人都可以點擊的下載按鈕 */}
+             <div className="mt-2 pt-2 border-t border-gray-50">
+                <button 
+                  onClick={() => downloadStoredFile('schedule')}
+                  className="w-full flex items-center justify-center gap-2 py-3 bg-blue-50 text-blue-600 rounded-2xl font-black text-[11px] hover:bg-blue-100 transition-all active:scale-95 shadow-sm border border-blue-100/50"
+                >
+                  <Download size={14} />
+                  下載完整活動流程
+                </button>
+             </div>
           </div>
         </div>
 
-        <div className={`bg-white p-6 md:p-8 rounded-[2.5rem] shadow-sm border-2 transition-all relative overflow-hidden ${flowProgress.isSpeechStep ? 'border-red-500 shadow-[0_0_15px_rgba(239,68,68,0.15)]' : 'border-white'}`}>
-          {flowProgress.isSpeechStep && <div className="absolute top-0 right-0 bg-red-600 text-white font-black px-4 py-1.5 rounded-bl-2xl text-[10px] md:text-xs">提醒：移動司儀台</div>}
-          <div className="flex items-center justify-between mb-4"><div className={`flex items-center gap-2 ${flowProgress.isSpeechStep ? 'text-red-600' : 'text-blue-600'}`}><ListChecks size={20} strokeWidth={3} /><span className="font-black uppercase tracking-widest text-xs">司儀流程監控</span></div></div>
-          <div className="flex items-start gap-4 mb-6"><div className={`w-1 h-8 rounded-full animate-pulse mt-1 ${flowProgress.isSpeechStep ? 'bg-red-600' : 'bg-blue-600'}`} /><h3 className={`text-xl md:text-2xl font-black leading-tight flex-1 ${flowProgress.isSpeechStep ? 'text-red-700' : 'text-slate-900'}`}>{flowProgress.current.title}</h3></div>
+        {/* 1. 司儀流程監控 */}
+        <div className="bg-white rounded-[2.5rem] p-8 shadow-sm border border-white space-y-6">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 text-blue-600">
+              <ListChecks size={20} strokeWidth={3} />
+              <span className="font-black uppercase tracking-widest text-xs">司儀流程監控</span>
+            </div>
+            {flowMonitoring.current.time && (
+               <div className="flex items-center gap-1 px-3 py-1 bg-blue-50 text-blue-600 rounded-full text-[10px] font-black">
+                 <Clock size={11} /> {flowMonitoring.current.time}
+               </div>
+             )}
+          </div>
+          <div className="flex items-start gap-4">
+            <div className="w-1 h-8 bg-blue-600 rounded-full animate-pulse mt-1" />
+            <h3 className="text-xl md:text-3xl font-black text-slate-900 flex-1">{flowMonitoring.current.title}</h3>
+          </div>
+          
+          {flowMonitoring.upcoming.length > 0 && (
+            <div className="pt-4 border-t border-gray-100 space-y-3">
+              <span className="text-[10px] font-black text-gray-300 uppercase tracking-[0.2em]">預告流程 (UPCOMING)</span>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                {flowMonitoring.upcoming.map((item, idx) => (
+                  <div key={item.id} className="flex items-center gap-3 p-3 bg-slate-50 rounded-xl border border-transparent hover:border-blue-100 transition-all">
+                    <span className="text-xs font-black text-slate-300">#{(idx + 2)}</span>
+                    <span className="text-sm font-bold text-slate-700 truncate flex-1">{item.title}</span>
+                    {item.time && <span className="text-[10px] font-black text-slate-400">{item.time}</span>}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* 2. 禮品頒發進度 (整合當前獎項 + 接續 4 個) */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <div className="bg-white rounded-[2.5rem] p-8 shadow-sm border border-white space-y-6">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-orange-500">
+                <Award size={20} strokeWidth={3} />
+                <span className="font-black uppercase tracking-widest text-xs">禮品頒發進度</span>
+              </div>
+              <span className="text-lg font-black text-orange-600">{giftMonitoring.percent}%</span>
+            </div>
+            
+            {/* 當前獎項標題 */}
+            <div className="space-y-1">
+              <span className="text-[10px] font-black text-gray-300 uppercase tracking-widest">當前頒發獎項</span>
+              <h3 className="text-xl md:text-2xl font-black text-slate-900 leading-tight">
+                {giftMonitoring.currentGift ? giftMonitoring.currentGift.name : "活動獎項已全數頒發"}
+              </h3>
+            </div>
+
+            <div className="flex items-baseline gap-2">
+              <span className="text-4xl font-black text-slate-900">{giftMonitoring.completed}</span>
+              <span className="text-base font-bold text-slate-300">/ {giftMonitoring.total} 件已完成</span>
+            </div>
+            
+            <div className="w-full h-2 bg-orange-50 rounded-full overflow-hidden">
+              <div className="h-full bg-orange-500 transition-all duration-1000" style={{ width: `${giftMonitoring.percent}%` }} />
+            </div>
+            
+            <div className="pt-4 border-t border-gray-100 space-y-3">
+              <span className="text-[10px] font-black text-gray-300 uppercase tracking-[0.2em]">接續 4 項獎項預告</span>
+              <div className="space-y-2">
+                {giftMonitoring.next4Gifts.map((gift) => (
+                  <div key={gift.id} className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <ChevronRight size={10} className="text-orange-300 shrink-0" />
+                      <span className="text-xs font-bold text-slate-500 truncate">{gift.name}</span>
+                    </div>
+                    <span className="text-[9px] font-black text-slate-300 shrink-0 tabular-nums">#{gift.sequence}</span>
+                  </div>
+                ))}
+                {giftMonitoring.next4Gifts.length === 0 && <span className="text-[10px] font-bold text-slate-300 italic">無後續禮品預告</span>}
+              </div>
+            </div>
+          </div>
+
+          {/* 3. 貴賓介紹進度 */}
+          <div className="bg-white rounded-[2.5rem] p-8 shadow-sm border border-white space-y-6">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-indigo-600">
+                <Mic2 size={20} strokeWidth={3} />
+                <span className="font-black uppercase tracking-widest text-xs">貴賓介紹現況</span>
+              </div>
+              <span className="text-lg font-black text-indigo-600">{introMonitoring.percent}%</span>
+            </div>
+            <div className="flex items-baseline gap-2">
+              <span className="text-5xl font-black text-slate-900">{introMonitoring.introduced}</span>
+              <span className="text-lg font-bold text-slate-300">/ {introMonitoring.totalPresent} 位已報到</span>
+            </div>
+            <div className="w-full h-2 bg-indigo-50 rounded-full overflow-hidden">
+              <div className="h-full bg-indigo-500 transition-all duration-1000" style={{ width: `${introMonitoring.percent}%` }} />
+            </div>
+
+            <div className="pt-4 border-t border-gray-100 space-y-3">
+              <div className="flex justify-between items-center">
+                <span className="text-[10px] font-black text-gray-300 uppercase tracking-[0.2em]">待介紹貴賓預告</span>
+                <span className="text-[10px] font-black text-indigo-400 bg-indigo-50 px-2 py-0.5 rounded">NEXT 4</span>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                {introMonitoring.upcoming.map((g) => (
+                  <div key={g.id} className="p-2 bg-indigo-50/50 rounded-xl border border-indigo-100/50">
+                    <p className="text-xs font-black text-slate-800 truncate">{g.name}</p>
+                    <p className="text-[8px] font-bold text-indigo-400 truncate mt-0.5">{g.title || '貴賓'}</p>
+                  </div>
+                ))}
+                {introMonitoring.upcoming.length === 0 && (
+                   <div className="col-span-2 py-2 text-center">
+                     <span className="text-[10px] font-bold text-slate-300 italic">目前無待介紹貴賓</span>
+                   </div>
+                )}
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -260,22 +424,22 @@ const FlowPanel: React.FC = () => {
               </div>
             </div>
           </div>
+
+          {/* 報表匯出 - 僅管理員可見 */}
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2">
+            {[
+              { label: '報到總表', icon: ClipboardList, fn: () => exportDetailedGuestsExcel(guests, settings.eventName, getTargetGroup) },
+              { label: '禮品狀態', icon: Award, fn: () => exportGiftsExcel(settings.giftItems || [], settings.eventName) },
+              { label: '介紹現況', icon: Mic2, fn: () => exportIntroductionsExcel(guests, settings.eventName) },
+              { label: '抽獎結果', icon: Trophy, fn: () => exportLotteryExcel(guests, settings.eventName) },
+              { label: '司儀講稿', icon: FileText, fn: () => exportMcFlowExcel(settings.mcFlowSteps || [], settings.eventName) },
+              { label: '流程檔案', icon: ListTodo, fn: () => downloadStoredFile('schedule') }
+            ].map(item => (
+              <button key={item.label} onClick={item.fn} className="bg-white p-4 rounded-2xl shadow-sm border border-white flex flex-col items-center gap-2 hover:bg-slate-50 transition-all"><item.icon size={18} className="text-blue-500" /><span className="text-[10px] font-black text-slate-500">{item.label}</span></button>
+            ))}
+          </div>
         </>
       )}
-
-      {/* 報表匯出 */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2">
-        {[
-          { label: '報到總表', icon: ClipboardList, fn: () => exportDetailedGuestsExcel(guests, settings.eventName, getTargetGroup) },
-          { label: '禮品狀態', icon: Award, fn: () => exportGiftsExcel(settings.giftItems || [], settings.eventName) },
-          { label: '介紹現況', icon: Mic2, fn: () => exportIntroductionsExcel(guests, settings.eventName) },
-          { label: '抽獎結果', icon: Trophy, fn: () => exportLotteryExcel(guests, settings.eventName) },
-          { label: '司儀講稿', icon: FileText, fn: () => exportMcFlowExcel(settings.mcFlowSteps || [], settings.eventName) },
-          { label: '流程檔案', icon: ListTodo, fn: () => downloadStoredFile('schedule') }
-        ].map(item => (
-          <button key={item.label} onClick={item.fn} className="bg-white p-4 rounded-2xl shadow-sm border border-white flex flex-col items-center gap-2 hover:bg-slate-50 transition-all"><item.icon size={18} className="text-blue-500" /><span className="text-[10px] font-black text-slate-500">{item.label}</span></button>
-        ))}
-      </div>
 
       {showLoginModal && (
         <div className="fixed inset-0 ios-blur bg-black/40 z-[300] flex items-center justify-center p-6">

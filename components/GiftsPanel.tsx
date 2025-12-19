@@ -49,7 +49,7 @@ const GiftsPanel: React.FC = () => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (!window.confirm(`即將上傳：${file.name}\n這將覆蓋現有的禮品清單，確定嗎？`)) {
+    if (!window.confirm(`偵測到新 Excel：${file.name}\n這將覆蓋現有的禮品清單，確定嗎？`)) {
       if (fileInputRef.current) fileInputRef.current.value = '';
       return;
     }
@@ -58,10 +58,6 @@ const GiftsPanel: React.FC = () => {
     setUploadProgress("正在解析禮品清單...");
 
     try {
-      // 先清空舊資料與檔案紀錄
-      const filteredFiles = (settings.flowFiles || []).filter(f => f.type !== 'gifts_file');
-      await updateSettings({ giftItems: [], flowFiles: filteredFiles });
-
       const items = await parseGiftsFromExcel(file);
       const metaFile = {
         id: Math.random().toString(36).substr(2, 9),
@@ -72,12 +68,15 @@ const GiftsPanel: React.FC = () => {
         uploadTime: new Date().toISOString(),
       };
 
+      setUploadProgress("正在同步至雲端...");
+      const filteredFiles = (settings.flowFiles || []).filter(f => f.type !== 'gifts_file');
+
       await updateSettings({ 
         giftItems: items,
         flowFiles: [...filteredFiles, metaFile]
       });
       
-      setUploadProgress("上傳成功！");
+      setUploadProgress("禮品清單更新成功！");
       setTimeout(() => setUploadProgress(null), 2000);
     } catch (error: any) {
       alert("禮品解析失敗: " + error.message);
@@ -89,7 +88,7 @@ const GiftsPanel: React.FC = () => {
   };
 
   const handleClearGifts = async () => {
-    if (window.confirm("確定要清空雲端上所有的禮品資料嗎？此操作不可復原。")) {
+    if (window.confirm("【全數清空警告】\n確定要刪除雲端上的所有禮品資料嗎？\n此操作不可復原，且將重置所有禮品頒發狀態。")) {
       setUploadProgress("正在清空資料...");
       try {
         await clearGiftsOnly();
@@ -120,6 +119,11 @@ const GiftsPanel: React.FC = () => {
     return { total, completed, percent };
   }, [giftItems]);
 
+  // 後續 4 項待頒發獎項預告
+  const upcomingGiftPreviews = useMemo(() => {
+    return giftItems.filter(i => !i.isPresented).slice(0, 4);
+  }, [giftItems]);
+
   useEffect(() => {
     const firstUnpresented = giftItems.find(i => !i.isPresented);
     if (firstUnpresented) {
@@ -139,8 +143,7 @@ const GiftsPanel: React.FC = () => {
   const flowProgress = useMemo(() => {
     const uncompleted = mcSteps.filter(s => !s.isCompleted);
     const current = uncompleted[0] || { title: '活動流程已全部結束', time: '' };
-    const previews = uncompleted.slice(1, 5);
-    return { current, previews };
+    return { current };
   }, [mcSteps]);
 
   useEffect(() => {
@@ -152,11 +155,11 @@ const GiftsPanel: React.FC = () => {
   }, [flowProgress.current.title]);
 
   return (
-    <div className="p-3 md:p-8 max-w-5xl mx-auto space-y-3 md:space-y-6 pb-32 relative">
+    <div className="p-4 md:p-8 max-w-5xl mx-auto space-y-4 md:space-y-6 pb-32 relative">
       <input type="file" ref={fileInputRef} onChange={handleFileUpload} className="hidden" accept=".xlsx, .xls" />
       
-      {/* 標題區 */}
-      <div className="flex justify-between items-start px-2 mb-2 md:mb-0">
+      {/* 標題與操作區 */}
+      <div className="flex justify-between items-start">
         <div className="flex items-center gap-3">
           <div className="w-1.5 h-8 bg-orange-500 rounded-full" />
           <div>
@@ -170,7 +173,7 @@ const GiftsPanel: React.FC = () => {
             <>
               <button 
                 onClick={() => fileInputRef.current?.click()}
-                disabled={isUploading}
+                disabled={isUploading || !!uploadProgress}
                 className="p-2.5 md:p-3.5 bg-white text-orange-600 rounded-xl md:rounded-2xl shadow-sm border border-white hover:bg-orange-50 transition-all active:scale-90 flex items-center gap-2"
               >
                 {isUploading ? <Loader2 size={18} className="animate-spin" /> : <FileUp size={18} />}
@@ -178,14 +181,14 @@ const GiftsPanel: React.FC = () => {
               </button>
               <button 
                 onClick={handleClearGifts}
-                disabled={isUploading}
+                disabled={isUploading || !!uploadProgress}
                 className="p-2.5 md:p-3.5 bg-white text-red-500 rounded-xl md:rounded-2xl shadow-sm border border-white hover:bg-red-50 transition-all active:scale-90"
               >
                 <Trash2 size={18} />
               </button>
             </>
           )}
-          <button onClick={() => isUnlocked ? logoutAdmin() : setShowLoginModal(true)} className="p-2 md:p-3 bg-white rounded-xl md:rounded-2xl shadow-sm border border-white transition-all active:scale-90">
+          <button onClick={() => isUnlocked ? logoutAdmin() : setShowLoginModal(true)} className="p-2.5 md:p-3.5 bg-white rounded-xl md:rounded-2xl shadow-sm border border-white transition-all active:scale-90">
             {isUnlocked ? <Unlock size={18} className="text-[#007AFF]"/> : <Lock size={18} className="text-gray-300"/>}
           </button>
         </div>
@@ -199,9 +202,9 @@ const GiftsPanel: React.FC = () => {
       )}
 
       {/* 智慧置頂容器 */}
-      <div className={`sticky top-0 z-40 -mx-3 md:-mx-8 px-3 md:px-8 py-2 transition-all duration-300 ${isSticky ? 'ios-blur bg-[#F2F2F7]/90 shadow-lg border-b border-white/40' : ''}`}>
+      <div className={`sticky top-0 z-40 -mx-4 md:-mx-8 px-4 md:px-8 py-2 transition-all duration-300 ${isSticky ? 'ios-blur bg-[#F2F2F7]/90 shadow-lg border-b border-white/40' : ''}`}>
         
-        {/* 司儀流程監控區 */}
+        {/* 司儀流程監控區 (卡片 1) */}
         <div className={`bg-white transition-all duration-500 overflow-hidden relative shadow-sm border-2 ${isSticky ? 'p-2 md:p-5 rounded-xl mb-1.5' : 'p-4 md:p-8 rounded-[1.8rem] md:rounded-[2.5rem] mb-3'} ${isSpeechStep ? 'border-red-500 shadow-[0_0_15px_rgba(239,68,68,0.15)]' : 'border-white'}`}>
           {isSpeechStep && (
             <div className={`absolute top-0 right-0 bg-red-600 text-white font-black px-3 md:px-6 py-1 md:py-2 rounded-bl-2xl flex items-center gap-1.5 shadow-lg z-10 animate-pulse ${isSticky ? 'text-[7px] md:text-[10px]' : 'text-[9px] md:text-sm'}`}>
@@ -218,7 +221,7 @@ const GiftsPanel: React.FC = () => {
              </div>
              {flowProgress.current.time && (
                <div className={`flex items-center gap-1 px-2 py-0.5 rounded-full font-black ${isSticky ? 'text-[7px]' : 'text-[9px] md:text-xs'} ${isSpeechStep ? 'bg-red-50 text-red-600' : 'bg-blue-50 text-[#007AFF]'}`}>
-                 <Clock size={isSticky ? 9 : 11} /> {flowProgress.current.time}
+                 <Clock size={1Sticky ? 9 : 11} /> {flowProgress.current.time}
                </div>
              )}
           </div>
@@ -231,26 +234,9 @@ const GiftsPanel: React.FC = () => {
               {flowProgress.current.title}
             </h3>
           </div>
-          {flowProgress.previews.length > 0 && (
-            <div className={`pt-2 md:pt-4 border-t border-gray-100 transition-all ${isSticky ? 'hidden md:block' : 'block'}`}>
-               <div className="text-[7px] md:text-[10px] font-black text-gray-300 uppercase tracking-[0.2em] mb-2 md:mb-3">預告流程 (UPCOMING)</div>
-               <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-1 md:gap-y-2">
-                  {flowProgress.previews.map((preview, idx) => (
-                    <div key={preview.id} className="flex items-center gap-1.5 md:gap-2 group border-b border-gray-50/50 pb-0.5 md:pb-1">
-                      <span className="text-[8px] md:text-[11px] font-black text-gray-300 tabular-nums w-3 md:w-4 shrink-0">{idx + 1}</span>
-                      <ChevronRight size={8} className="text-gray-200 shrink-0" />
-                      <span className="text-[10px] md:text-sm font-bold text-gray-500 truncate group-hover:text-slate-900 transition-colors flex-1">
-                        {preview.title}
-                      </span>
-                      {preview.time && <span className="text-[7px] md:text-[10px] font-black text-gray-300 ml-1 md:ml-2 tabular-nums shrink-0">{preview.time}</span>}
-                    </div>
-                  ))}
-               </div>
-            </div>
-          )}
         </div>
 
-        {/* 禮品頒發進度儀表板 */}
+        {/* 禮品頒發進度看板 (卡片 2) - 整合待頒發禮品預告 */}
         <div className={`bg-white transition-all duration-500 overflow-hidden shadow-sm border border-white ${isSticky ? 'p-2 md:p-5 rounded-xl' : 'p-4 md:p-8 rounded-[1.8rem] md:rounded-[2.5rem]'}`}>
           <div className={`flex justify-between items-end transition-all ${isSticky ? 'mb-2' : 'mb-3 md:mb-4'}`}>
             <div className="space-y-0.5">
@@ -271,11 +257,32 @@ const GiftsPanel: React.FC = () => {
           <div className={`w-full bg-slate-100 rounded-full overflow-hidden border border-slate-200 shadow-inner transition-all ${isSticky ? 'h-1 md:h-1.5' : 'h-2 md:h-4'}`}>
             <div className="h-full bg-orange-500 transition-all duration-1000" style={{ width: `${stats.percent}%` }} />
           </div>
+
+          {/* 待頒發禮品預告區塊 */}
+          {upcomingGiftPreviews.length > 0 && (
+            <div className={`pt-3 md:pt-6 mt-3 md:mt-6 border-t border-gray-100 transition-all ${isSticky ? 'hidden md:block' : 'block'}`}>
+               <div className="text-[7px] md:text-[10px] font-black text-gray-300 uppercase tracking-[0.2em] mb-2 md:mb-3">待頒發禮品預告 (UPCOMING GIFTS)</div>
+               <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-1.5 md:gap-y-2.5">
+                  {upcomingGiftPreviews.map((gift, idx) => (
+                    <div key={gift.id} className="flex items-center gap-1.5 md:gap-2 group border-b border-gray-50/50 pb-0.5 md:pb-1">
+                      <span className="text-[8px] md:text-[11px] font-black text-gray-300 tabular-nums w-3 md:w-4 shrink-0">#{gift.sequence || idx + 1}</span>
+                      <ChevronRight size={10} className="text-orange-200 shrink-0" />
+                      <div className="flex-1 min-w-0">
+                         <span className="text-[10px] md:text-sm font-bold text-slate-600 truncate block group-hover:text-slate-900 transition-colors">
+                           {gift.name}
+                         </span>
+                      </div>
+                      <span className="text-[7px] md:text-[10px] font-black text-blue-500/60 ml-1 shrink-0">{gift.recipient}</span>
+                    </div>
+                  ))}
+               </div>
+            </div>
+          )}
         </div>
       </div>
 
       {/* 禮品清單 */}
-      <div className="space-y-3 md:space-y-6 pt-28 md:pt-32 px-1">
+      <div className="space-y-3 md:space-y-6 pt-24 md:pt-28 px-1">
         {giftItems.map((item) => (
           <div 
             key={item.id} 
@@ -310,8 +317,8 @@ const GiftsPanel: React.FC = () => {
           </div>
         ))}
         {giftItems.length === 0 && (
-          <div className="py-24 md:py-32 text-center">
-            <Award size={36} md:size={48} className="mx-auto text-slate-100 mb-3 md:mb-4" />
+          <div className="py-24 md:py-32 text-center flex flex-col items-center gap-4">
+            <Award size={36} md:size={48} className="text-slate-100" />
             <p className="text-slate-300 font-black italic text-sm md:text-lg">尚無禮品頒贈資料</p>
           </div>
         )}
@@ -329,7 +336,7 @@ const GiftsPanel: React.FC = () => {
             </div>
             <form onSubmit={handleLoginSubmit} className="w-full space-y-5 md:space-y-6 text-center">
               <p className="text-[9px] md:text-[10px] font-bold text-[#007AFF]">密碼提示：1111</p>
-              <input type="password" placeholder="••••" value={loginPassword} onChange={e => setLoginPassword(e.target.value)} className="w-full bg-[#F2F2F7] border-none rounded-xl md:rounded-2xl py-4 md:py-5 px-4 text-center text-3xl md:text-4xl font-black outline-none tracking-widest" autoFocus />
+              <input type="password" placeholder="••••" value={loginPassword} onChange={e => setLoginPassword(e.target.value)} className="w-full bg-[#F2F2F7] border-none rounded-xl md:rounded-2xl py-4 md:py-5 px-4 text-center text-3xl font-black outline-none tracking-widest" autoFocus />
               <div className="flex gap-2 md:gap-3 pt-2">
                 <button type="button" onClick={() => setShowLoginModal(false)} className="flex-1 py-3 md:py-4 font-black text-gray-400 text-xs md:text-sm">取消</button>
                 <button type="submit" className="flex-1 py-3 md:py-4 bg-orange-500 text-white font-black rounded-xl md:rounded-2xl shadow-xl active:scale-95 text-xs md:text-sm transition-transform">確認</button>
