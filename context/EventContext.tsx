@@ -5,6 +5,20 @@ import { db, isFirebaseReady } from '../services/firebase';
 
 export type DrawMode = 'default' | 'all' | 'winners_only';
 
+interface UnlockedSections {
+  registration: boolean;
+  gifts: boolean;
+  mc: boolean;
+  lottery: boolean;
+}
+
+interface ResetOptions {
+  flow?: boolean;
+  gifts?: boolean;
+  checkin?: boolean;
+  lottery?: boolean;
+}
+
 interface EventContextType {
   guests: Guest[];
   settings: SystemSettings;
@@ -21,6 +35,8 @@ interface EventContextType {
   nextLotteryRound: () => void;
   jumpToLotteryRound: (round: number) => void; 
   clearAllData: () => Promise<void>;
+  resetGlobalEventState: () => Promise<void>;
+  resetSpecificRecords: (options: ResetOptions) => Promise<void>;
   deleteGuest: (id: string) => Promise<void>;
   toggleCheckInRound: (id: string, round: number) => Promise<void>;
   clearGuestCheckIn: (id: string) => Promise<void>;
@@ -37,6 +53,7 @@ interface EventContextType {
   usingLocalDataProtection: boolean;
   uploadAllLocalDataToCloud: () => Promise<void>;
   isAdmin: boolean;
+  unlockedSections: UnlockedSections;
   loginAdmin: (password: string) => boolean;
   logoutAdmin: () => void;
 }
@@ -77,22 +94,63 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [isCloudConnected, setIsCloudConnected] = useState(false);
   const [connectionError, setConnectionError] = useState<string | null>(null);
   const [usingLocalDataProtection, setUsingLocalDataProtection] = useState(false);
-  const [isAdmin, setIsAdmin] = useState(() => localStorage.getItem('isAdmin') === 'true');
   
-  const ADMIN_PASSWORD = "8888"; 
+  const [isAdmin, setIsAdmin] = useState(() => localStorage.getItem('isAdmin') === 'true');
+  const [unlockedSections, setUnlockedSections] = useState<UnlockedSections>(() => {
+    const saved = localStorage.getItem('unlockedSections');
+    return saved ? JSON.parse(saved) : { registration: false, gifts: false, mc: false, lottery: false };
+  });
+  
+  const PASSWORDS = {
+    ADMIN: "8888",
+    REGISTRATION: "0000",
+    GIFTS: "1111",
+    MC: "2222",
+    LOTTERY: "3333"
+  };
 
   const loginAdmin = useCallback((password: string) => {
-      if (password === ADMIN_PASSWORD) {
+      if (password === PASSWORDS.ADMIN) {
           setIsAdmin(true);
+          const allUnlocked = { registration: true, gifts: true, mc: true, lottery: true };
+          setUnlockedSections(allUnlocked);
           localStorage.setItem('isAdmin', 'true');
+          localStorage.setItem('unlockedSections', JSON.stringify(allUnlocked));
           return true;
       }
+      
+      let updated = { ...unlockedSections };
+      let matched = false;
+      
+      if (password === PASSWORDS.REGISTRATION) {
+          updated.registration = true;
+          matched = true;
+      } else if (password === PASSWORDS.GIFTS) {
+          updated.gifts = true;
+          matched = true;
+      } else if (password === PASSWORDS.MC) {
+          updated.mc = true; 
+          matched = true;
+      } else if (password === PASSWORDS.LOTTERY) {
+          updated.lottery = true;
+          matched = true;
+      }
+
+      if (matched) {
+          setUnlockedSections(updated);
+          localStorage.setItem('unlockedSections', JSON.stringify(updated));
+          return true;
+      }
+
       return false;
-  }, []);
+  }, [unlockedSections]);
 
   const logoutAdmin = useCallback(() => {
       setIsAdmin(false);
+      const locked = { registration: false, gifts: false, mc: false, lottery: false };
+      setUnlockedSections(locked);
       localStorage.removeItem('isAdmin');
+      localStorage.setItem('unlockedSections', JSON.stringify(locked));
   }, []);
 
   const saveToLocal = (newGuests: Guest[]) => {
@@ -330,7 +388,6 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const overwriteGuestsFromDraft = async (drafts: ParsedGuestDraft[], checkInTimestamp: Date) => {
     if (!confirm('此操作將會「清空所有現有名單」並替換為新檔案，確定要執行嗎？')) return;
     
-    // 1. 清空雲端與本地資料
     if (db) {
         const snapshot = await db.collection("guests").get();
         const batch = db.batch();
@@ -340,7 +397,6 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setGuests([]);
     saveToLocal([]);
 
-    // 2. 呼叫 addGuestsFromDraft 加入新名單
     await addGuestsFromDraft(drafts, checkInTimestamp);
   };
 
@@ -410,7 +466,8 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     if (eligible.length === 0) return null;
     const winner = eligible[Math.floor(Math.random() * eligible.length)];
     const newWonRounds = [...(winner.wonRounds || []), currentRound];
-    const updates = { isWinner: true, wonRounds: newWonRounds, winRound: currentRound };
+    const newWonTimes = { ...(winner.wonTimes || {}), [currentRound.toString()]: new Date().toISOString() };
+    const updates = { isWinner: true, wonRounds: newWonRounds, winRound: currentRound, wonTimes: newWonTimes };
     updateGuestInfo(winner.id, updates);
     return winner;
   };
@@ -418,7 +475,7 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const resetLottery = async () => {
     if (confirm('確定要重置所有抽獎名單嗎？')) {
       setGuests(prev => {
-          const next = prev.map(g => ({ ...g, isWinner: false, winRound: undefined, wonRounds: [] }));
+          const next = prev.map(g => ({ ...g, isWinner: false, winRound: undefined, wonRounds: [], wonTimes: {} }));
           saveToLocal(next);
           return next;
       });
@@ -426,7 +483,7 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       if (db) {
           try {
               const batch = db.batch();
-              guests.forEach(g => batch.set(db.collection("guests").doc(g.id), { isWinner: false, winRound: null, wonRounds: [] }, { merge: true }));
+              guests.forEach(g => batch.set(db.collection("guests").doc(g.id), { isWinner: false, winRound: null, wonRounds: [], wonTimes: {} }, { merge: true }));
               await batch.commit();
           } catch (e: any) { alert("重置抽獎失敗: " + e.message); }
       }
@@ -439,7 +496,9 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           const next = prev.map(g => {
               if (g.wonRounds.includes(round)) {
                   const remaining = g.wonRounds.filter(r => r !== round);
-                  return { ...g, wonRounds: remaining, isWinner: remaining.length > 0 };
+                  const newWonTimes = { ...(g.wonTimes || {}) };
+                  delete newWonTimes[round.toString()];
+                  return { ...g, wonRounds: remaining, isWinner: remaining.length > 0, wonTimes: newWonTimes };
               }
               return g;
           });
@@ -452,7 +511,9 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
               guests.forEach(g => {
                   if (g.wonRounds.includes(round)) {
                       const remaining = g.wonRounds.filter(r => r !== round);
-                      batch.set(db.collection("guests").doc(g.id), { wonRounds: remaining, isWinner: remaining.length > 0 }, { merge: true });
+                      const newWonTimes = { ...(g.wonTimes || {}) };
+                      delete newWonTimes[round.toString()];
+                      batch.set(db.collection("guests").doc(g.id), { wonRounds: remaining, isWinner: remaining.length > 0, wonTimes: newWonTimes }, { merge: true });
                   }
               });
               await batch.commit();
@@ -465,10 +526,13 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       if (!guest) return;
       const newWonRounds = (guest.wonRounds || []).filter(r => r !== round);
       const isWinner = newWonRounds.length > 0;
+      const newWonTimes = { ...(guest.wonTimes || {}) };
+      delete newWonTimes[round.toString()];
       await updateGuestInfo(guestId, {
           wonRounds: newWonRounds,
           isWinner: isWinner,
-          winRound: isWinner ? Math.max(...newWonRounds) : undefined
+          winRound: isWinner ? Math.max(...newWonRounds) : undefined,
+          wonTimes: newWonTimes
       });
   };
 
@@ -476,7 +540,7 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const jumpToLotteryRound = (round: number) => updateSettings({ lotteryRoundCounter: round });
 
   const clearAllData = async () => {
-      if (!confirm('確定要刪除「所有」資料嗎？此操作不可復原。')) return;
+      if (!confirm('確定要刪除「所有」資料（包括檔案、名單與設定）嗎？此操作不可復原。')) return;
       setGuests([]);
       saveToLocal([]);
       const newSettings = { ...defaultSettings };
@@ -493,7 +557,88 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       }
   }
 
-  const deleteGuest = async (id) => {
+  const resetSpecificRecords = async (options: ResetOptions) => {
+    const settingsUpdates: Partial<SystemSettings> = {};
+    const guestUpdates: Record<string, Partial<Guest>> = {};
+
+    if (options.flow) {
+      settingsUpdates.mcFlowSteps = (settings.mcFlowSteps || []).map(s => ({ ...s, isCompleted: false }));
+    }
+
+    if (options.gifts) {
+      settingsUpdates.giftItems = (settings.giftItems || []).map(i => ({ ...i, isPresented: false }));
+    }
+
+    if (options.checkin || options.lottery) {
+      guests.forEach(g => {
+        const u: Partial<Guest> = {};
+        if (options.checkin) {
+          u.isCheckedIn = false;
+          u.attendedRounds = [];
+          u.checkInTime = undefined;
+          u.round = undefined;
+          u.isIntroduced = false;
+        }
+        if (options.lottery) {
+          u.isWinner = false;
+          u.wonRounds = [];
+          u.winRound = undefined;
+          u.wonTimes = {};
+        }
+        if (Object.keys(u).length > 0) {
+          guestUpdates[g.id] = u;
+        }
+      });
+    }
+
+    if (options.lottery) {
+      settingsUpdates.lotteryRoundCounter = 1;
+    }
+
+    if (options.checkin) {
+      settingsUpdates.currentCheckInRound = 1;
+    }
+
+    // 執行更新
+    if (Object.keys(settingsUpdates).length > 0) {
+      await updateSettings(settingsUpdates);
+    }
+
+    if (Object.keys(guestUpdates).length > 0) {
+      setGuests(prev => {
+        const next = prev.map(g => guestUpdates[g.id] ? { ...g, ...guestUpdates[g.id] } : g);
+        saveToLocal(next);
+        return next;
+      });
+
+      if (db) {
+        try {
+          const MAX_BATCH_SIZE = 450;
+          const ids = Object.keys(guestUpdates);
+          for (let i = 0; i < ids.length; i += MAX_BATCH_SIZE) {
+            const chunk = ids.slice(i, i + MAX_BATCH_SIZE);
+            const batch = db.batch();
+            chunk.forEach(id => {
+              const u = { ...guestUpdates[id] };
+              // Firestore 需要用 null 取代 undefined
+              Object.keys(u).forEach(k => { if ((u as any)[k] === undefined) (u as any)[k] = null; });
+              batch.set(db.collection("guests").doc(id), u, { merge: true });
+            });
+            await batch.commit();
+          }
+        } catch (e: any) {
+          console.error("Cloud reset failed", e);
+        }
+      }
+    }
+  };
+
+  const resetGlobalEventState = async () => {
+    await resetSpecificRecords({ flow: true, gifts: true, checkin: true, lottery: true });
+    alert("所有活動紀錄已重置（已保留上傳檔案與嘉賓名單基礎資料）。");
+  };
+
+  const deleteGuest = async (id: string) => {
       setGuests(prev => {
           const next = prev.filter(g => g.id !== id);
           saveToLocal(next);
@@ -510,10 +655,10 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     <EventContext.Provider value={{
       guests, settings, updateSettings, addGuestsFromDraft, overwriteGuestsFromDraft, updateGuestInfo, toggleIntroduced,
       resetIntroductions, drawWinner, resetLottery, clearLotteryRound, removeWinnerFromRound, nextLotteryRound,
-      jumpToLotteryRound, clearAllData, deleteGuest, toggleCheckInRound, clearGuestCheckIn,
+      jumpToLotteryRound, clearAllData, resetGlobalEventState, resetSpecificRecords, deleteGuest, toggleCheckInRound, clearGuestCheckIn,
       clearAllCheckIns, clearCheckInsForIds, addFlowFile, removeFlowFile, toggleMcFlowStep, setMcFlowSteps, 
       toggleGiftPresented, setGiftItems, isCloudConnected, connectionError,
-      usingLocalDataProtection, uploadAllLocalDataToCloud, isAdmin, loginAdmin, logoutAdmin
+      usingLocalDataProtection, uploadAllLocalDataToCloud, isAdmin, unlockedSections, loginAdmin, logoutAdmin
     }}>
       {children}
     </EventContext.Provider>

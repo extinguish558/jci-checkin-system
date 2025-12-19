@@ -1,21 +1,32 @@
 
 import React, { useRef, useState, useEffect, useMemo } from 'react';
 import { useEvent } from '../context/EventContext';
-import { FlowFile, GuestCategory } from '../types';
+import { FlowFile, GuestCategory, Guest } from '../types';
 import { 
-  FileSpreadsheet, FileText, Presentation, Trash2, Settings, Lock, Unlock, 
-  Plus, ListTodo, ShieldCheck, Download, Loader2, Info, Eye, Upload, X, 
-  Activity, CheckCircle2, Mic2, Award, ChevronDown, ChevronUp, Maximize2, Minimize2, 
-  PlayCircle, Users, PieChart, Users2, TrendingUp
+  FileSpreadsheet, FileText, Presentation, Trash2, Lock, Unlock, 
+  ListTodo, Download, Loader2, Upload, X, 
+  Activity, CheckCircle2, Mic2, Award, ChevronRight,
+  TrendingUp, RefreshCcw, Database, BellRing, Clock, FileBox,
+  FileCheck2, Trophy, ClipboardList, ChevronDown, UserCheck, Users,
+  RotateCcw, AlertTriangle, Check, ListChecks
 } from 'lucide-react';
+import { 
+  exportDetailedGuestsExcel, 
+  exportGiftsExcel, 
+  exportMcFlowExcel, 
+  exportIntroductionsExcel, 
+  exportLotteryExcel 
+} from '../services/geminiService';
 
 const FlowPanel: React.FC = () => {
-  const { settings, updateSettings, addFlowFile, removeFlowFile, isAdmin, loginAdmin, logoutAdmin, guests } = useEvent();
+  const { settings, updateSettings, addFlowFile, removeFlowFile, isAdmin, loginAdmin, logoutAdmin, guests, resetSpecificRecords, clearAllData } = useEvent();
   const [showLoginModal, setShowLoginModal] = useState(false); 
+  const [showResetModal, setShowResetModal] = useState(false);
+  const [resetOptions, setResetOptions] = useState({ flow: false, gifts: false, checkin: false, lottery: false });
+  
   const [loginPassword, setLoginPassword] = useState("");
   const [isUploading, setIsUploading] = useState(false);
-  const [uploadType, setUploadType] = useState<'schedule' | 'gifts' | 'slides' | null>(null);
-  const [isScheduleExpanded, setIsScheduleExpanded] = useState(false);
+  const [uploadType, setUploadType] = useState<'schedule' | 'gifts' | 'slides' | 'mcflow' | null>(null);
   
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -30,98 +41,111 @@ const FlowPanel: React.FC = () => {
     }
   };
 
-  // 報到數據統計邏輯
-  const checkInStats = useMemo(() => {
-    const total = guests.length;
-    const present = guests.filter(g => g.isCheckedIn).length;
-    const percent = total > 0 ? Math.round((present / total) * 100) : 0;
+  const handlePreview = (file: FlowFile) => {
+    if (!file.data) {
+        if (file.url) {
+            window.open(file.url, '_blank');
+        } else {
+            alert("檔案內容為空");
+        }
+        return;
+    }
 
-    const categories = [
-      { label: 'YB', color: 'bg-blue-500', key: 'YB' },
-      { label: 'OB', color: 'bg-orange-500', key: 'OB' },
-      { label: '貴賓', color: 'bg-purple-500', key: 'VIP' },
-      { label: '友會', color: 'bg-green-500', key: 'VISITING' },
-      { label: '總會', color: 'bg-indigo-500', key: 'HQ' }
-    ];
-
-    const breakdown = categories.map(cat => {
-      const list = guests.filter(g => {
-        const catStr = (g.category || '').toString();
-        const title = (g.title || '').toString();
-        if (cat.key === 'YB') return catStr.includes('YB') || catStr.includes('會友');
-        if (cat.key === 'OB') return catStr.includes('OB') || catStr.includes('特友');
-        if (cat.key === 'HQ') return catStr.includes('總會') || title.includes('總會');
-        if (cat.key === 'VISITING') return catStr.includes('友會') || title.includes('會');
-        return true; // VIP & Others
-      });
-      
-      // 過濾 VIP 類別 (避免重複計算)
-      let finalCount = list.length;
-      let finalPresent = list.filter(g => g.isCheckedIn).length;
-      
-      return { ...cat, total: finalCount, present: finalPresent };
-    });
-
-    return { total, present, percent, breakdown };
-  }, [guests]);
-
-  // 深度進度監控邏輯
-  const liveStats = useMemo(() => {
-    const mcSteps = settings.mcFlowSteps || [];
-    const mcCompleted = mcSteps.filter(s => s.isCompleted).length;
-    const currentStep = mcSteps.find(s => !s.isCompleted);
-    const mcPercent = mcSteps.length > 0 ? Math.round((mcCompleted / mcSteps.length) * 100) : 0;
-
-    const giftItems = settings.giftItems || [];
-    const giftsPresented = giftItems.filter(i => i.isPresented).length;
-    const nextGift = giftItems.find(i => !i.isPresented);
-    const giftsPercent = giftItems.length > 0 ? Math.round((giftsPresented / giftItems.length) * 100) : 0;
-
-    const checkedInVips = guests.filter(g => g.isCheckedIn && g.title && !g.title.includes('見習'));
-    const introducedVips = checkedInVips.filter(g => g.isIntroduced).length;
-    const remainingVips = checkedInVips.length - introducedVips;
-    const vipsPercent = checkedInVips.length > 0 ? Math.round((introducedVips / checkedInVips.length) * 100) : 0;
-
-    return {
-      mc: { 
-        current: mcCompleted, 
-        total: mcSteps.length, 
-        percent: mcPercent, 
-        activeTitle: currentStep ? currentStep.title : (mcSteps.length > 0 ? '流程已全部完成' : '尚未匯入流程')
-      },
-      gifts: { 
-        current: giftsPresented, 
-        total: giftItems.length, 
-        percent: giftsPercent,
-        activeTitle: nextGift ? nextGift.name : (giftItems.length > 0 ? '所有禮品已頒發' : '尚未匯入禮品')
-      },
-      vips: { 
-        current: introducedVips, 
-        total: checkedInVips.length, 
-        remaining: remainingVips,
-        percent: vipsPercent 
-      }
-    };
-  }, [settings.mcFlowSteps, settings.giftItems, guests]);
-
-  const adjustHeight = () => {
-    const textarea = textareaRef.current;
-    if (textarea) {
-      textarea.style.height = 'auto';
-      const newHeight = Math.max(80, textarea.scrollHeight);
-      textarea.style.height = `${newHeight}px`; 
+    try {
+        const binaryString = atob(file.data);
+        const len = binaryString.length;
+        const bytes = new Uint8Array(len);
+        for (let i = 0; i < len; i++) {
+            bytes[i] = binaryString.charCodeAt(i);
+        }
+        
+        const blob = new Blob([bytes], { type: file.mimeType });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = file.name;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    } catch (error) {
+        console.error("Download failed:", error);
+        alert("下載失敗");
     }
   };
 
-  useEffect(() => {
-    adjustHeight();
-  }, [settings.briefSchedule, isScheduleExpanded]);
+  const getTargetGroup = (g: Guest): string => {
+    const title = g.title || '';
+    const category = (g.category || '').toString();
+    const fullInfo = (title + category).toLowerCase();
+    if (category.includes('YB') || category.includes('會友')) return 'YB';
+    if (category.includes('OB') || category.includes('特友')) return 'OB';
+    const govKeywords = ['政府', '議會', '立委', '市長', '縣長', '局長', '議員', '主任'];
+    const isGovStrict = govKeywords.some(k => fullInfo.includes(k));
+    if ((category === GuestCategory.GOV_OFFICIAL || isGovStrict) && !fullInfo.includes('總會') && !fullInfo.includes('分會')) return 'VIP';
+    if (category.includes('總會') || title.includes('總會')) return 'HQ';
+    if (category.includes('友會') || title.includes('會') || title.includes('聯誼') || title.includes('友好')) return 'VISITING';
+    return 'VIP';
+  };
 
-  const triggerUpload = (type: 'schedule' | 'gifts' | 'slides') => {
-    if (!isAdmin) {
-      alert("請先登入管理模式再進行上傳。");
-      return;
-    }
+  const dashboardData = useMemo(() => {
+    const groups = [
+      { key: 'YB', label: 'YB', color: 'bg-blue-500' },
+      { key: 'OB', label: 'OB', color: 'bg-orange-500' },
+      { key: 'VIP', label: '貴賓', color: 'bg-purple-500' },
+      { key: 'VISITING', label: '友會', color: 'bg-green-500' },
+      { key: 'HQ', label: '總會', color: 'bg-indigo-400' },
+    ];
+
+    const stats = groups.map(group => {
+      const groupGuests = guests.filter(g => getTargetGroup(g) === group.key);
+      const checkedIn = groupGuests.filter(g => g.isCheckedIn).length;
+      const total = groupGuests.length;
+      return { ...group, checkedIn, total };
+    });
+
+    const totalCheckedIn = guests.filter(g => g.isCheckedIn).length;
+    const totalCount = guests.length;
+    const totalPercent = totalCount > 0 ? Math.round((totalCheckedIn / totalCount) * 100) : 0;
+
+    return { stats, totalCheckedIn, totalCount, totalPercent };
+  }, [guests]);
+
+  const liveStats = useMemo(() => {
+    const mcSteps = settings.mcFlowSteps || [];
+    const mcCompletedCount = mcSteps.filter(s => s.isCompleted).length;
+    const uncompletedMc = mcSteps.filter(s => !s.isCompleted);
+    
+    const giftItems = settings.giftItems || [];
+    const giftsPresentedCount = giftItems.filter(i => i.isPresented).length;
+    const unpresentedGifts = giftItems.filter(i => !i.isPresented);
+    
+    const checkedInVips = guests.filter(g => g.isCheckedIn && g.title && !g.title.includes('見習'));
+    const remainingVips = checkedInVips.filter(g => !g.isIntroduced);
+    const introducedVipsCount = checkedInVips.filter(g => g.isIntroduced).length;
+
+    return {
+      mc: { 
+        active: uncompletedMc[0]?.title || '流程已結束', 
+        previews: uncompletedMc.slice(1, 3).map(s => s.title),
+        percent: mcSteps.length > 0 ? Math.round((mcCompletedCount / mcSteps.length) * 100) : 0 
+      },
+      gifts: { 
+        active: unpresentedGifts[0]?.name || '頒獎已結束', 
+        previews: unpresentedGifts.slice(1, 3).map(i => i.name),
+        percent: giftItems.length > 0 ? Math.round((giftsPresentedCount / giftItems.length) * 100) : 0 
+      },
+      vips: { 
+        count: remainingVips.length,
+        active: remainingVips[0]?.name || '介紹已結束',
+        previews: remainingVips.slice(1, 3).map(g => g.name),
+        percent: checkedInVips.length > 0 ? Math.round((introducedVipsCount / checkedInVips.length) * 100) : 0 
+      }
+    };
+  }, [settings, guests]);
+
+  const triggerUpload = (type: 'schedule' | 'gifts' | 'slides' | 'mcflow') => {
+    if (!isAdmin) { setShowLoginModal(true); return; }
     setUploadType(type);
     fileInputRef.current?.click();
   };
@@ -146,254 +170,269 @@ const FlowPanel: React.FC = () => {
         await addFlowFile(newFile);
       };
       reader.readAsDataURL(file);
-    } catch (err) {
-      alert("處理失敗");
-    } finally {
-      setIsUploading(false);
-      setUploadType(null);
+    } catch (err) { alert("處理失敗"); } finally { setIsUploading(false); setUploadType(null); }
+  };
+
+  const handleExecuteReset = async () => {
+    if (!Object.values(resetOptions).some(v => v)) {
+        alert("請至少選擇一個重置項目");
+        return;
+    }
+    if (confirm("確定要重置所選的活動紀錄嗎？此動作僅清空紀錄，將保留所有名單與上傳檔案。")) {
+        await resetSpecificRecords(resetOptions);
+        setShowResetModal(false);
+        setResetOptions({ flow: false, gifts: false, checkin: false, lottery: false });
+        alert("重置成功");
     }
   };
 
-  const handlePreview = (file: FlowFile) => {
-    if (!file.data) return;
-    const byteCharacters = atob(file.data);
-    const byteNumbers = new Array(byteCharacters.length);
-    for (let i = 0; i < byteCharacters.length; i++) byteNumbers[i] = byteCharacters.charCodeAt(i);
-    const blob = new Blob([new Uint8Array(byteNumbers)], { type: file.mimeType });
-    window.open(window.URL.createObjectURL(blob), '_blank');
-  };
-
   return (
-    <div className="p-4 md:p-8 max-w-3xl mx-auto space-y-6 pb-60 animate-in fade-in duration-500 bg-[#F2F2F7] min-h-screen">
+    <div className="p-4 md:p-8 max-w-3xl mx-auto space-y-6 pb-60 bg-[#F2F2F7] min-h-screen">
       <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" />
 
-      {/* 活動配置主卡片 */}
-      <div className="bg-white rounded-[2.5rem] p-8 shadow-[0_15px_50px_rgba(0,0,0,0.03)] border border-white space-y-8">
+      {/* 活動配置 */}
+      <div className="bg-white rounded-[2.5rem] p-8 shadow-sm border border-white space-y-8">
         <div className="flex justify-between items-center">
-           <div className="flex items-center gap-2">
-             <Activity className="text-blue-500" size={18} strokeWidth={3} />
-             <span className="text-gray-400 font-black uppercase tracking-widest text-[10px]">Event Control Center</span>
-           </div>
-           <button onClick={() => isAdmin ? logoutAdmin() : setShowLoginModal(true)} className="p-3 bg-[#F2F2F7] rounded-2xl transition-all hover:bg-gray-100">
+           <div className="flex items-center gap-2"><Activity className="text-blue-500" size={18} strokeWidth={3} /><span className="text-gray-400 font-black tracking-widest text-[10px]">EVENT CONTROL</span></div>
+           <button onClick={() => isAdmin ? logoutAdmin() : setShowLoginModal(true)} className="p-3 bg-[#F2F2F7] rounded-2xl">
              {isAdmin ? <Unlock size={20} className="text-[#007AFF]"/> : <Lock size={20} className="text-gray-300"/>}
            </button>
         </div>
-
-        <div className="space-y-1">
-          <label className="text-[10px] font-black text-gray-300 uppercase tracking-widest ml-1">典禮主題名稱</label>
-          <input 
-            type="text" 
-            value={settings.eventName} 
-            onChange={(e) => updateSettings({ eventName: e.target.value })}
-            className="w-full bg-transparent border-none text-2xl md:text-4xl font-black text-black focus:ring-0 p-0 placeholder:text-gray-100"
-            disabled={!isAdmin}
-          />
-        </div>
-
-        {/* 精簡流程摘要 */}
-        <div className={`rounded-[2rem] transition-all duration-500 overflow-hidden relative group border ${isScheduleExpanded ? 'bg-white border-blue-100' : 'bg-[#F2F2F7] border-transparent'}`}>
-            <div className="px-6 py-4 flex justify-between items-center border-b border-transparent group-hover:border-gray-100/50 transition-colors">
-                <div className="flex items-center gap-2">
-                    <ListTodo size={16} className="text-blue-500" />
-                    <h3 className="font-black text-[11px] text-gray-400 uppercase tracking-widest">精簡流程摘要</h3>
-                </div>
-                <button 
-                  onClick={() => setIsScheduleExpanded(!isScheduleExpanded)}
-                  className="p-2 hover:bg-white rounded-xl text-gray-400 transition-all shadow-sm"
-                >
-                  {isScheduleExpanded ? <Minimize2 size={16}/> : <Maximize2 size={16}/>}
-                </button>
-            </div>
-            
-            <div className={`p-6 transition-all duration-500 ${isScheduleExpanded ? 'max-h-[1000px]' : 'max-h-[140px]'}`}>
-              <textarea 
-                  ref={textareaRef}
-                  value={settings.briefSchedule || ''}
-                  onChange={(e) => {
-                    updateSettings({ briefSchedule: e.target.value });
-                    adjustHeight();
-                  }}
-                  placeholder="點擊此處輸入活動流程重點摘要..."
-                  className={`w-full bg-transparent border-none text-xl md:text-2xl font-light text-black leading-snug placeholder:text-gray-200 focus:ring-0 p-0 resize-none overflow-hidden ${!isAdmin ? 'cursor-default' : 'cursor-text'}`}
-                  disabled={!isAdmin}
-              />
-              {!isScheduleExpanded && settings.briefSchedule && settings.briefSchedule.length > 50 && (
-                <div className="absolute bottom-0 left-0 right-0 h-16 bg-gradient-to-t from-[#F2F2F7] to-transparent pointer-events-none" />
-              )}
-            </div>
+        <input 
+          type="text" 
+          value={settings.eventName} 
+          onChange={(e) => isAdmin && updateSettings({ eventName: e.target.value })}
+          className="w-full bg-transparent border-none text-2xl md:text-4xl font-black text-black focus:ring-0 p-0"
+          placeholder="活動名稱"
+          readOnly={!isAdmin}
+        />
+        <div className="bg-[#F2F2F7] rounded-[2rem] p-6 relative group">
+           <textarea 
+              ref={textareaRef}
+              value={settings.briefSchedule || ''}
+              onChange={(e) => isAdmin && updateSettings({ briefSchedule: e.target.value })}
+              placeholder="活動流程摘要..."
+              className="w-full bg-transparent border-none text-xl font-light text-black focus:ring-0 p-0 resize-y min-h-[120px] custom-scrollbar"
+              readOnly={!isAdmin}
+           />
+           {isAdmin && (
+             <div className="absolute bottom-2 right-4 text-gray-300 pointer-events-none opacity-50">
+                <ChevronDown size={14} className="rotate-[-45deg]" />
+             </div>
+           )}
         </div>
       </div>
 
-      {/* 全新：報到總覽看板 */}
-      <div className="bg-white rounded-[2.5rem] p-6 md:p-8 shadow-[0_15px_50px_rgba(0,0,0,0.03)] border border-white space-y-6">
-          <div className="flex justify-between items-center">
-             <div className="flex items-center gap-2">
-               <TrendingUp className="text-[#007AFF]" size={18} strokeWidth={3} />
-               <span className="text-gray-400 font-black uppercase tracking-widest text-[10px]">Real-time Check-in Analytics</span>
-             </div>
-             <div className="bg-blue-50 text-[#007AFF] px-3 py-1 rounded-full text-[11px] font-black tabular-nums">
-                報到率 {checkInStats.percent}%
-             </div>
+      {/* 智慧報到儀表板 */}
+      <div className="bg-white rounded-[3rem] p-10 shadow-sm border border-white space-y-8">
+        <div className="flex justify-between items-center">
+          <div className="flex items-center gap-3">
+             <TrendingUp size={20} className="text-blue-500" strokeWidth={3} />
+             <span className="text-[11px] font-black text-slate-400 tracking-wider uppercase">Real-time Check-in Analytics</span>
           </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-center">
-             {/* 總進度圈 */}
-             <div className="flex flex-col items-center justify-center p-6 bg-[#F2F2F7] rounded-[2rem] relative overflow-hidden group">
-                <div className="text-6xl md:text-7xl font-black text-black tabular-nums leading-none">
-                  {checkInStats.present}
-                </div>
-                <div className="text-[10px] font-black text-gray-400 uppercase tracking-widest mt-2">已報到總人數 / {checkInStats.total}</div>
-                <div className="absolute bottom-0 left-0 right-0 h-1.5 bg-gray-200">
-                   <div className="h-full bg-[#007AFF] transition-all duration-1000" style={{ width: `${checkInStats.percent}%` }} />
-                </div>
-             </div>
-
-             {/* 分類清單 */}
-             <div className="space-y-3">
-                {checkInStats.breakdown.map(cat => (
-                  <div key={cat.label} className="flex items-center justify-between group">
-                    <div className="flex items-center gap-3">
-                      <div className={`w-2 h-2 rounded-full ${cat.color} group-hover:scale-150 transition-transform`} />
-                      <span className="text-sm font-black text-gray-500">{cat.label}</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-base font-black text-black tabular-nums">{cat.present}</span>
-                      <span className="text-[10px] font-bold text-gray-300">/ {cat.total}</span>
-                    </div>
-                  </div>
-                ))}
-             </div>
+          <div className="bg-blue-50 text-blue-600 px-4 py-1.5 rounded-full text-xs font-black">
+            報到率 {dashboardData.totalPercent}%
           </div>
+        </div>
+
+        {/* 中心大數字區塊 */}
+        <div className="bg-gray-50 rounded-[2.5rem] p-12 text-center relative overflow-hidden group">
+          <div className="relative z-10">
+            <h1 className="text-8xl md:text-9xl font-black text-slate-900 tracking-tight leading-none">
+              {dashboardData.totalCheckedIn}
+            </h1>
+            <p className="text-xs font-bold text-gray-400 mt-4 tracking-widest uppercase">
+              已報到總人數 / {dashboardData.totalCount}
+            </p>
+          </div>
+          <div className="absolute bottom-0 left-0 h-2 bg-blue-500 transition-all duration-1000" style={{ width: `${dashboardData.totalPercent}%` }} />
+        </div>
+
+        {/* 下方分類列表 */}
+        <div className="space-y-4 px-4">
+          {dashboardData.stats.map((stat) => (
+            <div key={stat.key} className="flex items-center justify-between group">
+              <div className="flex items-center gap-4">
+                <div className={`w-2.5 h-2.5 rounded-full ${stat.color} shadow-sm group-hover:scale-125 transition-transform`} />
+                <span className="text-base font-black text-gray-500">{stat.label}</span>
+              </div>
+              <div className="flex items-baseline gap-1.5">
+                <span className="text-xl font-black text-slate-900">{stat.checkedIn}</span>
+                <span className="text-xs font-bold text-gray-300">/ {stat.total}</span>
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
 
-      {/* 核心監控區 */}
+      {/* 流程監控數據 */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {/* 司儀流程監控 */}
-        <div className="bg-white rounded-[2rem] p-6 shadow-sm border border-white flex flex-col gap-4 relative overflow-hidden group">
-            <div className="flex justify-between items-center">
-              <div className="w-10 h-10 bg-blue-50 text-blue-500 rounded-xl flex items-center justify-center">
-                <ListTodo size={20} strokeWidth={2.5} />
-              </div>
-              <div className="text-right">
-                 <div className="text-[9px] font-black text-gray-300 uppercase tracking-widest">目前進行</div>
-                 <div className="text-xs font-black text-blue-500 tabular-nums">{liveStats.mc.percent}%</div>
-              </div>
-            </div>
-            <div className="flex-1 space-y-1">
-                <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest">司儀流程</h4>
-                <p className="text-lg font-black text-black leading-tight line-clamp-2">{liveStats.mc.activeTitle}</p>
-            </div>
-            <div className="w-full h-1.5 bg-gray-50 rounded-full overflow-hidden">
-                <div className="h-full bg-blue-500 transition-all duration-1000" style={{ width: `${liveStats.mc.percent}%` }} />
-            </div>
+        {/* 流程監控 */}
+        <div className="bg-white rounded-[2rem] p-6 shadow-sm border border-white flex flex-col gap-3 min-h-[180px]">
+             <div className="w-10 h-10 bg-blue-50 text-blue-500 rounded-xl flex items-center justify-center shrink-0"><ListTodo size={20} /></div>
+             <div>
+                <h4 className="text-[10px] font-black text-gray-400 uppercase mb-1">當前流程</h4>
+                <p className="text-sm font-black text-black leading-tight line-clamp-1">{liveStats.mc.active}</p>
+             </div>
+             {liveStats.mc.previews.length > 0 && (
+               <div className="space-y-1 mt-1 opacity-50">
+                 <h5 className="text-[9px] font-bold text-gray-400">活動預告：</h5>
+                 {liveStats.mc.previews.map((p, idx) => (
+                   <p key={idx} className="text-[10px] font-bold text-gray-600 truncate">· {p}</p>
+                 ))}
+               </div>
+             )}
+             <div className="w-full h-1 bg-gray-50 rounded-full mt-auto"><div className="h-full bg-blue-500 transition-all duration-500" style={{ width: `${liveStats.mc.percent}%` }} /></div>
         </div>
 
-        {/* 禮品頒贈監控 */}
-        <div className="bg-white rounded-[2rem] p-6 shadow-sm border border-white flex flex-col gap-4 relative overflow-hidden group">
-            <div className="flex justify-between items-center">
-              <div className="w-10 h-10 bg-orange-50 text-orange-500 rounded-xl flex items-center justify-center">
-                <Award size={20} strokeWidth={2.5} />
-              </div>
-              <div className="text-right">
-                 <div className="text-[9px] font-black text-gray-300 uppercase tracking-widest">頒發進度</div>
-                 <div className="text-xs font-black text-orange-500 tabular-nums">{liveStats.gifts.percent}%</div>
-              </div>
-            </div>
-            <div className="flex-1 space-y-1">
-                <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest">禮品頒贈</h4>
-                <p className="text-lg font-black text-black leading-tight line-clamp-2">{liveStats.gifts.activeTitle}</p>
-            </div>
-            <div className="w-full h-1.5 bg-gray-50 rounded-full overflow-hidden">
-                <div className="h-full bg-orange-500 transition-all duration-1000" style={{ width: `${liveStats.gifts.percent}%` }} />
-            </div>
+        {/* 禮品監控 */}
+        <div className="bg-white rounded-[2rem] p-6 shadow-sm border border-white flex flex-col gap-3 min-h-[180px]">
+             <div className="w-10 h-10 bg-orange-50 text-orange-500 rounded-xl flex items-center justify-center shrink-0"><Award size={20} /></div>
+             <div>
+                <h4 className="text-[10px] font-black text-gray-400 uppercase mb-1">當前禮品</h4>
+                <p className="text-sm font-black text-black leading-tight line-clamp-1">{liveStats.gifts.active}</p>
+             </div>
+             {liveStats.gifts.previews.length > 0 && (
+               <div className="space-y-1 mt-1 opacity-50">
+                 <h5 className="text-[9px] font-bold text-gray-400">活動預告：</h5>
+                 {liveStats.gifts.previews.map((p, idx) => (
+                   <p key={idx} className="text-[10px] font-bold text-gray-600 truncate">· {p}</p>
+                 ))}
+               </div>
+             )}
+             <div className="w-full h-1 bg-gray-50 rounded-full mt-auto"><div className="h-full bg-orange-500 transition-all duration-500" style={{ width: `${liveStats.gifts.percent}%` }} /></div>
         </div>
 
-        {/* 貴賓介紹監控 */}
-        <div className="bg-white rounded-[2rem] p-6 shadow-sm border border-white flex flex-col gap-4 relative overflow-hidden group">
-            <div className="flex justify-between items-center">
-              <div className="w-10 h-10 bg-purple-50 text-purple-500 rounded-xl flex items-center justify-center">
-                <Mic2 size={20} strokeWidth={2.5} />
-              </div>
-              <div className="text-right">
-                 <div className="text-[9px] font-black text-gray-300 uppercase tracking-widest">介紹比例</div>
-                 <div className="text-xs font-black text-purple-500 tabular-nums">{liveStats.vips.percent}%</div>
-              </div>
-            </div>
-            <div className="flex-1 space-y-1">
-                <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest">貴賓介紹</h4>
-                <div className="flex items-baseline gap-2">
-                    <p className="text-3xl font-black text-black tabular-nums">{liveStats.vips.remaining}</p>
-                    <p className="text-sm font-black text-gray-300">位貴賓待介紹</p>
+        {/* 待介紹監控 */}
+        <div className="bg-white rounded-[2rem] p-6 shadow-sm border border-white flex flex-col gap-3 min-h-[180px]">
+             <div className="w-10 h-10 bg-purple-50 text-purple-500 rounded-xl flex items-center justify-center shrink-0"><Mic2 size={20} /></div>
+             <div className="flex justify-between items-start">
+                <div className="min-w-0">
+                    <h4 className="text-[10px] font-black text-gray-400 uppercase mb-1">當前待介紹 ({liveStats.vips.count})</h4>
+                    <p className="text-sm font-black text-black leading-tight line-clamp-1">{liveStats.vips.active}</p>
                 </div>
-            </div>
-            <div className="w-full h-1.5 bg-gray-50 rounded-full overflow-hidden">
-                <div className="h-full bg-purple-500 transition-all duration-1000" style={{ width: `${liveStats.vips.percent}%` }} />
-            </div>
+             </div>
+             {liveStats.vips.previews.length > 0 && (
+               <div className="space-y-1 mt-1 opacity-50">
+                 <h5 className="text-[9px] font-bold text-gray-400">活動預告：</h5>
+                 {liveStats.vips.previews.map((p, idx) => (
+                   <p key={idx} className="text-[10px] font-bold text-gray-600 truncate">· {p}</p>
+                 ))}
+               </div>
+             )}
+             <div className="w-full h-1 bg-gray-50 rounded-full mt-auto"><div className="h-full bg-purple-500 transition-all duration-500" style={{ width: `${liveStats.vips.percent}%` }} /></div>
         </div>
       </div>
 
       {/* 檔案資源區 */}
-      <div className="space-y-4 pt-2">
-        <h4 className="px-6 text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] flex items-center gap-2">
-          檔案資源庫 <div className="h-px flex-1 bg-gray-200 ml-2"></div>
-        </h4>
-        
+      <div className="space-y-4">
+        <h4 className="px-6 text-[10px] font-black text-gray-400 uppercase tracking-widest">雲端檔案同步</h4>
         <div className="grid grid-cols-1 gap-3">
-          {(['schedule', 'gifts', 'slides'] as const).map((type) => {
+          {(['schedule', 'mcflow', 'gifts', 'slides'] as const).map((type) => {
             const file = (settings.flowFiles || []).find(f => f.type === type);
-            const labels = { schedule: '活動流程表', gifts: '得獎禮品清單', slides: '大會簡報投影片' };
+            const labels = { schedule: '活動流程表', mcflow: '司儀腳本', gifts: '得獎禮品', slides: '大會簡報' };
             return (
-              <div 
-                key={type} 
-                className="bg-white rounded-[2rem] p-4 md:p-5 shadow-sm border border-white flex items-center gap-4 transition-all hover:shadow-md cursor-pointer group"
-                onClick={() => file && handlePreview(file)}
-              >
-                 <div className={`w-14 h-14 rounded-2xl flex items-center justify-center shrink-0 ${type === 'schedule' ? 'bg-blue-50 text-blue-500' : type === 'gifts' ? 'bg-orange-50 text-orange-500' : 'bg-purple-50 text-purple-500'}`}>
-                    {type === 'schedule' ? <FileText size={24} /> : type === 'gifts' ? <FileSpreadsheet size={24} /> : <Presentation size={24} />}
+              <div key={type} className="bg-white rounded-[2rem] p-4 flex items-center gap-4 shadow-sm border border-white transition-transform active:scale-[0.99]">
+                 <div className="w-12 h-12 rounded-2xl bg-gray-50 text-gray-400 flex items-center justify-center">
+                    {type === 'schedule' ? <FileText size={20}/> : type === 'mcflow' ? <FileBox size={20}/> : type === 'gifts' ? <FileSpreadsheet size={20}/> : <Presentation size={20}/>}
                  </div>
-                 
                  <div className="flex-1 min-w-0">
-                    <h3 className="font-black text-black text-base">{labels[type]}</h3>
-                    <div className="text-[10px] text-gray-400 font-bold truncate mt-0.5">
-                      {file ? file.name : isAdmin ? '等待上傳中...' : '管理員尚未提供'}
-                    </div>
+                    <h3 className="font-black text-black text-sm">{labels[type]}</h3>
+                    <div className="text-[10px] text-gray-400 truncate">{file ? file.name : '尚未上傳'}</div>
                  </div>
-
-                 {isAdmin ? (
-                   <button 
-                    onClick={(e) => { e.stopPropagation(); triggerUpload(type); }}
-                    className="p-3 bg-gray-50 rounded-xl text-gray-300 hover:text-blue-500 hover:bg-blue-50 transition-all"
-                   >
-                     {isUploading && uploadType === type ? <Loader2 size={20} className="animate-spin" /> : <Upload size={20} />}
-                   </button>
-                 ) : file && (
-                   <div className="p-3 bg-blue-50 rounded-xl text-blue-500">
-                      <Download size={20} />
-                   </div>
-                 )}
+                 <div className="flex items-center gap-2">
+                    {isAdmin && (
+                      <>
+                        {file && <button onClick={() => removeFlowFile(file.id)} className="p-2 text-red-400 transition-colors hover:text-red-600"><Trash2 size={18}/></button>}
+                        <button onClick={() => triggerUpload(type)} className="p-2 text-blue-500 transition-colors hover:text-blue-700">{isUploading && uploadType === type ? <Loader2 size={18} className="animate-spin" /> : <Upload size={18} />}</button>
+                      </>
+                    )}
+                    {file && <button onClick={() => handlePreview(file)} className="p-2 text-gray-400 transition-colors hover:text-gray-600"><Download size={18}/></button>}
+                 </div>
               </div>
             );
           })}
         </div>
       </div>
 
-      {/* Login Modal */}
+      {/* 系統報表匯出區塊 */}
+      <div className="space-y-4 pt-6">
+        <h4 className="px-6 text-[10px] font-black text-gray-400 uppercase tracking-widest">系統報表匯出 (Excel 下載)</h4>
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+            {[
+                { label: '嘉賓名冊', icon: ClipboardList, color: 'text-blue-500', fn: () => exportDetailedGuestsExcel(guests, settings.eventName, getTargetGroup) },
+                { label: '禮品狀態', icon: Award, color: 'text-orange-500', fn: () => exportGiftsExcel(settings.giftItems || [], settings.eventName) },
+                { label: '活動流程', icon: ListTodo, color: 'text-indigo-500', fn: () => exportMcFlowExcel(settings.mcFlowSteps || [], settings.eventName) },
+                { label: '介紹現況', icon: Mic2, color: 'text-purple-500', fn: () => exportIntroductionsExcel(guests, settings.eventName) },
+                { label: '抽獎結果', icon: Trophy, color: 'text-amber-500', fn: () => exportLotteryExcel(guests, settings.eventName) }
+            ].map(report => (
+                <button key={report.label} onClick={report.fn} className="bg-white p-4 rounded-3xl shadow-sm border border-white flex flex-col items-center justify-center gap-2 transition-all hover:scale-105 active:scale-95 group">
+                    <report.icon size={20} className={`${report.color} group-hover:scale-110 transition-transform`} />
+                    <span className="text-[10px] font-black text-gray-500">{report.label}</span>
+                </button>
+            ))}
+        </div>
+      </div>
+
+      {isAdmin && (
+        <div className="bg-white rounded-[2.5rem] p-8 border-2 border-red-50 flex gap-4 mt-8">
+          <button onClick={() => setShowResetModal(true)} className="flex-1 bg-red-50 text-red-600 p-5 rounded-2xl font-black text-sm active:scale-95 transition-transform flex items-center justify-center gap-2"><RotateCcw size={18}/>重置活動紀錄</button>
+          <button onClick={clearAllData} className="flex-1 bg-gray-900 text-white p-5 rounded-2xl font-black text-sm active:scale-95 transition-transform">完全清空系統</button>
+        </div>
+      )}
+
+      {/* 重置選單彈出視窗 */}
+      {showResetModal && (
+        <div className="fixed inset-0 ios-blur bg-black/40 z-[300] flex items-center justify-center p-6">
+          <div className="bg-white rounded-[3rem] p-8 w-full max-w-sm shadow-2xl space-y-8">
+            <div className="text-center space-y-2">
+              <div className="w-16 h-16 bg-red-50 text-red-500 rounded-3xl flex items-center justify-center mx-auto mb-4">
+                <RotateCcw size={32} />
+              </div>
+              <h3 className="text-2xl font-black text-black">選擇重置範圍</h3>
+              <p className="text-xs font-bold text-gray-400">僅重置紀錄狀態，<span className="text-red-500">保留檔案與名單資料</span></p>
+            </div>
+
+            <div className="space-y-3">
+              {[
+                { id: 'flow', label: '司儀流程紀錄', icon: ListChecks },
+                { id: 'gifts', label: '禮品頒贈狀態', icon: Award },
+                { id: 'checkin', label: '嘉賓報到狀態', icon: UserCheck },
+                { id: 'lottery', label: '抽獎得獎紀錄', icon: Trophy },
+              ].map(opt => (
+                <button 
+                  key={opt.id} 
+                  onClick={() => setResetOptions(prev => ({ ...prev, [opt.id]: !(prev as any)[opt.id] }))}
+                  className={`w-full p-5 rounded-2xl border-2 flex items-center justify-between transition-all ${ (resetOptions as any)[opt.id] ? 'bg-blue-50 border-blue-500' : 'bg-white border-gray-100'}`}
+                >
+                  <div className="flex items-center gap-4">
+                    <opt.icon size={20} className={(resetOptions as any)[opt.id] ? 'text-blue-600' : 'text-gray-300'} />
+                    <span className={`font-black text-sm ${ (resetOptions as any)[opt.id] ? 'text-blue-700' : 'text-gray-400'}`}>{opt.label}</span>
+                  </div>
+                  <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center ${ (resetOptions as any)[opt.id] ? 'bg-blue-500 border-blue-500 text-white' : 'border-gray-200'}`}>
+                    { (resetOptions as any)[opt.id] && <Check size={14} strokeWidth={4} /> }
+                  </div>
+                </button>
+              ))}
+            </div>
+
+            <div className="flex gap-4">
+              <button onClick={() => setShowResetModal(false)} className="flex-1 py-4 font-black text-gray-400 text-sm">取消</button>
+              <button onClick={handleExecuteReset} className="flex-1 py-4 bg-red-500 text-white font-black rounded-2xl text-sm shadow-lg shadow-red-200 active:scale-95 transition-transform">執行重置</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showLoginModal && (
         <div className="fixed inset-0 ios-blur bg-black/40 z-[250] flex items-center justify-center p-6">
           <div className="bg-white rounded-[3rem] p-10 max-w-xs w-full shadow-2xl flex flex-col items-center gap-8 border border-white/20">
-            <h3 className="text-2xl font-black text-black tracking-tight">管理員授權</h3>
+            <h3 className="text-2xl font-black text-black">管理員授權</h3>
             <form onSubmit={handleLoginSubmit} className="w-full space-y-6">
-              <input 
-                type="password" 
-                placeholder="••••" 
-                value={loginPassword} 
-                onChange={e => setLoginPassword(e.target.value)}
-                className="w-full bg-[#F2F2F7] border-none rounded-2xl py-6 px-4 text-center text-4xl font-black focus:ring-4 focus:ring-blue-500/20 outline-none transition-all"
-                autoFocus
-              />
+              <input type="password" placeholder="••••" value={loginPassword} onChange={e => setLoginPassword(e.target.value)} className="w-full bg-[#F2F2F7] border-none rounded-2xl py-6 px-4 text-center text-4xl font-black focus:ring-4 focus:ring-blue-500/20 outline-none" autoFocus />
               <div className="flex gap-4">
                 <button type="button" onClick={() => setShowLoginModal(false)} className="flex-1 py-4 font-black text-gray-400">取消</button>
-                <button type="submit" className="flex-1 py-4 bg-blue-600 text-white font-black rounded-[1.2rem] shadow-xl shadow-blue-200 active:scale-95 transition-all">確認</button>
+                <button type="submit" className="flex-1 py-4 bg-blue-600 text-white font-black rounded-[1.2rem] shadow-xl active:scale-95">確認</button>
               </div>
             </form>
           </div>

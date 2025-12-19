@@ -3,23 +3,18 @@ import { GoogleGenAI, Type } from "@google/genai";
 import { read, utils, writeFile } from "xlsx";
 import { GuestCategory, ParsedGuestDraft, Guest, McFlowStep, GiftItem } from "../types";
 
-// 系統提示詞定義 (用於 AI 辨識手寫簽單)
 const SYSTEM_INSTRUCTION_CHECK_IN = `
 你是一位專業的活動報到管理專家。請分析提供的圖片或文件，識別其中的簽名、姓名、職稱及報到狀態。
 請將辨識結果轉換為 JSON 格式，包含姓名、職稱、類別以及是否已簽名（報到狀態）。
 `;
 
 export interface FileInput {
-    data: string; // Base64
+    data: string;
     mimeType: string;
 }
 
-/**
- * 通用的 Gemini 調用封裝 (僅用於圖片/PDF 辨識)
- */
 async function callGemini(aiParts: any[], systemInstruction: string, responseSchema: any) {
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-  
   try {
     const response = await ai.models.generateContent({
       model: 'gemini-3-pro-preview',
@@ -31,11 +26,7 @@ async function callGemini(aiParts: any[], systemInstruction: string, responseSch
         thinkingConfig: { thinkingBudget: 0 }
       },
     });
-
-    if (!response.text) {
-      throw new Error("模型未回傳任何內容。");
-    }
-
+    if (!response.text) throw new Error("模型未回傳任何內容。");
     return JSON.parse(response.text);
   } catch (error: any) {
     console.error("Gemini API Error Detail:", error);
@@ -43,9 +34,6 @@ async function callGemini(aiParts: any[], systemInstruction: string, responseSch
   }
 }
 
-/**
- * 直接從 Excel 解析人員名單 (非 AI)
- */
 export const parseGuestsFromExcel = async (file: File): Promise<ParsedGuestDraft[]> => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -56,45 +44,35 @@ export const parseGuestsFromExcel = async (file: File): Promise<ParsedGuestDraft
         const firstSheetName = workbook.SheetNames[0];
         const worksheet = workbook.Sheets[firstSheetName];
         const json: any[] = utils.sheet_to_json(worksheet);
-        
         const drafts: ParsedGuestDraft[] = json.map((row: any) => {
-          // 欄位名稱映射與容錯處理
           const name = row['姓名'] || row['Name'] || row['人員'] || '';
           const title = row['職稱'] || row['Title'] || row['職位'] || '';
           const categoryStr = row['類別'] || row['分組'] || row['Category'] || '其他貴賓';
           const code = row['編號'] || row['學號'] || row['Code'] || '';
           const note = row['備註'] || row['Note'] || '';
-          
-          // 嘗試匹配類別列舉
           let category = GuestCategory.OTHER;
           if (categoryStr) {
             const matched = Object.values(GuestCategory).find(val => categoryStr.includes(val));
             if (matched) category = matched;
           }
-
           return {
             name: name.toString().trim(),
             title: title.toString().trim(),
             category: category,
             code: code.toString().trim(),
             note: note.toString().trim(),
-            hasSignature: false // Excel 匯入預設視為未報到
+            hasSignature: false
           };
         }).filter(d => d.name !== '');
-
         resolve(drafts);
       } catch (err) {
-        reject(new Error("Excel 人員名單解析失敗，請確保標題包含：姓名、職稱。"));
+        reject(new Error("Excel 人員名單解析失敗"));
       }
     };
-    reader.onerror = () => reject(new Error("檔案讀取失敗"));
     reader.readAsBinaryString(file);
   });
 };
 
-/**
- * 直接從 Excel 解析禮品清單 (非 AI)
- */
 export const parseGiftsFromExcel = async (file: File): Promise<GiftItem[]> => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -102,39 +80,23 @@ export const parseGiftsFromExcel = async (file: File): Promise<GiftItem[]> => {
       try {
         const data = e.target?.result;
         const workbook = read(data, { type: 'binary' });
-        const firstSheetName = workbook.SheetNames[0];
-        const worksheet = workbook.Sheets[firstSheetName];
+        const worksheet = workbook.Sheets[workbook.SheetNames[0]];
         const json: any[] = utils.sheet_to_json(worksheet);
-        
-        const items: GiftItem[] = json.map((row: any) => {
-          // 尋找包含「量」字眼的 Key (如: 數量、單位數量、禮品量)
-          const keys = Object.keys(row);
-          const quantityKey = keys.find(k => k.includes('量')) || '數量';
-          
-          return {
-            id: Math.random().toString(36).substr(2, 9),
-            sequence: (row['序'] || row['序號'] || row['編號'] || '').toString(),
-            name: (row['項目'] || row['禮品'] || row['禮品名稱'] || row['Name'] || '未命名禮品').toString(),
-            quantity: (row[quantityKey] || row['單位數'] || '1').toString(),
-            recipient: (row['受獎人'] || row['受贈人'] || row['得獎者'] || row['Recipient'] || '現場嘉賓').toString(),
-            personInCharge: (row['負責人'] || row['負責'] || row['PIC'] || '').toString(),
-            donor: (row['贈送人'] || row['單位'] || row['Donor'] || '').toString(),
-            isPresented: false
-          };
-        });
+        const items: GiftItem[] = json.map((row: any) => ({
+          id: Math.random().toString(36).substr(2, 9),
+          sequence: (row['序'] || row['序號'] || '').toString(),
+          name: (row['項目'] || row['禮品'] || '未命名').toString(),
+          quantity: (row['數量'] || '1').toString(),
+          recipient: (row['受獎人'] || '現場嘉賓').toString(),
+          isPresented: false
+        }));
         resolve(items);
-      } catch (err) {
-        reject(new Error("Excel 解析失敗，請確保標題包含：序、項目、數量、受獎人。"));
-      }
+      } catch (err) { reject(new Error("Excel 解析失敗")); }
     };
-    reader.onerror = () => reject(new Error("檔案讀取失敗"));
     reader.readAsBinaryString(file);
   });
 };
 
-/**
- * 直接從 Excel 解析活動流程 (非 AI)
- */
 export const parseMcFlowFromExcel = async (file: File): Promise<McFlowStep[]> => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -142,50 +104,26 @@ export const parseMcFlowFromExcel = async (file: File): Promise<McFlowStep[]> =>
       try {
         const data = e.target?.result;
         const workbook = read(data, { type: 'binary' });
-        const firstSheetName = workbook.SheetNames[0];
-        const worksheet = workbook.Sheets[firstSheetName];
+        const worksheet = workbook.Sheets[workbook.SheetNames[0]];
         const json: any[] = utils.sheet_to_json(worksheet);
-        
-        const steps: McFlowStep[] = json.map((row: any) => {
-          const sequence = (row['序'] || row['序號'] || row['編號'] || '').toString();
-          const time = (row['時間'] || row['Time'] || '').toString();
-          const script = (row['司儀搞'] || row['司儀稿'] || row['搞子'] || row['內容'] || row['描述'] || '').toString();
-          const slides = (row['簡報頁面'] || row['簡報'] || row['投影片'] || row['PPT'] || row['Slides'] || '').toString();
-          
-          // 如果沒有明確的標題，則優先從簡報內容提取
-          let title = (row['項目'] || row['標題'] || row['標題項目'] || row['Title'] || '').toString();
-          if (!title) {
-            title = slides || (script.split('\n')[0].length < 25 ? script.split('\n')[0] : '流程環節');
-          }
-
-          return {
-            id: Math.random().toString(36).substr(2, 9),
-            sequence,
-            time,
-            title: title || '未命名環節',
-            script,
-            slides,
-            isCompleted: false
-          };
-        });
+        const steps: McFlowStep[] = json.map((row: any) => ({
+          id: Math.random().toString(36).substr(2, 9),
+          sequence: (row['序'] || '').toString(),
+          time: (row['時間'] || '').toString(),
+          title: (row['項目'] || row['標題'] || '未命名').toString(),
+          script: (row['司儀搞'] || row['司儀稿'] || '').toString(),
+          slides: (row['簡報頁面'] || '').toString(),
+          isCompleted: false
+        }));
         resolve(steps);
-      } catch (err) {
-        reject(new Error("Excel 解析失敗，請確保標題包含：序、時間、簡報頁面、司儀稿。"));
-      }
+      } catch (err) { reject(new Error("Excel 解析失敗")); }
     };
-    reader.onerror = () => reject(new Error("檔案讀取失敗"));
     reader.readAsBinaryString(file);
   });
 };
 
-/**
- * AI 簽到辨識 (僅用於處理照片或 PDF 掃描檔)
- */
 export const parseCheckInSheet = async (files: FileInput[]): Promise<ParsedGuestDraft[]> => {
-  const aiParts = files.map(file => ({
-    inlineData: { mimeType: file.mimeType, data: file.data }
-  }));
-
+  const aiParts = files.map(file => ({ inlineData: { mimeType: file.mimeType, data: file.data } }));
   const schema = {
     type: Type.ARRAY,
     items: {
@@ -202,8 +140,120 @@ export const parseCheckInSheet = async (files: FileInput[]): Promise<ParsedGuest
       required: ["name", "category", "hasSignature"]
     }
   };
-
   return await callGemini(aiParts, SYSTEM_INSTRUCTION_CHECK_IN, schema);
+};
+
+// --- 新增的 Excel 匯出功能 ---
+
+// 1. 報到管理匯出 (多分頁、依編號排序)
+export const exportDetailedGuestsExcel = (guests: Guest[], eventName: string, getGroupFn: (g: Guest) => string) => {
+    const wb = utils.book_new();
+    const categories = [
+      { key: 'YB', label: '會友 YB' },
+      { key: 'OB', label: '特友 OB' },
+      { key: 'HQ', label: '總會貴賓' },
+      { key: 'VISITING', label: '友會貴賓' },
+      { key: 'VIP', label: '貴賓 VIP' }
+    ];
+
+    categories.forEach(cat => {
+        const list = guests
+            .filter(g => getGroupFn(g) === cat.key)
+            .sort((a, b) => (a.code || '').localeCompare(b.code || '', undefined, { numeric: true }));
+        
+        const data = list.map(g => ({
+            '編號': g.code || '',
+            '姓名': g.name,
+            '職稱': g.title,
+            '類別': g.category,
+            '狀態': g.isCheckedIn ? '已報到' : '未報到',
+            '報到梯次': g.attendedRounds?.join(', ') || '',
+            '報到時間': g.checkInTime || '',
+            '備註': g.note || ''
+        }));
+        
+        const ws = utils.json_to_sheet(data);
+        utils.book_append_sheet(wb, ws, cat.label);
+    });
+
+    writeFile(wb, `${eventName}_嘉賓名冊詳情.xlsx`);
+};
+
+// 2. 禮品頒贈匯出
+export const exportGiftsExcel = (items: GiftItem[], eventName: string) => {
+    const data = items.map(i => ({
+        '序': i.sequence || '',
+        '禮品名稱': i.name,
+        '數量': i.quantity || '',
+        '受獎人': i.recipient,
+        '負責人': i.personInCharge || '',
+        '狀態': i.isPresented ? '【已領取】' : '待領取'
+    }));
+    const ws = utils.json_to_sheet(data);
+    const wb = utils.book_new();
+    utils.book_append_sheet(wb, ws, '禮品頒贈清單');
+    writeFile(wb, `${eventName}_禮品頒贈狀態.xlsx`);
+};
+
+// 3. 司儀流程匯出
+export const exportMcFlowExcel = (steps: McFlowStep[], eventName: string) => {
+    const data = steps.map(s => ({
+        '序': s.sequence || '',
+        '時間': s.time || '',
+        '流程項目': s.title,
+        '簡報內容': s.slides || '',
+        '狀態': s.isCompleted ? '【已完成】' : '進行中/待處理'
+    }));
+    const ws = utils.json_to_sheet(data);
+    const wb = utils.book_new();
+    utils.book_append_sheet(wb, ws, '活動流程表');
+    writeFile(wb, `${eventName}_司儀流程進度.xlsx`);
+};
+
+// 4. 貴賓介紹匯出 (已介紹/未介紹)
+export const exportIntroductionsExcel = (guests: Guest[], eventName: string) => {
+    const present = guests.filter(g => g.isCheckedIn && g.title && !g.title.includes('見習'));
+    const data = present.map(g => ({
+        '姓名': g.name,
+        '職稱': g.title,
+        '類別': g.category,
+        '介紹狀態': g.isIntroduced ? '【已介紹】' : '待介紹'
+    })).sort((a,b) => a.介紹狀態.localeCompare(b.介紹狀態));
+    
+    const ws = utils.json_to_sheet(data);
+    const wb = utils.book_new();
+    utils.book_append_sheet(wb, ws, '貴賓介紹清單');
+    writeFile(wb, `${eventName}_貴賓介紹現況.xlsx`);
+};
+
+// 5. 抽獎儀表匯出
+export const exportLotteryExcel = (guests: Guest[], eventName: string) => {
+    const wb = utils.book_new();
+    
+    // 分輪得獎名單
+    const rounds = Array.from(new Set(guests.flatMap(g => g.wonRounds || []))).sort((a,b) => a-b);
+    rounds.forEach(r => {
+        const roundWinners = guests.filter(g => g.wonRounds?.includes(r)).map(g => ({
+            '輪次': `第 ${r} 輪`,
+            '姓名': g.name,
+            '職稱': g.title
+        }));
+        const ws = utils.json_to_sheet(roundWinners);
+        utils.book_append_sheet(wb, ws, `第 ${r} 輪得獎`);
+    });
+
+    // 統計分頁
+    const summary = guests.filter(g => g.isWinner).map(g => ({
+        '姓名': g.name,
+        '職稱': g.title,
+        '總得獎次數': g.wonRounds?.length || 0,
+        '得獎輪次': g.wonRounds?.join(', ') || ''
+    })).sort((a,b) => b.總得獎次數 - a.總得獎次數);
+    
+    const wsSum = utils.json_to_sheet(summary);
+    utils.book_append_sheet(wb, wsSum, '中獎統計總表');
+
+    writeFile(wb, `${eventName}_抽獎結果報表.xlsx`);
 };
 
 export const exportToExcel = (guests: Guest[], eventName: string) => {

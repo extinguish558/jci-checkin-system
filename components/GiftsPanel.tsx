@@ -1,15 +1,13 @@
 
-import React, { useState, useRef } from 'react';
+import React, { useState } from 'react';
 import { useEvent } from '../context/EventContext';
-import { parseGiftsFromExcel } from '../services/geminiService';
-import { Gift, Upload, CheckCircle2, Circle, Loader2, Trash2, UserCheck, Package, Hash, Lock, Unlock, X } from 'lucide-react';
+import { CheckCircle2, Circle, UserCheck, Lock, Unlock } from 'lucide-react';
 
 const GiftsPanel: React.FC = () => {
-  const { settings, toggleGiftPresented, setGiftItems, isAdmin, loginAdmin, logoutAdmin } = useEvent();
-  const [isProcessing, setIsProcessing] = useState(false);
+  const { settings, toggleGiftPresented, isAdmin, unlockedSections, loginAdmin, logoutAdmin } = useEvent();
+  const isUnlocked = isAdmin || unlockedSections.gifts;
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [loginPassword, setLoginPassword] = useState("");
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleLoginSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -21,167 +19,63 @@ const GiftsPanel: React.FC = () => {
     }
   };
 
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files || files.length === 0) return;
-    
-    setIsProcessing(true);
-    try {
-      const file = files[0];
-      if (file.name.endsWith('.xlsx') || file.name.endsWith('.xls')) {
-        const items = await parseGiftsFromExcel(file);
-        await setGiftItems(items);
-        alert(`成功匯入 ${items.length} 筆禮品資料`);
-      } else {
-        alert("目前僅支援 Excel (.xlsx, .xls) 格式匯入。");
-      }
-    } catch (err: any) {
-      alert(err.message);
-    } finally {
-      setIsProcessing(false);
-      if (fileInputRef.current) fileInputRef.current.value = '';
+  const triggerAction = (action: () => void) => {
+    if (!isUnlocked) {
+      setShowLoginModal(true);
+      return;
     }
+    action();
   };
 
   const giftItems = settings.giftItems || [];
 
   return (
-    <div className="p-4 md:p-8 max-w-4xl mx-auto space-y-6 pb-32 animate-in fade-in duration-500">
-      <input ref={fileInputRef} type="file" className="hidden" onChange={handleFileChange} accept=".xls,.xlsx" />
-
-      {/* Header */}
+    <div className="p-4 md:p-8 max-w-4xl mx-auto space-y-6 pb-32">
       <div className="flex justify-between items-start">
-        <div className="flex-1">
-          <h2 className="text-2xl font-black text-black tracking-tight">禮品頒贈</h2>
+        <div>
+          <h2 className="text-2xl font-black text-black">禮品頒贈系統</h2>
           <p className="text-xs font-bold text-gray-400 mt-1 uppercase tracking-wider">GIFT PRESENTATION</p>
         </div>
-        <div className="flex items-center gap-2">
-          {isAdmin && (
-            <button 
-              onClick={() => fileInputRef.current?.click()} 
-              disabled={isProcessing}
-              className="flex items-center gap-2 bg-white px-4 py-3 rounded-2xl shadow-sm border border-gray-50 hover:shadow-md transition-all active:scale-95 text-orange-600 font-black text-sm"
-            >
-              {isProcessing ? <Loader2 size={18} className="animate-spin" /> : <Upload size={18} />}
-              <span className="hidden md:inline">匯入清單</span>
-            </button>
-          )}
-          <button onClick={() => isAdmin ? logoutAdmin() : setShowLoginModal(true)} className="p-3 bg-white rounded-2xl shadow-sm transition-all hover:bg-gray-50">
-            {isAdmin ? <Unlock size={20} className="text-[#007AFF]"/> : <Lock size={20} className="text-gray-300"/>}
-          </button>
-        </div>
+        <button onClick={() => isUnlocked ? logoutAdmin() : setShowLoginModal(true)} className="p-3 bg-white rounded-2xl shadow-sm">
+          {isUnlocked ? <Unlock size={20} className="text-[#007AFF]"/> : <Lock size={20} className="text-gray-300"/>}
+        </button>
       </div>
 
-      {/* Content Area - Optimized for Recipient Display */}
       <div className="space-y-4">
-        {giftItems.length > 0 ? (
-          <div className="flex flex-col gap-5">
-            {giftItems.map((item) => (
-              <div 
-                key={item.id} 
-                onClick={() => toggleGiftPresented(item.id)}
-                className={`p-6 md:p-8 rounded-[2.5rem] border transition-all cursor-pointer relative overflow-hidden flex flex-col gap-6
-                  ${item.isPresented 
-                    ? 'bg-gray-100/50 border-transparent opacity-60 grayscale' 
-                    : 'bg-white border-white shadow-[0_8px_40px_rgba(0,0,0,0.04)] hover:shadow-xl active:scale-[0.99]'}
-                `}
-              >
-                {/* Status Icon & Meta Tags */}
-                <div className="flex items-start justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className={`shrink-0 ${item.isPresented ? 'text-green-600' : 'text-orange-400'}`}>
-                      {item.isPresented ? <CheckCircle2 size={32} strokeWidth={3} /> : <Circle size={32} strokeWidth={3} />}
-                    </div>
-                    <div className="flex items-center gap-2">
-                      {item.sequence && (
-                        <span className={`text-[11px] font-black px-3 py-1 rounded-full flex items-center gap-1.5 ${item.isPresented ? 'bg-gray-200 text-gray-500' : 'bg-orange-50 text-orange-600'}`}>
-                          <Hash size={12} strokeWidth={3} /> # {item.sequence}
-                        </span>
-                      )}
-                      {item.quantity && (
-                        <span className={`text-[11px] font-black px-3 py-1 rounded-full flex items-center gap-1.5 ${item.isPresented ? 'bg-gray-200 text-gray-500' : 'bg-blue-50 text-[#007AFF]'}`}>
-                          <Package size={12} strokeWidth={3} /> 數量: {item.quantity}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                  {item.isPresented && (
-                    <div className="text-[10px] font-black text-gray-300 uppercase tracking-[0.2em]">
-                       Awarded
-                    </div>
-                  )}
-                </div>
-
-                <div className="flex flex-col lg:flex-row gap-6 items-start lg:items-center">
-                  {/* Award Name - Full display */}
-                  <div className="lg:w-1/2">
-                    <h3 className={`text-2xl md:text-3xl font-black leading-tight break-words ${item.isPresented ? 'text-gray-400 line-through' : 'text-slate-900'}`}>
-                      {item.name}
-                    </h3>
-                  </div>
-
-                  {/* Recipient Area - Enlarged & Wrapping */}
-                  <div className="w-full lg:flex-1">
-                    <div className={`p-5 md:p-6 rounded-3xl flex flex-col gap-2 min-h-[80px] justify-center transition-colors ${item.isPresented ? 'bg-gray-100' : 'bg-slate-50/80 border border-slate-100'}`}>
-                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1.5">
-                        <UserCheck size={14} /> 受獎人名單
-                      </span>
-                      <span className={`text-lg md:text-xl font-black leading-relaxed whitespace-normal break-words ${item.isPresented ? 'text-gray-400' : 'text-[#007AFF]'}`}>
-                        {item.recipient}
-                      </span>
-                    </div>
-                  </div>
-                </div>
+        {giftItems.map((item) => (
+          <div key={item.id} onClick={() => triggerAction(() => toggleGiftPresented(item.id))} className={`p-6 rounded-[2.5rem] border transition-all cursor-pointer flex flex-col gap-4 ${item.isPresented ? 'bg-gray-100 opacity-60' : 'bg-white border-white shadow-sm hover:scale-[1.01]'}`}>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                 <div className={item.isPresented ? 'text-green-600' : 'text-orange-400'}>{item.isPresented ? <CheckCircle2 size={24} /> : <Circle size={24} />}</div>
+                 <span className="text-xs font-black text-gray-400 uppercase tracking-widest">序號 # {item.sequence}</span>
               </div>
-            ))}
+              {item.quantity && <span className="bg-blue-50 text-[#007AFF] text-[10px] font-black px-2 py-1 rounded-lg">數量: {item.quantity}</span>}
+            </div>
+            <div className="flex flex-col md:flex-row gap-4 justify-between md:items-center">
+               <h3 className="text-xl font-black text-black">{item.name}</h3>
+               <div className="bg-[#F2F2F7] px-4 py-2 rounded-xl flex items-center gap-2">
+                 <UserCheck size={14} className="text-blue-500" />
+                 <span className="text-sm font-black text-blue-600">{item.recipient}</span>
+               </div>
+            </div>
           </div>
-        ) : (
-          <div className="py-24 flex flex-col items-center justify-center bg-white/50 rounded-[3rem] border border-white border-dashed">
-            <Gift size={48} className="text-gray-200 mb-4" />
-            <p className="text-gray-400 font-bold italic">尚無禮品頒贈資料</p>
-            {isAdmin && <p className="text-gray-300 text-xs mt-2 font-medium">請點擊上方按鈕匯入包含「序、項目、數量、受獎人」之 Excel</p>}
-          </div>
-        )}
+        ))}
+        {giftItems.length === 0 && <div className="py-24 text-center text-gray-300 font-bold italic">尚無禮品頒贈資料</div>}
       </div>
 
-      {isAdmin && giftItems.length > 0 && (
-        <div className="pt-8 flex justify-center">
-           <button 
-            onClick={() => confirm('確定要清空禮品清單嗎？') && setGiftItems([])}
-            className="flex items-center gap-2 text-red-500/50 hover:text-red-500 text-xs font-black transition-colors"
-           >
-              <Trash2 size={14} /> 清空禮品清單
-           </button>
-        </div>
-      )}
-
-      {/* Login Modal */}
       {showLoginModal && (
         <div className="fixed inset-0 ios-blur bg-black/40 z-[250] flex items-center justify-center p-6">
-          <div className="bg-white rounded-[2.5rem] p-8 max-xs w-full shadow-2xl flex flex-col items-center gap-6 border border-white/20">
-            <h3 className="text-xl font-black text-black text-center tracking-tight">管理員授權</h3>
-            <form onSubmit={handleLoginSubmit} className="w-full space-y-4">
-              <input 
-                type="password" 
-                placeholder="密碼" 
-                value={loginPassword} 
-                onChange={e => setLoginPassword(e.target.value)}
-                className="w-full bg-[#F2F2F7] border-none rounded-2xl py-5 px-4 text-center text-3xl font-black outline-none focus:ring-4 focus:ring-[#007AFF]/20 transition-all"
-                autoFocus
-              />
-              <div className="flex gap-3">
+          <div className="bg-white rounded-[2.5rem] p-8 max-xs w-full shadow-2xl flex flex-col items-center gap-6">
+            <h3 className="text-xl font-black text-black">功能授權</h3>
+            <form onSubmit={handleLoginSubmit} className="w-full space-y-4 text-center">
+              <p className="text-xs text-gray-400">解鎖密碼 (1111)</p>
+              <input type="password" placeholder="密碼" value={loginPassword} onChange={e => setLoginPassword(e.target.value)} className="w-full bg-[#F2F2F7] border-none rounded-2xl py-5 px-4 text-center text-3xl font-black outline-none" autoFocus />
+              <div className="flex gap-3 pt-4">
                 <button type="button" onClick={() => setShowLoginModal(false)} className="flex-1 py-4 font-black text-gray-400">取消</button>
-                <button type="submit" className="flex-1 py-4 bg-[#007AFF] text-white font-black rounded-2xl shadow-xl shadow-blue-200 active:scale-95 transition-all">確認</button>
+                <button type="submit" className="flex-1 py-4 bg-orange-500 text-white font-black rounded-2xl">確認</button>
               </div>
             </form>
           </div>
-        </div>
-      )}
-
-      {isProcessing && (
-        <div className="fixed inset-0 ios-blur bg-white/60 z-[400] flex flex-col items-center justify-center gap-4">
-           <Loader2 size={32} className="animate-spin text-orange-500" />
-           <p className="text-black font-black">正在解析禮品清單...</p>
         </div>
       )}
     </div>
