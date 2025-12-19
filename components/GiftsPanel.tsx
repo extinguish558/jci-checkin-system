@@ -115,8 +115,8 @@ const GiftsPanel: React.FC = () => {
           <div className="bg-white rounded-[2.5rem] p-8 max-xs w-full shadow-2xl flex flex-col items-center gap-6">
             <h3 className="text-xl font-black text-black">功能授權</h3>
             <form onSubmit={handleLoginSubmit} className="w-full space-y-4 text-center">
-              <p className="text-xs text-gray-400">解鎖密碼 (1111)</p>
-              <input type="password" placeholder="密碼" value={loginPassword} onChange={e => setLoginPassword(e.target.value)} className="w-full bg-[#F2F2F7] border-none rounded-2xl py-5 px-4 text-center text-3xl font-black outline-none" autoFocus />
+              <p className="text-xs font-bold text-[#007AFF]">密碼提示：1111</p>
+              <input type="password" placeholder="輸入密碼" value={loginPassword} onChange={e => setLoginPassword(e.target.value)} className="w-full bg-[#F2F2F7] border-none rounded-2xl py-5 px-4 text-center text-3xl font-black outline-none" autoFocus />
               <div className="flex gap-3 pt-4">
                 <button type="button" onClick={() => setShowLoginModal(false)} className="flex-1 py-4 font-black text-gray-400">取消</button>
                 <button type="submit" className="flex-1 py-4 bg-orange-500 text-white font-black rounded-2xl">確認</button>

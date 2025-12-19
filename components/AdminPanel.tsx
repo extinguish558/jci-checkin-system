@@ -331,6 +331,7 @@ const AdminPanel: React.FC = () => {
               <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Administration Access</p>
             </div>
             <form onSubmit={handleLoginSubmit} className="w-full space-y-6 text-center">
+              <p className="text-xs font-bold text-[#007AFF]">密碼提示：0000</p>
               <input 
                 type="password" 
                 placeholder="••••" 

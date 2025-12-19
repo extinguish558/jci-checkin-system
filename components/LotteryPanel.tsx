@@ -240,8 +240,8 @@ const LotteryPanel: React.FC = () => {
           <div className="bg-white rounded-[3rem] p-10 max-w-xs w-full shadow-2xl flex flex-col items-center gap-8 text-center border border-white/20">
             <h3 className="text-2xl font-black text-black">抽獎儀表解鎖</h3>
             <form onSubmit={handleLoginSubmit} className="w-full space-y-6">
-              <p className="text-xs text-gray-400">請輸入抽獎解鎖密碼 (3333)</p>
-              <input type="password" placeholder="••••" value={loginPassword} onChange={e => setLoginPassword(e.target.value)} className="w-full bg-[#F2F2F7] border-none rounded-2xl py-6 px-4 text-center text-4xl font-black focus:ring-4 focus:ring-indigo-500/20 outline-none transition-all" autoFocus />
+              <p className="text-xs font-bold text-[#007AFF]">密碼提示：3333</p>
+              <input type="password" placeholder="輸入密碼" value={loginPassword} onChange={e => setLoginPassword(e.target.value)} className="w-full bg-[#F2F2F7] border-none rounded-2xl py-6 px-4 text-center text-4xl font-black focus:ring-4 focus:ring-indigo-500/20 outline-none transition-all" autoFocus />
               <div className="flex gap-4">
                 <button type="button" onClick={() => setShowLoginModal(false)} className="flex-1 py-4 font-black text-gray-400">取消</button>
                 <button type="submit" className="flex-1 py-4 bg-indigo-600 text-white font-black rounded-2xl shadow-xl active:scale-95 transition-transform">解鎖權限</button>
