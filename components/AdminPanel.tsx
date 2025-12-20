@@ -21,7 +21,10 @@ const AdminPanel: React.FC = () => {
   const [showManualAdd, setShowManualAdd] = useState(false);
   const [manualGuest, setManualGuest] = useState({ name: '', title: '', category: GuestCategory.MEMBER_YB });
 
-  // 當組件掛載（切換至此分頁）時，強制將容器捲動至最上方
+  // 編輯功能的狀態
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editingGuest, setEditingGuest] = useState<Guest | null>(null);
+
   useEffect(() => {
     const mainEl = document.querySelector('main');
     if (mainEl) {
@@ -29,7 +32,6 @@ const AdminPanel: React.FC = () => {
     }
   }, []);
 
-  // 監聽捲動狀態以切換置頂樣式
   useEffect(() => {
     const handleScroll = (e: any) => {
       setIsSticky(e.target.scrollTop > 10);
@@ -130,6 +132,26 @@ const AdminPanel: React.FC = () => {
     await addGuestsFromDraft([draft], new Date());
     setManualGuest({ name: '', title: '', category: GuestCategory.MEMBER_YB });
     setShowManualAdd(false);
+  };
+
+  const handleEditSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingGuest) return;
+    
+    await updateGuestInfo(editingGuest.id, {
+      name: editingGuest.name,
+      title: editingGuest.title,
+      category: editingGuest.category
+    });
+    
+    setShowEditModal(false);
+    setEditingGuest(null);
+  };
+
+  const handleDeleteClick = (id: string, name: string) => {
+    if (window.confirm(`確定要刪除嘉賓「${name}」嗎？此操作不可復原。`)) {
+      deleteGuest(id);
+    }
   };
 
   return (
@@ -256,10 +278,21 @@ const AdminPanel: React.FC = () => {
                                   <p className="text-[10px] md:text-sm text-slate-400 font-bold truncate mt-0.5 md:mt-1">{g.title || '貴賓'}</p>
                               </div>
                               <div className="flex gap-1.5 md:gap-2.5 items-center">
-                                  {isAdmin && (
-                                    <button onClick={() => updateGuestInfo(g.id, { name: g.name })} className="hidden md:flex w-10 h-10 items-center justify-center bg-gray-50 text-gray-400 rounded-xl hover:bg-gray-100 transition-all opacity-0 group-hover:opacity-100">
-                                      <Edit2 size={16}/>
-                                    </button>
+                                  {isUnlocked && (
+                                    <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                      <button 
+                                        onClick={() => { setEditingGuest(g); setShowEditModal(true); }}
+                                        className="w-9 h-9 md:w-12 md:h-12 flex items-center justify-center bg-blue-50 text-blue-500 rounded-xl hover:bg-blue-100 transition-all"
+                                      >
+                                        <Edit2 size={16}/>
+                                      </button>
+                                      <button 
+                                        onClick={() => handleDeleteClick(g.id, g.name)}
+                                        className="w-9 h-9 md:w-12 md:h-12 flex items-center justify-center bg-red-50 text-red-500 rounded-xl hover:bg-red-100 transition-all"
+                                      >
+                                        <Trash2 size={16}/>
+                                      </button>
+                                    </div>
                                   )}
                                   <div className="flex gap-1 p-0.5 md:p-1 bg-slate-50 rounded-[1rem] md:rounded-[1.4rem] border border-gray-100">
                                     <button 
@@ -281,7 +314,7 @@ const AdminPanel: React.FC = () => {
                         {group.list.length === 0 && (
                           <div className="py-16 text-center">
                             <Users size={32} className="mx-auto text-slate-100 mb-3" />
-                            <p className="text-slate-300 font-black italic text-sm">查與嘉賓</p>
+                            <p className="text-slate-300 font-black italic text-sm">查無嘉賓</p>
                           </div>
                         )}
                     </div>
@@ -321,6 +354,57 @@ const AdminPanel: React.FC = () => {
               <div className="flex gap-3 pt-2">
                 <button type="button" onClick={() => setShowManualAdd(false)} className="flex-1 py-4 font-black text-slate-400 text-sm">取消</button>
                 <button type="submit" className="flex-1 py-4 bg-blue-600 text-white font-black rounded-[1.2rem] shadow-lg text-sm">確定新增</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* 編輯嘉賓視窗 */}
+      {showEditModal && editingGuest && (
+        <div className="fixed inset-0 ios-blur bg-black/40 z-[310] flex items-center justify-center p-4">
+          <div className="bg-white rounded-[2.5rem] p-8 w-full max-w-sm shadow-2xl space-y-6 animate-in zoom-in-95 duration-200">
+            <div className="text-center space-y-1">
+              <h3 className="text-2xl font-black text-slate-900">編輯嘉賓資料</h3>
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Update Profile</p>
+            </div>
+            <form onSubmit={handleEditSubmit} className="space-y-4">
+              <div className="space-y-1.5">
+                <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest px-3">嘉賓姓名</label>
+                <input 
+                  type="text" 
+                  value={editingGuest.name} 
+                  onChange={e => setEditingGuest({...editingGuest, name: e.target.value})} 
+                  className="w-full bg-slate-50 border-none rounded-[1.2rem] p-4 font-black text-lg outline-none" 
+                  placeholder="輸入姓名" 
+                  required 
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest px-3">職稱 / 頭銜</label>
+                <input 
+                  type="text" 
+                  value={editingGuest.title} 
+                  onChange={e => setEditingGuest({...editingGuest, title: e.target.value})} 
+                  className="w-full bg-slate-50 border-none rounded-[1.2rem] p-4 font-black text-lg outline-none" 
+                  placeholder="例如: 會長" 
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest px-3">嘉賓類別</label>
+                <select 
+                  value={editingGuest.category} 
+                  onChange={e => setEditingGuest({...editingGuest, category: e.target.value as GuestCategory})} 
+                  className="w-full bg-slate-50 border-none rounded-[1.2rem] p-4 font-black text-lg outline-none appearance-none"
+                >
+                  {Object.values(GuestCategory).map(cat => (
+                    <option key={cat} value={cat}>{cat}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex gap-3 pt-2">
+                <button type="button" onClick={() => { setShowEditModal(false); setEditingGuest(null); }} className="flex-1 py-4 font-black text-slate-400 text-sm">取消</button>
+                <button type="submit" className="flex-1 py-4 bg-blue-600 text-white font-black rounded-[1.2rem] shadow-lg text-sm">儲存修改</button>
               </div>
             </form>
           </div>

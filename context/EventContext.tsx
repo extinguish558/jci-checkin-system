@@ -89,8 +89,6 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [settings, setSettings] = useState<SystemSettings>(defaultSettings);
   const [isCloudConnected, setIsCloudConnected] = useState(false);
   const [connectionError, setConnectionError] = useState<string | null>(null);
-  
-  // 重要：防止同步競爭的保護鎖
   const isHardResetting = useRef(false);
 
   const [isAdmin, setIsAdmin] = useState(() => localStorage.getItem('isAdmin') === 'true');
@@ -139,12 +137,7 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     if (!isFirebaseReady || !db) return;
     
     const unsubscribeSettings = db.collection("config").doc("mainSettings").onSnapshot((docSnap: any) => {
-      // 如果正在執行寫入操作，跳過此次雲端入站更新，避免資料被舊快照覆蓋
-      if (isHardResetting.current) {
-        console.log("Blocking incoming settings snapshot during hard reset...");
-        return;
-      }
-      
+      if (isHardResetting.current) return;
       if (docSnap.exists) {
         const s = docSnap.data() as SystemSettings;
         setSettings(s);
@@ -176,84 +169,73 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   };
 
-  const clearMcFlowOnly = async () => {
-    isHardResetting.current = true;
-    try {
-        const newFiles = (settings.flowFiles || []).filter(f => f.type !== 'mcflow_file');
-        const updates = { mcFlowSteps: [], flowFiles: newFiles };
-        
-        // 1. 同步本地狀態
-        setSettings(prev => ({ ...prev, ...updates }));
-        saveSettingsToLocal({ ...settings, ...updates });
-        
-        // 2. 強制寫入雲端 (使用 set merge 以清空陣列)
-        if (db) {
-            await db.collection("config").doc("mainSettings").set(sanitizeForFirestore(updates), { merge: true });
-        }
-        console.log("McFlow data cleared in cloud and local.");
-    } finally {
-        // 給予 2 秒的緩衝時間確保 Firestore 完成所有非同步更新
-        setTimeout(() => { isHardResetting.current = false; }, 2000);
+  // 實作：將草稿轉換並加入名單
+  const addGuestsFromDraft = async (drafts: ParsedGuestDraft[], checkInTimestamp: Date) => {
+    const newGuests: Guest[] = drafts.map(d => ({
+      id: Math.random().toString(36).substr(2, 9),
+      code: d.code,
+      name: d.name,
+      title: d.title,
+      category: d.category,
+      note: d.note,
+      isCheckedIn: d.hasSignature,
+      attendedRounds: d.hasSignature ? [settings.currentCheckInRound] : [],
+      checkInTime: d.hasSignature ? checkInTimestamp.toISOString() : undefined,
+      round: d.hasSignature ? settings.currentCheckInRound : undefined,
+      isIntroduced: false,
+      isWinner: false,
+      wonRounds: [],
+    }));
+
+    if (db) {
+      const batch = db.batch();
+      newGuests.forEach(g => {
+        const ref = db.collection("guests").doc(g.id);
+        batch.set(ref, sanitizeForFirestore(g));
+      });
+      await batch.commit();
+    } else {
+      const updated = [...guests, ...newGuests];
+      setGuests(updated);
+      saveToLocal(updated);
     }
   };
 
-  const clearGiftsOnly = async () => {
+  // 實作：清除並重寫名單
+  const overwriteGuestsFromDraft = async (drafts: ParsedGuestDraft[], checkInTimestamp: Date) => {
     isHardResetting.current = true;
     try {
-        const newFiles = (settings.flowFiles || []).filter(f => f.type !== 'gifts_file');
-        const updates = { giftItems: [], flowFiles: newFiles };
-        setSettings(prev => ({ ...prev, ...updates }));
-        saveSettingsToLocal({ ...settings, ...updates });
-        if (db) {
-            await db.collection("config").doc("mainSettings").set(sanitizeForFirestore(updates), { merge: true });
-        }
+      if (db) {
+        const snapshot = await db.collection("guests").get();
+        const batch = db.batch();
+        snapshot.forEach((doc: any) => batch.delete(doc.ref));
+        await batch.commit();
+      }
+      await addGuestsFromDraft(drafts, checkInTimestamp);
     } finally {
-        setTimeout(() => { isHardResetting.current = false; }, 2000);
+      setTimeout(() => { isHardResetting.current = false; }, 2000);
     }
-  };
-
-  const clearGuestsOnly = async () => {
-    isHardResetting.current = true;
-    try {
-        setGuests([]);
-        saveToLocal([]);
-        const newFiles = (settings.flowFiles || []).filter(f => f.type !== 'guests_file');
-        if (db) {
-            const snapshot = await db.collection("guests").get();
-            const batch = db.batch();
-            snapshot.forEach((doc: any) => batch.delete(doc.ref));
-            await batch.commit();
-        }
-        await updateSettings({ flowFiles: newFiles });
-    } finally {
-        setTimeout(() => { isHardResetting.current = false; }, 3000);
-    }
-  };
-
-  const toggleMcFlowStep = async (id: string) => {
-    const currentSteps = settings.mcFlowSteps || [];
-    const newSteps = currentSteps.map(step => step.id === id ? { ...step, isCompleted: !step.isCompleted } : step);
-    await updateSettings({ mcFlowSteps: newSteps });
-  };
-
-  const setMcFlowSteps = async (steps: McFlowStep[]) => { await updateSettings({ mcFlowSteps: steps }); };
-  const setGiftItems = async (items: GiftItem[]) => { await updateSettings({ giftItems: items }); };
-  const toggleGiftPresented = async (id: string) => {
-    const currentItems = settings.giftItems || [];
-    const newItems = currentItems.map(item => item.id === id ? { ...item, isPresented: !item.isPresented } : item);
-    await updateSettings({ giftItems: newItems });
   };
 
   const updateGuestInfo = async (id: string, updates: Partial<Guest>) => {
-    setGuests(prev => {
+    if (db) {
+      await db.collection("guests").doc(id).set(sanitizeForFirestore(updates), { merge: true });
+    } else {
+      setGuests(prev => {
         const next = prev.map(g => g.id === id ? { ...g, ...updates } : g);
         saveToLocal(next);
         return next;
-    });
+      });
+    }
+  };
+
+  const deleteGuest = async (id: string) => {
     if (db) {
-        try {
-            await db.collection("guests").doc(id).set(sanitizeForFirestore(updates), { merge: true });
-        } catch (e: any) { console.error("Update guest info failed", e); }
+      await db.collection("guests").doc(id).delete();
+    } else {
+      const updated = guests.filter(g => g.id !== id);
+      setGuests(updated);
+      saveToLocal(updated);
     }
   };
 
@@ -262,13 +244,12 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     if (!guest) return;
     const currentRounds = guest.attendedRounds || [];
     const isAttendingTarget = currentRounds.includes(targetRound);
-    let newRounds = isAttendingTarget ? [] : [targetRound];
+    let newRounds = isAttendingTarget ? currentRounds.filter(r => r !== targetRound) : [...currentRounds, targetRound];
     const updates = {
         attendedRounds: newRounds,
         isCheckedIn: newRounds.length > 0,
-        round: newRounds.length > 0 ? targetRound : null,
-        checkInTime: newRounds.length > 0 ? (guest.checkInTime || new Date().toISOString()) : null,
-        isIntroduced: newRounds.length > 0 ? guest.isIntroduced : false 
+        round: newRounds.length > 0 ? Math.max(...newRounds) : null,
+        checkInTime: newRounds.length > 0 ? (guest.checkInTime || new Date().toISOString()) : null
     };
     await updateGuestInfo(id, updates);
   };
@@ -279,23 +260,24 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     await updateGuestInfo(id, { isIntroduced: !guest.isIntroduced });
   };
 
-  const resetGlobalEventState = async () => {
-    if (!confirm('確定要重置今日所有進度（報到、得獎、講稿進度）嗎？人員名冊將保留。')) return;
-    isHardResetting.current = true;
-    try {
-        const updatedSteps = (settings.mcFlowSteps || []).map(s => ({ ...s, isCompleted: false }));
-        const updatedGifts = (settings.giftItems || []).map(i => ({ ...i, isPresented: false }));
-        await updateSettings({ mcFlowSteps: updatedSteps, giftItems: updatedGifts, currentCheckInRound: 1, lotteryRoundCounter: 1 });
-        
-        const batch = db.batch();
-        guests.forEach(g => {
-            const ref = db.collection("guests").doc(g.id);
-            batch.set(ref, { isCheckedIn: false, attendedRounds: [], checkInTime: null, round: null, isIntroduced: false, isWinner: false, wonRounds: [], winRound: null, wonTimes: {} }, { merge: true });
-        });
-        await batch.commit();
-    } finally {
-        setTimeout(() => { isHardResetting.current = false; }, 3000);
-    }
+  const drawWinner = (mode: DrawMode = 'default'): Guest | null => {
+    const round = settings.lotteryRoundCounter;
+    const pool = guests.filter(g => g.isCheckedIn && !g.wonRounds?.includes(round));
+    if (pool.length === 0) return null;
+    const winner = pool[Math.floor(Math.random() * pool.length)];
+    
+    const now = new Date().toISOString();
+    const wonRounds = [...(winner.wonRounds || []), round];
+    const wonTimes = { ...(winner.wonTimes || {}), [round.toString()]: now };
+    
+    updateGuestInfo(winner.id, {
+      isWinner: true,
+      wonRounds,
+      winRound: round,
+      wonTimes
+    });
+    
+    return winner;
   };
 
   const removeWinnerFromRound = async (guestId: string, round: number) => {
@@ -304,31 +286,117 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const newWonRounds = (guest.wonRounds || []).filter(r => r !== round);
     const newWonTimes = { ...(guest.wonTimes || {}) };
     delete newWonTimes[round.toString()];
-    await updateGuestInfo(guestId, { wonRounds: newWonRounds, isWinner: newWonRounds.length > 0, winRound: newWonRounds.length > 0 ? Math.max(...newWonRounds) : undefined, wonTimes: newWonTimes });
+    await updateGuestInfo(guestId, { 
+      wonRounds: newWonRounds, 
+      isWinner: newWonRounds.length > 0, 
+      winRound: newWonRounds.length > 0 ? Math.max(...newWonRounds) : undefined, 
+      wonTimes: newWonTimes 
+    });
   };
 
   const resetLottery = async () => {
     isHardResetting.current = true;
     try {
         await updateSettings({ lotteryRoundCounter: 1 });
-        const batch = db.batch();
-        guests.forEach(g => {
-            const ref = db.collection("guests").doc(g.id);
-            batch.set(ref, { isWinner: false, wonRounds: [], winRound: null, wonTimes: {} }, { merge: true });
-        });
-        await batch.commit();
+        if (db) {
+            const batch = db.batch();
+            guests.forEach(g => {
+                const ref = db.collection("guests").doc(g.id);
+                batch.set(ref, { isWinner: false, wonRounds: [], winRound: null, wonTimes: {} }, { merge: true });
+            });
+            await batch.commit();
+        }
     } finally {
         setTimeout(() => { isHardResetting.current = false; }, 2000);
     }
   };
 
+  const clearMcFlowOnly = async () => {
+    isHardResetting.current = true;
+    try {
+        const newFiles = (settings.flowFiles || []).filter(f => f.type !== 'mcflow_file');
+        const updates = { mcFlowSteps: [], flowFiles: newFiles };
+        if (db) await db.collection("config").doc("mainSettings").set(sanitizeForFirestore(updates), { merge: true });
+    } finally {
+        setTimeout(() => { isHardResetting.current = false; }, 2000);
+    }
+  };
+
+  const clearGiftsOnly = async () => {
+    isHardResetting.current = true;
+    try {
+        const newFiles = (settings.flowFiles || []).filter(f => f.type !== 'gifts_file');
+        const updates = { giftItems: [], flowFiles: newFiles };
+        if (db) await db.collection("config").doc("mainSettings").set(sanitizeForFirestore(updates), { merge: true });
+    } finally {
+        setTimeout(() => { isHardResetting.current = false; }, 2000);
+    }
+  };
+
+  const clearGuestsOnly = async () => {
+    isHardResetting.current = true;
+    try {
+        if (db) {
+            const snapshot = await db.collection("guests").get();
+            const batch = db.batch();
+            snapshot.forEach((doc: any) => batch.delete(doc.ref));
+            await batch.commit();
+        }
+        await updateSettings({ flowFiles: (settings.flowFiles || []).filter(f => f.type !== 'guests_file') });
+    } finally {
+        setTimeout(() => { isHardResetting.current = false; }, 3000);
+    }
+  };
+
+  const resetGlobalEventState = async () => {
+    isHardResetting.current = true;
+    try {
+        const updatedSteps = (settings.mcFlowSteps || []).map(s => ({ ...s, isCompleted: false }));
+        const updatedGifts = (settings.giftItems || []).map(i => ({ ...i, isPresented: false }));
+        await updateSettings({ mcFlowSteps: updatedSteps, giftItems: updatedGifts, currentCheckInRound: 1, lotteryRoundCounter: 1 });
+        
+        if (db) {
+            const batch = db.batch();
+            guests.forEach(g => {
+                const ref = db.collection("guests").doc(g.id);
+                batch.set(ref, { isCheckedIn: false, attendedRounds: [], checkInTime: null, round: null, isIntroduced: false, isWinner: false, wonRounds: [], winRound: null, wonTimes: {} }, { merge: true });
+            });
+            await batch.commit();
+        }
+    } finally {
+        setTimeout(() => { isHardResetting.current = false; }, 3000);
+    }
+  };
+
   const jumpToLotteryRound = (round: number) => updateSettings({ lotteryRoundCounter: round });
+
+  // 實作：司儀流程控制
+  const setMcFlowSteps = async (steps: McFlowStep[]) => {
+    await updateSettings({ mcFlowSteps: steps });
+  };
+
+  const toggleMcFlowStep = async (id: string) => {
+    const currentSteps = settings.mcFlowSteps || [];
+    const nextSteps = currentSteps.map(s => s.id === id ? { ...s, isCompleted: !s.isCompleted } : s);
+    await updateSettings({ mcFlowSteps: nextSteps });
+  };
+
+  // 實作：禮品頒贈控制
+  const setGiftItems = async (items: GiftItem[]) => {
+    await updateSettings({ giftItems: items });
+  };
+
+  const toggleGiftPresented = async (id: string) => {
+    const currentItems = settings.giftItems || [];
+    const nextItems = currentItems.map(i => i.id === id ? { ...i, isPresented: !i.isPresented } : i);
+    await updateSettings({ giftItems: nextItems });
+  };
 
   return (
     <EventContext.Provider value={{
-      guests, settings, updateSettings, addGuestsFromDraft: async() => {}, overwriteGuestsFromDraft: async() => {}, updateGuestInfo, toggleIntroduced,
-      resetIntroductions: async() => {}, drawWinner: () => null, resetLottery, clearLotteryRound: async() => {}, removeWinnerFromRound, nextLotteryRound: () => {},
-      jumpToLotteryRound, clearAllData: async() => {}, clearGuestsOnly, clearGiftsOnly, clearMcFlowOnly, resetGlobalEventState, resetSpecificRecords: async() => {}, deleteGuest: async() => {}, toggleCheckInRound, clearGuestCheckIn: async() => {},
+      guests, settings, updateSettings, addGuestsFromDraft, overwriteGuestsFromDraft, updateGuestInfo, toggleIntroduced,
+      resetIntroductions: async() => {}, drawWinner, resetLottery, clearLotteryRound: async() => {}, removeWinnerFromRound, nextLotteryRound: () => {},
+      jumpToLotteryRound, clearAllData: async() => {}, clearGuestsOnly, clearGiftsOnly, clearMcFlowOnly, resetGlobalEventState, resetSpecificRecords: async() => {}, deleteGuest, toggleCheckInRound, clearGuestCheckIn: async() => {},
       clearAllCheckIns: async() => {}, clearCheckInsForIds: async() => {}, addFlowFile: async(f) => {
         const current = settings.flowFiles || [];
         const next = [...current.filter(x => x.type !== f.type), f];
