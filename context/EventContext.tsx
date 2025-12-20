@@ -239,16 +239,24 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   };
 
+  /**
+   * 互斥報到邏輯：
+   * 1. 如果點擊的輪次已經在名單中，則取消該輪次（變為未報到）。
+   * 2. 如果點擊新輪次，則清空舊輪次，只保留點擊的這個輪次。
+   */
   const toggleCheckInRound = async (id: string, targetRound: number) => {
     const guest = guests.find(g => g.id === id);
     if (!guest) return;
     const currentRounds = guest.attendedRounds || [];
     const isAttendingTarget = currentRounds.includes(targetRound);
-    let newRounds = isAttendingTarget ? currentRounds.filter(r => r !== targetRound) : [...currentRounds, targetRound];
+    
+    // 實施互斥：如果原本就有，就清空；如果原本沒有，就設為「只有」這一個輪次
+    let newRounds = isAttendingTarget ? [] : [targetRound];
+    
     const updates = {
         attendedRounds: newRounds,
         isCheckedIn: newRounds.length > 0,
-        round: newRounds.length > 0 ? Math.max(...newRounds) : null,
+        round: newRounds.length > 0 ? targetRound : null,
         checkInTime: newRounds.length > 0 ? (guest.checkInTime || new Date().toISOString()) : null
     };
     await updateGuestInfo(id, updates);
@@ -260,7 +268,7 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     await updateGuestInfo(id, { isIntroduced: !guest.isIntroduced });
   };
 
-  const drawWinner = (mode: DrawMode = 'default'): Guest | null => {
+  const drawWinner = (mode?: DrawMode): Guest | null => {
     const round = settings.lotteryRoundCounter;
     const pool = guests.filter(g => g.isCheckedIn && !g.wonRounds?.includes(round));
     if (pool.length === 0) return null;
@@ -370,7 +378,6 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const jumpToLotteryRound = (round: number) => updateSettings({ lotteryRoundCounter: round });
 
-  // 實作：司儀流程控制
   const setMcFlowSteps = async (steps: McFlowStep[]) => {
     await updateSettings({ mcFlowSteps: steps });
   };
@@ -381,7 +388,6 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     await updateSettings({ mcFlowSteps: nextSteps });
   };
 
-  // 實作：禮品頒贈控制
   const setGiftItems = async (items: GiftItem[]) => {
     await updateSettings({ giftItems: items });
   };

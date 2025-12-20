@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useEvent } from '../context/EventContext';
 import { 
@@ -240,6 +241,7 @@ const GiftsPanel: React.FC = () => {
           <div className="bg-white rounded-[2rem] p-8 w-full max-w-xs shadow-2xl flex flex-col items-center gap-6">
             <h3 className="text-xl font-black text-black text-center">功能授權</h3>
             <form onSubmit={handleLoginSubmit} className="w-full space-y-4">
+              <p className="text-[10px] font-bold text-[#007AFF] text-center">密碼提示：1111</p>
               <input type="password" placeholder="••••" value={loginPassword} onChange={e => setLoginPassword(e.target.value)} className="w-full bg-[#F2F2F7] border-none rounded-xl py-5 px-4 text-center text-3xl font-black outline-none" autoFocus />
               <div className="flex gap-2"><button type="button" onClick={() => setShowLoginModal(false)} className="flex-1 py-4 font-black text-gray-400">取消</button><button type="submit" className="flex-1 py-4 bg-orange-500 text-white font-black rounded-xl">確認</button></div>
             </form>
