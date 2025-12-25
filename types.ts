@@ -71,6 +71,11 @@ export interface Guest {
   wonTimes?: Record<string, string>; 
 }
 
+export interface LotteryPoolConfig {
+  includedCategories: GuestCategory[];
+  includedIndividualIds: string[];
+}
+
 export interface SystemSettings {
   eventName: string;
   briefSchedule?: string;
@@ -81,6 +86,7 @@ export interface SystemSettings {
   mcFlowSteps?: McFlowStep[];
   giftItems?: GiftItem[];
   sponsorships?: Sponsorship[];
+  lotteryPoolConfig?: LotteryPoolConfig;
   lastDrawTrigger?: {
     winnerIds: string[];
     timestamp: number;

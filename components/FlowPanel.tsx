@@ -1,14 +1,14 @@
 
 import React, { useRef, useState, useEffect, useMemo } from 'react';
 import { useEvent } from '../context/EventContext';
-import { FlowFile, GuestCategory, Guest } from '../types';
+import { FlowFile, GuestCategory, Guest, LotteryPoolConfig } from '../types';
 import { 
   FileSpreadsheet, FileText, Presentation, Trash2, Lock, Unlock, 
   ListTodo, Download, Loader2, Upload, X, 
   Activity, CheckCircle2, Mic2, Award, ChevronRight,
   TrendingUp, RefreshCcw, Database, BellRing, Clock, FileBox,
   FileCheck2, Trophy, ClipboardList, ChevronDown, UserCheck, Users,
-  RotateCcw, AlertTriangle, Check, ListChecks, Edit3, ChevronUp, Link, Wifi, WifiOff, FileUp, Move, PieChart, Info, FileStack, ShieldAlert, Heart, LockKeyhole, Save
+  RotateCcw, AlertTriangle, Check, ListChecks, Edit3, ChevronUp, Link, Wifi, WifiOff, FileUp, Move, PieChart, Info, FileStack, ShieldAlert, Heart, LockKeyhole, Save, Search, UserMinus, UserPlus, Filter, PlusCircle
 } from 'lucide-react';
 import { 
   exportFinalActivityReport,
@@ -39,6 +39,13 @@ const FlowPanel: React.FC = () => {
   const [editBoardSchedule, setEditBoardSchedule] = useState(settings.briefSchedule || '');
   const [isSavingBoard, setIsSavingBoard] = useState(false);
 
+  // 抽獎池配置狀態
+  const [poolConfig, setPoolConfig] = useState<LotteryPoolConfig>(
+    settings.lotteryPoolConfig || { includedCategories: Object.values(GuestCategory), includedIndividualIds: [] }
+  );
+  const [individualSearch, setIndividualSearch] = useState('');
+  const [isSavingPool, setIsSavingPool] = useState(false);
+
   useEffect(() => {
     const mainEl = document.querySelector('main');
     if (mainEl) mainEl.scrollTop = 0;
@@ -51,6 +58,12 @@ const FlowPanel: React.FC = () => {
       setEditBoardSchedule(settings.briefSchedule || '');
     }
   }, [settings.eventName, settings.briefSchedule, isEditingBoard]);
+
+  useEffect(() => {
+    if (settings.lotteryPoolConfig) {
+      setPoolConfig(settings.lotteryPoolConfig);
+    }
+  }, [settings.lotteryPoolConfig]);
 
   const handleSaveBoard = async () => {
     setIsSavingBoard(true);
@@ -66,6 +79,53 @@ const FlowPanel: React.FC = () => {
       setIsSavingBoard(false);
     }
   };
+
+  const handleSavePoolConfig = async () => {
+    setIsSavingPool(true);
+    try {
+      await updateSettings({ lotteryPoolConfig: poolConfig });
+      alert("抽獎池配置已更新");
+    } catch (e) {
+      alert("儲存配置失敗");
+    } finally {
+      setIsSavingPool(false);
+    }
+  };
+
+  const toggleCategory = (cat: GuestCategory) => {
+    setPoolConfig(prev => {
+      const exists = prev.includedCategories.includes(cat);
+      if (exists) {
+        return { ...prev, includedCategories: prev.includedCategories.filter(c => c !== cat) };
+      } else {
+        return { ...prev, includedCategories: [...prev.includedCategories, cat] };
+      }
+    });
+  };
+
+  const toggleIndividual = (id: string) => {
+    setPoolConfig(prev => {
+      const exists = prev.includedIndividualIds.includes(id);
+      if (exists) {
+        return { ...prev, includedIndividualIds: prev.includedIndividualIds.filter(i => i !== id) };
+      } else {
+        return { ...prev, includedIndividualIds: [...prev.includedIndividualIds, id] };
+      }
+    });
+  };
+
+  const searchedGuests = useMemo(() => {
+    const s = individualSearch.trim().toLowerCase();
+    if (!s) return [];
+    return guests.filter(g => 
+      g.name.toLowerCase().includes(s) || 
+      (g.title || '').toLowerCase().includes(s)
+    ).slice(0, 5);
+  }, [guests, individualSearch]);
+
+  const includedGuests = useMemo(() => {
+    return guests.filter(g => poolConfig.includedIndividualIds.includes(g.id));
+  }, [guests, poolConfig.includedIndividualIds]);
 
   const downloadFile = (file: FlowFile) => {
     if (!file || (!file.data && !file.url)) {
@@ -285,6 +345,97 @@ const FlowPanel: React.FC = () => {
             <Download size={20} />
             立即生成報表
           </button>
+      </div>
+
+      {/* 抽獎池配置 - 新增區域 (對應綠色範圍) */}
+      <div className="bg-white rounded-[2.5rem] p-8 border border-white shadow-sm space-y-8 relative overflow-hidden">
+        {!isAdmin && <div className="absolute top-8 right-8 text-[#007AFF]/30 flex items-center gap-1"><LockKeyhole size={14} /><span className="text-[10px] font-black uppercase tracking-widest">非授權不可操作</span></div>}
+        <div className="flex items-center gap-3">
+          <div className="w-1.5 h-6 bg-red-500 rounded-full" />
+          <h4 className="text-xl font-black text-slate-800">抽獎池進階配置</h4>
+        </div>
+
+        <div className={`space-y-8 ${!isAdmin ? 'opacity-50 pointer-events-none' : ''}`}>
+          {/* 類別篩選 */}
+          <div className="space-y-4">
+            <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1 flex items-center gap-2">
+              <Filter size={12}/> 選擇抽獎身分群組 (報到者符合任一項即入池)
+            </label>
+            <div className="flex flex-wrap gap-2">
+              {Object.values(GuestCategory).map(cat => {
+                const isSelected = poolConfig.includedCategories.includes(cat);
+                return (
+                  <button 
+                    key={cat}
+                    onClick={() => toggleCategory(cat)}
+                    className={`px-4 py-2 rounded-xl text-xs font-black transition-all border ${isSelected ? 'bg-red-500 text-white border-red-500 shadow-md' : 'bg-slate-50 text-slate-400 border-slate-100 hover:bg-slate-100'}`}
+                  >
+                    {cat}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* 特定嘉賓例外處理 */}
+          <div className="space-y-4">
+            <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1 flex items-center gap-2">
+              <UserPlus size={12}/> 特例人員名單 (不論類別，強制包含在抽獎池內)
+            </label>
+            
+            <div className="relative">
+              <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-300" size={16} />
+              <input 
+                type="text"
+                placeholder="搜尋姓名以加入特例..."
+                value={individualSearch}
+                onChange={e => setIndividualSearch(e.target.value)}
+                className="w-full pl-11 pr-4 py-4 bg-slate-50 border-none rounded-2xl text-sm font-black outline-none focus:ring-4 focus:ring-red-500/10 transition-all"
+              />
+              
+              {searchedGuests.length > 0 && (
+                <div className="absolute top-full left-0 right-0 mt-2 bg-white border border-slate-100 rounded-2xl shadow-2xl z-10 overflow-hidden divide-y divide-slate-50">
+                  {searchedGuests.map(g => (
+                    <button 
+                      key={g.id}
+                      onClick={() => { toggleIndividual(g.id); setIndividualSearch(''); }}
+                      className="w-full p-4 flex items-center justify-between hover:bg-slate-50 text-left group"
+                    >
+                      <div>
+                        <p className="font-black text-slate-800">{g.name}</p>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase">{g.title || '貴賓'} · {g.category}</p>
+                      </div>
+                      <PlusCircle size={18} className="text-slate-200 group-hover:text-red-500" />
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* 已加入的特例顯示 */}
+            {includedGuests.length > 0 && (
+              <div className="flex flex-wrap gap-2 pt-2">
+                {includedGuests.map(g => (
+                  <div key={g.id} className="flex items-center gap-2 bg-slate-900 text-white px-3 py-2 rounded-xl text-[10px] font-black border border-white/10 group">
+                    <span>{g.name}</span>
+                    <button onClick={() => toggleIndividual(g.id)} className="text-white/40 hover:text-red-400">
+                      <X size={14}/>
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <button 
+            onClick={handleSavePoolConfig}
+            disabled={isSavingPool}
+            className="w-full py-5 bg-slate-900 text-white font-black rounded-2xl text-xs flex items-center justify-center gap-2 shadow-xl active:scale-[0.98] transition-all"
+          >
+            {isSavingPool ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
+            更新並應用抽獎池配置
+          </button>
+        </div>
       </div>
 
       {/* 已上傳檔案管理 */}

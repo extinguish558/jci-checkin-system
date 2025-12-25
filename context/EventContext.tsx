@@ -75,6 +75,10 @@ const defaultSettings: SystemSettings = {
   mcFlowSteps: [],
   giftItems: [],
   sponsorships: [],
+  lotteryPoolConfig: {
+    includedCategories: Object.values(GuestCategory),
+    includedIndividualIds: []
+  },
   lastDrawTrigger: null,
   lastSponsorshipTrigger: null
 };
@@ -268,13 +272,27 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const drawWinners = (count: number): Guest[] => {
     const round = settings.lotteryRoundCounter;
-    let pool = guests.filter(g => g.isCheckedIn && !g.wonRounds?.includes(round));
+    const poolConfig = settings.lotteryPoolConfig || { includedCategories: Object.values(GuestCategory), includedIndividualIds: [] };
+    
+    // Filter candidates based on pool configuration
+    let pool = guests.filter(g => {
+      if (!g.isCheckedIn) return false; // Must be checked in
+      if (g.wonRounds?.includes(round)) return false; // Must not have won in this round
+      
+      const isInCategory = poolConfig.includedCategories.includes(g.category);
+      const isExplicitlyIncluded = poolConfig.includedIndividualIds.includes(g.id);
+      
+      return isInCategory || isExplicitlyIncluded;
+    });
+
     if (pool.length === 0) return [];
+    
     const actualCount = Math.min(count, pool.length);
     const selectedWinners: Guest[] = [];
     const shuffled = [...pool].sort(() => Math.random() - 0.5);
     for (let i = 0; i < actualCount; i++) selectedWinners.push(shuffled[i]);
     const now = new Date().toISOString();
+    
     if (db) {
       const batch = db.batch();
       selectedWinners.forEach(winner => {
@@ -285,6 +303,7 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       });
       batch.commit();
     }
+    
     updateSettings({ lastDrawTrigger: { winnerIds: selectedWinners.map(w => w.id), timestamp: Date.now() } });
     return selectedWinners;
   };

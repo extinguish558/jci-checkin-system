@@ -1,8 +1,8 @@
 
 import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { useEvent } from '../context/EventContext';
-import { Trophy, Lock, Unlock, Users, RotateCcw, Loader2, Zap, Star, AlertTriangle, ChevronDown, Database, ClipboardList, Volume2, VolumeX, Gift, Snowflake, Heart, Sparkles, Package, MoveHorizontal } from 'lucide-react';
-import { Guest, Sponsorship } from '../types';
+import { Trophy, Lock, Unlock, Users, RotateCcw, Loader2, Zap, Star, AlertTriangle, ChevronDown, Database, ClipboardList, Volume2, VolumeX, Gift, Snowflake, Heart, Sparkles, Package, MoveHorizontal, Filter, UserCheck } from 'lucide-react';
+import { Guest, Sponsorship, GuestCategory } from '../types';
 
 const LotteryPanel: React.FC = () => {
   const { 
@@ -36,6 +36,31 @@ const LotteryPanel: React.FC = () => {
   // 贊助名單輪播控制 (中央區域用)
   const [sponsorIndex, setSponsorIndex] = useState(0);
   const sponsors = settings.sponsorships || [];
+
+  // 抽獎池配置顯示邏輯
+  const poolConfigInfo = useMemo(() => {
+    const config = settings.lotteryPoolConfig;
+    if (!config) return "抽獎範圍：所有已報到貴賓";
+    
+    const cats = config.includedCategories;
+    const ids = config.includedIndividualIds;
+    
+    let text = "當前抽獎範圍：";
+    if (cats.length > 0) {
+      text += `【類別】${cats.join('、')} `;
+    }
+    
+    if (ids.length > 0) {
+      const names = ids.map(id => guests.find(g => g.id === id)?.name).filter(Boolean);
+      if (names.length > 0) {
+        text += `| 【特邀嘉賓】${names.join('、')} `;
+      }
+    }
+    
+    if (cats.length === 0 && ids.length === 0) return "⚠️ 警告：目前抽獎池為空，請至系統設定配置";
+    
+    return text;
+  }, [settings.lotteryPoolConfig, guests]);
 
   useEffect(() => {
     if (sponsors.length > 1 && !isAnimating && currentWinnerBatch.length === 0 && !showSponsorAlert) {
@@ -111,9 +136,29 @@ const LotteryPanel: React.FC = () => {
   const currentActiveRound = settings.lotteryRoundCounter;
 
   const eligibleGuests = useMemo(() => guests.filter(g => g.isCheckedIn), [guests]);
-  const currentPoolSize = useMemo(() => {
-    return eligibleGuests.filter(g => !g.wonRounds?.includes(currentActiveRound)).length;
-  }, [eligibleGuests, currentActiveRound]);
+
+  // 修改抽獎池統計邏輯：計算 未中獎人數 / 抽獎池總人數
+  const poolStats = useMemo(() => {
+    const poolConfig = settings.lotteryPoolConfig || { includedCategories: Object.values(GuestCategory), includedIndividualIds: [] };
+    
+    const poolMembers = eligibleGuests.filter(g => {
+      // 如果完全沒設定 config，預設全體已報到人員
+      if (!settings.lotteryPoolConfig) return true;
+      
+      const isInCategory = poolConfig.includedCategories.includes(g.category);
+      const isExplicitlyIncluded = poolConfig.includedIndividualIds.includes(g.id);
+      return isInCategory || isExplicitlyIncluded;
+    });
+
+    const totalInPool = poolMembers.length;
+    // 尚未獲得任何獎項的人數
+    const notWonYetCount = poolMembers.filter(g => !g.isWinner).length;
+
+    return { 
+      notWonYetCount, 
+      totalInPool 
+    };
+  }, [eligibleGuests, settings.lotteryPoolConfig]);
 
   const historyMap = useMemo(() => {
     const rounds: Record<number, Guest[]> = {};
@@ -279,6 +324,8 @@ const LotteryPanel: React.FC = () => {
           100% { transform: translateX(-50%); }
         }
         .animate-marquee { animation: marquee 30s linear infinite; }
+        
+        .animate-pool-marquee { animation: marquee 20s linear infinite; }
       `}</style>
 
       {/* 贊助慶祝全螢幕特效 */}
@@ -364,7 +411,10 @@ const LotteryPanel: React.FC = () => {
               </button>
               <div className="px-4 py-2 bg-white/5 rounded-full border border-white/10 flex items-center gap-2.5">
                 <div className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
-                <span className="text-[9px] md:text-base font-black text-white italic tracking-tighter tabular-nums opacity-60 uppercase">POOL: {currentPoolSize}</span>
+                {/* 修改點：顯示 未中獎人數 / 總池人數 */}
+                <span className="text-[9px] md:text-base font-black text-white italic tracking-tighter tabular-nums opacity-60 uppercase">
+                  {poolStats.notWonYetCount} / {poolStats.totalInPool}
+                </span>
               </div>
            </div>
         </header>
@@ -470,7 +520,7 @@ const LotteryPanel: React.FC = () => {
                 </div>
              </div>
 
-             {/* 底部贊助芳名即時滾動條 - 條件顯示邏輯優化 */}
+             {/* 底部贊助芳名即時滾動條 */}
              {sponsors.length > 0 && (
                 <div className="bg-black/80 border-t border-white/10 h-16 md:h-24 flex items-center overflow-hidden relative group">
                     <div className="absolute left-0 top-0 bottom-0 w-24 bg-gradient-to-r from-black z-10"></div>
@@ -485,7 +535,6 @@ const LotteryPanel: React.FC = () => {
                                     <span className="text-white/30 font-bold text-[10px] md:text-sm uppercase tracking-widest">{s.title || '會友'}</span>
                                 </div>
                                 
-                                {/* 滾動條智慧顯示：禮品優先於金額 */}
                                 {s.itemName ? (
                                     <div className="flex items-center gap-1.5 px-4 py-1.5 bg-blue-500/10 border border-blue-500/20 rounded-full">
                                         <Package size={14} className="text-blue-400" />
@@ -515,7 +564,20 @@ const LotteryPanel: React.FC = () => {
       </div>
 
       {/* 2. 控制台 */}
-      <div className="mt-8 md:mt-12 w-full max-w-4xl space-y-6 z-20">
+      <div className="mt-8 md:mt-12 w-full max-w-4xl space-y-4 md:space-y-6 z-20">
+        
+        {/* 抽獎池動態顯示跑馬燈 (對應紅色範圍) */}
+        <div className="relative h-10 md:h-12 bg-white/5 rounded-2xl border border-white/10 overflow-hidden flex items-center shadow-inner group">
+          <div className="absolute left-0 top-0 bottom-0 px-4 bg-slate-900/80 z-20 flex items-center gap-2 border-r border-white/10">
+            <Filter size={14} className="text-red-500" />
+            <span className="text-[10px] md:text-xs font-black text-white uppercase tracking-widest">Active Pool</span>
+          </div>
+          <div className="flex animate-pool-marquee whitespace-nowrap pl-24 md:pl-32">
+             <span className="text-[10px] md:text-base font-black text-slate-400 italic pr-24 md:pr-40">{poolConfigInfo}</span>
+             <span className="text-[10px] md:text-base font-black text-slate-400 italic pr-24 md:pr-40">{poolConfigInfo}</span>
+          </div>
+        </div>
+
         <div className="flex flex-col md:flex-row gap-4 items-center">
             <div className="flex-1 w-full relative group">
                 <Users size={16} className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-700" />
