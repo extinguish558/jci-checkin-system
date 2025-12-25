@@ -6,7 +6,7 @@ import { Guest } from '../types';
 
 const LotteryPanel: React.FC = () => {
   const { 
-    drawWinner, guests, settings, jumpToLotteryRound, 
+    drawWinners, guests, settings, jumpToLotteryRound, 
     isAdmin, unlockedSections, loginAdmin, logoutAdmin,
     resetLottery
   } = useEvent();
@@ -31,17 +31,13 @@ const LotteryPanel: React.FC = () => {
   const ITEM_HEIGHT = 120; 
   const TOTAL_REEL_ITEMS = 30;
 
-  // 當前系統設定的抽獎輪次
   const currentActiveRound = settings.lotteryRoundCounter;
 
-  // 動態抽獎池：過濾掉已經在「當前選中輪次」中獎的人
   const eligibleGuests = useMemo(() => guests.filter(g => g.isCheckedIn), [guests]);
   const currentPoolSize = useMemo(() => {
-    // 排除掉已經在當前輪次中獎的人
     return eligibleGuests.filter(g => !g.wonRounds?.includes(currentActiveRound)).length;
   }, [eligibleGuests, currentActiveRound]);
 
-  // 歷史名單映射
   const historyMap = useMemo(() => {
     const rounds: Record<number, Guest[]> = {};
     guests.forEach(g => {
@@ -56,7 +52,6 @@ const LotteryPanel: React.FC = () => {
   }, [guests]);
 
   const generateReel = (winner: Guest) => {
-    // 拉霸池也根據當前輪次動態生成（增加視覺真實感）
     const pool = eligibleGuests.length > 0 ? eligibleGuests : guests;
     const items: Guest[] = [];
     for (let i = 0; i < TOTAL_REEL_ITEMS - 1; i++) {
@@ -66,7 +61,7 @@ const LotteryPanel: React.FC = () => {
     return items;
   };
 
-  const runSingleDraw = (winner: Guest, duration: number): Promise<void> => {
+  const runSingleDrawAnimation = (winner: Guest, duration: number): Promise<void> => {
     return new Promise((resolve) => {
       setReelItems(generateReel(winner));
       setAnimatingWinner(null);
@@ -103,18 +98,24 @@ const LotteryPanel: React.FC = () => {
     if (currentPoolSize === 0) return;
     setIsAnimating(true);
     setCurrentWinnerBatch([]);
-    const countToDraw = Math.min(drawCount, currentPoolSize);
-    const winners: Guest[] = [];
     
-    for (let i = 0; i < countToDraw; i++) {
-      // 這裡 drawWinner 會使用 settings.lotteryRoundCounter 作為寫入輪次
-      const w = drawWinner(); 
-      if (w) {
-        const duration = i === 0 ? 6000 : 2000;
-        await runSingleDraw(w, duration);
-        winners.push(w);
-        setCurrentWinnerBatch([...winners]);
-      }
+    // 改進點：先一次性獲取所有不重複的中獎者名單
+    const countToDraw = Math.min(drawCount, currentPoolSize);
+    const selectedWinners = drawWinners(countToDraw); 
+    
+    if (selectedWinners.length === 0) {
+        setIsAnimating(false);
+        return;
+    }
+
+    const winnersShown: Guest[] = [];
+    for (let i = 0; i < selectedWinners.length; i++) {
+      const w = selectedWinners[i];
+      // 這裡僅處理動畫演示，中獎名單已經在上面 drawWinners 鎖定了
+      const duration = i === 0 ? 6000 : 2000;
+      await runSingleDrawAnimation(w, duration);
+      winnersShown.push(w);
+      setCurrentWinnerBatch([...winnersShown]);
     }
     setIsAnimating(false);
   };
@@ -217,7 +218,6 @@ const LotteryPanel: React.FC = () => {
             </div>
           </div>
 
-          {/* 右側：即時結果顯示區 (只顯示該輪次剛剛抽出的名單) */}
           <div className={`relative w-full md:w-[68%] h-[70%] md:h-full p-4 md:p-6 overflow-hidden transition-all duration-1000
             ${isAnimating || currentWinnerBatch.length > 0 ? 'bg-blue-900/15 ring-inset ring-1 ring-blue-500/20' : 'bg-black/40'}
           `}>
@@ -266,7 +266,6 @@ const LotteryPanel: React.FC = () => {
         )}
       </div>
 
-      {/* 2. 控制列與分頁系統 */}
       <div className="mt-8 md:mt-12 w-full max-w-4xl space-y-6 z-20">
         
         <div className="flex flex-col md:flex-row gap-4 items-center">
@@ -298,17 +297,14 @@ const LotteryPanel: React.FC = () => {
             </div>
         </div>
 
-        {/* 分頁按鈕：點擊即切換全域抽獎輪次 */}
         <div className="flex items-end px-2 md:px-4">
            <div className="flex-1 flex gap-1.5 overflow-x-auto no-scrollbar">
               {[1, 2, 3, 4, 5].map(r => (
                 <button 
                   key={r} 
                   onClick={() => {
-                    // 同步邏輯：點擊分頁即切換抽獎目標輪次
                     if (isUnlocked) {
                         jumpToLotteryRound(r);
-                        // 清空當下這一把的顯示，因為已經換輪次了
                         setCurrentWinnerBatch([]);
                     } else {
                         setShowLoginModal(true);
@@ -329,7 +325,6 @@ const LotteryPanel: React.FC = () => {
            </div>
         </div>
 
-        {/* 歷史存檔區：根據當前選中輪次顯示名單 */}
         <div className="relative bg-[#15171e] rounded-[2rem] md:rounded-[3rem] border border-white/10 shadow-3xl overflow-hidden min-h-[450px]">
            <div className="absolute inset-0 opacity-5 pointer-events-none flex items-center justify-center">
               <Database size={350} />
@@ -383,7 +378,7 @@ const LotteryPanel: React.FC = () => {
 
       {showLoginModal && (
         <div className="fixed inset-0 ios-blur bg-black/98 z-[500] flex items-center justify-center p-6">
-          <div className="bg-[#0b0c10] border border-white/10 rounded-[3rem] p-10 md:p-16 max-w-sm w-full shadow-3xl flex flex-col items-center gap-8 text-center animate-in zoom-in-95 duration-500">
+          <div className="bg-[#0b0c10] border border-white/10 rounded-[3rem] p-10 md:p-16 max-sm w-full shadow-3xl flex flex-col items-center gap-8 text-center animate-in zoom-in-95 duration-500">
             <h3 className="text-base md:text-2xl font-black text-white tracking-[0.5em] italic uppercase">Security Authority</h3>
             <form onSubmit={handleLoginSubmit} className="w-full space-y-10">
               <input type="password" placeholder="••••" value={loginPassword} onChange={e => setLoginPassword(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-2xl py-8 px-6 text-center text-5xl md:text-7xl font-black text-white outline-none tracking-[1em] focus:bg-white/10 transition-all" autoFocus />

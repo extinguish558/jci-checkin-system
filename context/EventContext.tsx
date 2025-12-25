@@ -29,6 +29,7 @@ interface EventContextType {
   toggleIntroduced: (id: string) => Promise<void>;
   resetIntroductions: () => Promise<void>;
   drawWinner: (mode?: DrawMode) => Guest | null;
+  drawWinners: (count: number) => Guest[]; // 新增：支援批次不重複抽獎
   resetLottery: () => Promise<void>;
   clearLotteryRound: (round: number) => Promise<void>;
   removeWinnerFromRound: (guestId: string, round: number) => Promise<void>;
@@ -169,7 +170,6 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   };
 
-  // 實作：將草稿轉換並加入名單
   const addGuestsFromDraft = async (drafts: ParsedGuestDraft[], checkInTimestamp: Date) => {
     const newGuests: Guest[] = drafts.map(d => ({
       id: Math.random().toString(36).substr(2, 9),
@@ -201,7 +201,6 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   };
 
-  // 實作：清除並重寫名單
   const overwriteGuestsFromDraft = async (drafts: ParsedGuestDraft[], checkInTimestamp: Date) => {
     isHardResetting.current = true;
     try {
@@ -239,18 +238,11 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   };
 
-  /**
-   * 互斥報到邏輯：
-   * 1. 如果點擊的輪次已經在名單中，則取消該輪次（變為未報到）。
-   * 2. 如果點擊新輪次，則清空舊輪次，只保留點擊的這個輪次。
-   */
   const toggleCheckInRound = async (id: string, targetRound: number) => {
     const guest = guests.find(g => g.id === id);
     if (!guest) return;
     const currentRounds = guest.attendedRounds || [];
     const isAttendingTarget = currentRounds.includes(targetRound);
-    
-    // 實施互斥：如果原本就有，就清空；如果原本沒有，就設為「只有」這一個輪次
     let newRounds = isAttendingTarget ? [] : [targetRound];
     
     const updates = {
@@ -268,24 +260,43 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     await updateGuestInfo(id, { isIntroduced: !guest.isIntroduced });
   };
 
-  const drawWinner = (mode?: DrawMode): Guest | null => {
+  const drawWinner = (): Guest | null => {
+    const results = drawWinners(1);
+    return results.length > 0 ? results[0] : null;
+  };
+
+  // 核心改進：支援批次抽獎且絕不重複
+  const drawWinners = (count: number): Guest[] => {
     const round = settings.lotteryRoundCounter;
-    const pool = guests.filter(g => g.isCheckedIn && !g.wonRounds?.includes(round));
-    if (pool.length === 0) return null;
-    const winner = pool[Math.floor(Math.random() * pool.length)];
+    // 建立目前符合條件的池子 (已報到且此輪未中獎)
+    let pool = guests.filter(g => g.isCheckedIn && !g.wonRounds?.includes(round));
     
+    if (pool.length === 0) return [];
+    
+    const actualCount = Math.min(count, pool.length);
+    const selectedWinners: Guest[] = [];
+    
+    // 洗牌選取前 N 位
+    const shuffled = [...pool].sort(() => Math.random() - 0.5);
+    for (let i = 0; i < actualCount; i++) {
+        selectedWinners.push(shuffled[i]);
+    }
+    
+    // 批次更新資料庫
     const now = new Date().toISOString();
-    const wonRounds = [...(winner.wonRounds || []), round];
-    const wonTimes = { ...(winner.wonTimes || {}), [round.toString()]: now };
-    
-    updateGuestInfo(winner.id, {
-      isWinner: true,
-      wonRounds,
-      winRound: round,
-      wonTimes
+    selectedWinners.forEach(winner => {
+        const wonRounds = [...(winner.wonRounds || []), round];
+        const wonTimes = { ...(winner.wonTimes || {}), [round.toString()]: now };
+        
+        updateGuestInfo(winner.id, {
+          isWinner: true,
+          wonRounds,
+          winRound: round,
+          wonTimes
+        });
     });
     
-    return winner;
+    return selectedWinners;
   };
 
   const removeWinnerFromRound = async (guestId: string, round: number) => {
@@ -307,10 +318,10 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     try {
         await updateSettings({ lotteryRoundCounter: 1 });
         if (db) {
+            const snapshot = await db.collection("guests").get();
             const batch = db.batch();
-            guests.forEach(g => {
-                const ref = db.collection("guests").doc(g.id);
-                batch.set(ref, { isWinner: false, wonRounds: [], winRound: null, wonTimes: {} }, { merge: true });
+            snapshot.forEach((doc: any) => {
+                batch.update(doc.ref, { isWinner: false, wonRounds: [], winRound: null, wonTimes: {} });
             });
             await batch.commit();
         }
@@ -364,10 +375,10 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         await updateSettings({ mcFlowSteps: updatedSteps, giftItems: updatedGifts, currentCheckInRound: 1, lotteryRoundCounter: 1 });
         
         if (db) {
+            const snapshot = await db.collection("guests").get();
             const batch = db.batch();
-            guests.forEach(g => {
-                const ref = db.collection("guests").doc(g.id);
-                batch.set(ref, { isCheckedIn: false, attendedRounds: [], checkInTime: null, round: null, isIntroduced: false, isWinner: false, wonRounds: [], winRound: null, wonTimes: {} }, { merge: true });
+            snapshot.forEach((doc: any) => {
+                batch.update(doc.ref, { isCheckedIn: false, attendedRounds: [], checkInTime: null, round: null, isIntroduced: false, isWinner: false, wonRounds: [], winRound: null, wonTimes: {} });
             });
             await batch.commit();
         }
@@ -401,7 +412,7 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   return (
     <EventContext.Provider value={{
       guests, settings, updateSettings, addGuestsFromDraft, overwriteGuestsFromDraft, updateGuestInfo, toggleIntroduced,
-      resetIntroductions: async() => {}, drawWinner, resetLottery, clearLotteryRound: async() => {}, removeWinnerFromRound, nextLotteryRound: () => {},
+      resetIntroductions: async() => {}, drawWinner, drawWinners, resetLottery, clearLotteryRound: async() => {}, removeWinnerFromRound, nextLotteryRound: () => {},
       jumpToLotteryRound, clearAllData: async() => {}, clearGuestsOnly, clearGiftsOnly, clearMcFlowOnly, resetGlobalEventState, resetSpecificRecords: async() => {}, deleteGuest, toggleCheckInRound, clearGuestCheckIn: async() => {},
       clearAllCheckIns: async() => {}, clearCheckInsForIds: async() => {}, addFlowFile: async(f) => {
         const current = settings.flowFiles || [];
