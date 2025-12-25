@@ -33,11 +33,14 @@ const LotteryPanel: React.FC = () => {
 
   const currentActiveRound = settings.lotteryRoundCounter;
 
+  // 抽獎池與人數計算
   const eligibleGuests = useMemo(() => guests.filter(g => g.isCheckedIn), [guests]);
   const currentPoolSize = useMemo(() => {
+    // 根據當前選中的輪次過濾
     return eligibleGuests.filter(g => !g.wonRounds?.includes(currentActiveRound)).length;
   }, [eligibleGuests, currentActiveRound]);
 
+  // 歷史名單映射
   const historyMap = useMemo(() => {
     const rounds: Record<number, Guest[]> = {};
     guests.forEach(g => {
@@ -99,7 +102,6 @@ const LotteryPanel: React.FC = () => {
     setIsAnimating(true);
     setCurrentWinnerBatch([]);
     
-    // 改進點：先一次性獲取所有不重複的中獎者名單
     const countToDraw = Math.min(drawCount, currentPoolSize);
     const selectedWinners = drawWinners(countToDraw); 
     
@@ -111,7 +113,6 @@ const LotteryPanel: React.FC = () => {
     const winnersShown: Guest[] = [];
     for (let i = 0; i < selectedWinners.length; i++) {
       const w = selectedWinners[i];
-      // 這裡僅處理動畫演示，中獎名單已經在上面 drawWinners 鎖定了
       const duration = i === 0 ? 6000 : 2000;
       await runSingleDrawAnimation(w, duration);
       winnersShown.push(w);
@@ -133,6 +134,21 @@ const LotteryPanel: React.FC = () => {
       setConfirmState('idle');
       startBatchDraw();
     }, 1200);
+  };
+
+  // 優化後的重置處理
+  const handleResetClick = async () => {
+    if (!isAdmin) { setShowLoginModal(true); return; }
+    if (window.confirm('確定重置今日所有得獎紀錄？此操作會將所有輪次歸零並清空名單。')) {
+      // 1. 立即清除本地 UI 狀態，讓畫面秒變初始狀態
+      setCurrentWinnerBatch([]);
+      setAnimatingWinner(null);
+      setReelItems([]);
+      setReelOffset(0);
+      
+      // 2. 執行全域資料重置
+      await resetLottery();
+    }
   };
 
   const handleLoginSubmit = (e: React.FormEvent) => {
@@ -283,7 +299,7 @@ const LotteryPanel: React.FC = () => {
 
             <div className="flex gap-4 shrink-0">
                 <button 
-                  onClick={() => { if(window.confirm('確定重置今日所有得獎紀錄？')) resetLottery(); }} 
+                  onClick={handleResetClick} 
                   className="w-12 h-12 md:w-16 md:h-16 bg-red-600/5 text-red-500 hover:bg-red-600 hover:text-white rounded-full flex items-center justify-center transition-all border border-red-500/10 shadow-xl"
                 >
                   <RotateCcw size={18} />
