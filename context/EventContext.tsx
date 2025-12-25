@@ -98,6 +98,16 @@ const sanitizeForFirestore = (obj: any): any => {
 
 const EventContext = createContext<EventContextType | undefined>(undefined);
 
+// Fisher-Yates 洗牌演算法：確保絕對公平的隨機分佈
+function shuffleArray<T>(array: T[]): T[] {
+  const result = [...array];
+  for (let i = result.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [result[i], result[j]] = [result[j], result[i]];
+  }
+  return result;
+}
+
 export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [guests, setGuests] = useState<Guest[]>([]);
   const [settings, setSettings] = useState<SystemSettings>(defaultSettings);
@@ -274,10 +284,12 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const round = settings.lotteryRoundCounter;
     const poolConfig = settings.lotteryPoolConfig || { includedCategories: Object.values(GuestCategory), includedIndividualIds: [] };
     
-    // Filter candidates based on pool configuration
+    // 嚴格過濾邏輯：
+    // 1. 必須已報到
+    // 2. 絕對不能已經中過獎 (isWinner 為 true 的人永久排除，直到重置)
     let pool = guests.filter(g => {
-      if (!g.isCheckedIn) return false; // Must be checked in
-      if (g.wonRounds?.includes(round)) return false; // Must not have won in this round
+      if (!g.isCheckedIn) return false; 
+      if (g.isWinner) return false; // 關鍵修正：杜絕跨輪次重複得獎
       
       const isInCategory = poolConfig.includedCategories.includes(g.category);
       const isExplicitlyIncluded = poolConfig.includedIndividualIds.includes(g.id);
@@ -285,17 +297,27 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       return isInCategory || isExplicitlyIncluded;
     });
 
-    if (pool.length === 0) return [];
+    if (pool.length === 0) {
+      alert("抽獎池已空！所有人均已中獎或無人符合抽獎類別。");
+      return [];
+    }
+
+    if (count > pool.length) {
+      alert(`抽獎池人數不足！池內僅剩 ${pool.length} 人，無法抽出 ${count} 人。`);
+      return [];
+    }
     
-    const actualCount = Math.min(count, pool.length);
-    const selectedWinners: Guest[] = [];
-    const shuffled = [...pool].sort(() => Math.random() - 0.5);
-    for (let i = 0; i < actualCount; i++) selectedWinners.push(shuffled[i]);
+    // 使用 Fisher-Yates 洗牌演算法確保隨機公平性
+    const shuffledPool = shuffleArray(pool);
+    // Explicitly type selectedWinners as Guest[] to fix inference errors.
+    const selectedWinners: Guest[] = shuffledPool.slice(0, count) as Guest[];
+    
     const now = new Date().toISOString();
     
     if (db) {
       const batch = db.batch();
       selectedWinners.forEach(winner => {
+        // Correcting property access errors on type 'unknown' by using typed selectedWinners
         const wonRounds = [...(winner.wonRounds || []), round];
         const wonTimes = { ...(winner.wonTimes || {}), [round.toString()]: now };
         const ref = db.collection("guests").doc(winner.id);
@@ -304,6 +326,7 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       batch.commit();
     }
     
+    // Fix: Explicitly using 'Guest' type for mapped winner IDs
     updateSettings({ lastDrawTrigger: { winnerIds: selectedWinners.map(w => w.id), timestamp: Date.now() } });
     return selectedWinners;
   };

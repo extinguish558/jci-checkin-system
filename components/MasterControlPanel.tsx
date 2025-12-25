@@ -7,7 +7,7 @@ import {
   RotateCcw, Trash2, Save, Wifi, Clock, Activity, Users, 
   ChevronRight, AlertCircle, ShieldAlert, Database, Globe,
   Edit3, Search, X, CheckCircle2, ChevronDown, ListChecks, ArrowUpDown,
-  ExternalLink, Check, Zap, BarChart3, ShieldCheck, UserCheck, Coins, Heart, Package, Loader2, Info, Lock
+  ExternalLink, Check, Zap, BarChart3, ShieldCheck, UserCheck, Coins, Heart, Package, Loader2, Info, Lock, Trophy, UserMinus
 } from 'lucide-react';
 
 const MasterControlPanel: React.FC = () => {
@@ -53,6 +53,21 @@ const MasterControlPanel: React.FC = () => {
     });
     setShowEditSponsorshipModal(false);
     setEditingSponsorship(null);
+  };
+
+  // 手動撤銷中獎資格 (返回抽獎池)
+  const handleRevokeWinner = async (guest: Guest) => {
+    if (!window.confirm(`確定要撤銷「${guest.name}」的中獎資格嗎？\n該員將會返回抽獎池中。`)) return;
+    try {
+        await updateGuestInfo(guest.id, {
+            isWinner: false,
+            wonRounds: [],
+            winRound: undefined,
+            wonTimes: {}
+        });
+    } catch (e: any) {
+        alert("操作失敗: " + e.message);
+    }
   };
 
   const filteredGuests = useMemo(() => {
@@ -143,7 +158,6 @@ const MasterControlPanel: React.FC = () => {
         
         {/* 左側：核心活動看板資訊 */}
         <div className="lg:col-span-3 space-y-6">
-          {/* 全域看板配置 - 改為純顯示模式 */}
           <div className="bg-white rounded-[2.5rem] p-8 shadow-sm border border-white space-y-8 relative overflow-hidden group">
             <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity"><Settings size={80} /></div>
             <h3 className="font-black text-lg text-slate-900 flex items-center gap-2 border-b border-gray-50 pb-4">
@@ -153,53 +167,32 @@ const MasterControlPanel: React.FC = () => {
               <div className="space-y-2">
                 <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">活動正式全銜</label>
                 <div className="bg-slate-50 rounded-2xl p-5 min-h-[60px] flex items-center border border-slate-100/50">
-                  <p className="font-black text-base text-slate-800 leading-tight">
-                    {settings.eventName || "尚未設定活動名稱"}
-                  </p>
+                  <p className="font-black text-base text-slate-800 leading-tight">{settings.eventName || "尚未設定活動名稱"}</p>
                 </div>
               </div>
               <div className="space-y-2">
                 <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">即時公告內容</label>
                 <div className="bg-slate-50 rounded-2xl p-5 min-h-[150px] border border-slate-100/50">
-                  <p className="text-sm font-bold text-slate-600 leading-relaxed whitespace-pre-wrap">
-                    {settings.briefSchedule || "目前尚無即時公告事項。"}
-                  </p>
+                  <p className="text-sm font-bold text-slate-600 leading-relaxed whitespace-pre-wrap">{settings.briefSchedule || "目前尚無即時公告事項。"}</p>
                 </div>
-              </div>
-              <div className="flex items-center gap-2 px-1 text-[10px] font-black text-slate-300 italic uppercase">
-                <Info size={12} /> 如需修改請前往「系統設定」
               </div>
             </div>
           </div>
 
           {/* 時間相位控制 */}
           <div className="bg-slate-50 rounded-[2.5rem] p-8 space-y-6 border border-white shadow-sm">
-            <h3 className="font-black text-lg text-slate-900 flex items-center gap-2">
-              <Clock size={20} className="text-slate-400" /> 時間相位控制
-            </h3>
+            <h3 className="font-black text-lg text-slate-900 flex items-center gap-2"><Clock size={20} className="text-slate-400" /> 時間相位控制</h3>
             <div className="space-y-6">
                <div className="space-y-3">
                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">報到輪次 (R1 / R2)</p>
                  <div className="grid grid-cols-2 bg-white p-1.5 rounded-2xl gap-2 shadow-inner border border-black/5">
-                   {[1, 2].map(r => (
-                     <button 
-                        key={r} 
-                        onClick={() => isAdmin && updateSettings({ currentCheckInRound: r })} 
-                        className={`py-3 rounded-xl font-black text-xs transition-all ${settings.currentCheckInRound === r ? 'bg-slate-900 text-white shadow-lg' : 'text-slate-400 hover:text-slate-600'}`}
-                      >ROUND {r}</button>
-                   ))}
+                   {[1, 2].map(r => (<button key={r} onClick={() => isAdmin && updateSettings({ currentCheckInRound: r })} className={`py-3 rounded-xl font-black text-xs transition-all ${settings.currentCheckInRound === r ? 'bg-slate-900 text-white shadow-lg' : 'text-slate-400 hover:text-slate-600'}`}>ROUND {r}</button>))}
                  </div>
                </div>
                <div className="space-y-3">
                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">抽獎階段 (1-5)</p>
                  <div className="flex bg-white p-1.5 rounded-2xl gap-1.5 shadow-inner border border-black/5">
-                   {[1, 2, 3, 4, 5].map(r => (
-                     <button 
-                        key={r} 
-                        onClick={() => isAdmin && updateSettings({ lotteryRoundCounter: r })} 
-                        className={`flex-1 py-3 rounded-xl font-black text-xs transition-all ${settings.lotteryRoundCounter === r ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-400 hover:text-slate-600'}`}
-                      >{r}</button>
-                   ))}
+                   {[1, 2, 3, 4, 5].map(r => (<button key={r} onClick={() => isAdmin && updateSettings({ lotteryRoundCounter: r })} className={`flex-1 py-3 rounded-xl font-black text-xs transition-all ${settings.lotteryRoundCounter === r ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-400 hover:text-slate-600'}`}>{r}</button>))}
                  </div>
                </div>
             </div>
@@ -207,13 +200,11 @@ const MasterControlPanel: React.FC = () => {
 
           {/* 贊助芳名即時牆 */}
           <div className="bg-white rounded-[2.5rem] shadow-sm border border-white flex flex-col overflow-hidden">
-            <div className="p-6 md:p-8 border-b border-amber-50 bg-amber-50/20 flex items-center justify-between gap-4">
+            <div className="p-8 border-b border-amber-50 bg-amber-50/20 flex items-center justify-between gap-4">
               <div className="flex items-center gap-4">
                 <div className="w-1.5 h-6 bg-amber-500 rounded-full" />
                 <h3 className="font-black text-xl text-amber-900">贊助芳名牆</h3>
-                <div className="flex items-center gap-1.5 px-3 py-1 bg-white border border-amber-100 rounded-full text-amber-600 font-black text-xs tabular-nums">
-                    <Coins size={12} /> NT$ {totalSponsorshipAmount.toLocaleString()}
-                </div>
+                <div className="flex items-center gap-1.5 px-3 py-1 bg-white border border-amber-100 rounded-full text-amber-600 font-black text-xs tabular-nums"><Coins size={12} /> NT$ {totalSponsorshipAmount.toLocaleString()}</div>
               </div>
             </div>
             <div className="max-h-[300px] overflow-y-auto no-scrollbar divide-y divide-amber-50/50">
@@ -221,10 +212,7 @@ const MasterControlPanel: React.FC = () => {
                 <div key={s.id} className="px-6 py-4 flex items-center justify-between hover:bg-amber-50/20 transition-all group">
                   <div className="flex items-center gap-3 min-w-0 flex-1">
                     <div className="w-8 h-8 rounded-lg bg-amber-50 flex items-center justify-center text-amber-500 shadow-inner shrink-0"><Heart size={16} fill="currentColor" /></div>
-                    <div className="flex-1 min-w-0">
-                        <span className="font-black text-slate-900 text-sm md:text-base tracking-tighter block truncate">{s.name}</span>
-                        {s.itemName && <span className="text-[8px] font-black text-blue-600 truncate block">{s.itemName}</span>}
-                    </div>
+                    <div className="flex-1 min-w-0"><span className="font-black text-slate-900 text-sm md:text-base tracking-tighter block truncate">{s.name}</span>{s.itemName && <span className="text-[8px] font-black text-blue-600 truncate block">{s.itemName}</span>}</div>
                   </div>
                   <span className="text-sm font-black text-amber-600 tabular-nums italic shrink-0">NT${s.amount.toLocaleString()}</span>
                 </div>
@@ -235,8 +223,6 @@ const MasterControlPanel: React.FC = () => {
 
         {/* 中間：報到數據與實況牆 */}
         <div className="lg:col-span-5 flex flex-col h-[85vh] gap-6">
-          
-          {/* 報到數據概覽 */}
           <div className="bg-white rounded-[2.5rem] p-8 shadow-sm border border-white flex flex-col md:flex-row gap-6 md:gap-8 relative overflow-hidden shrink-0">
             <div className="absolute top-0 left-0 w-1.5 h-full bg-blue-500/10" />
             <div className="flex-1 flex flex-col justify-between space-y-4">
@@ -257,27 +243,50 @@ const MasterControlPanel: React.FC = () => {
             </div>
           </div>
 
-          {/* 人員名單實況牆 */}
+          {/* 人員名單實況牆 - 優化中獎狀態顯示 */}
           <div className="bg-white rounded-[2.5rem] shadow-sm border border-white flex flex-col flex-1 overflow-hidden min-h-0">
-            <div className="p-6 md:p-8 border-b border-gray-50 bg-slate-50/30 flex items-center justify-between gap-4">
-              <div className="flex items-center gap-4"><div className="w-1.5 h-6 bg-blue-500 rounded-full" /><h3 className="font-black text-xl text-slate-900">報到實況</h3><span className="text-xs bg-white border border-gray-100 px-3 py-1 rounded-full text-slate-400 font-black tabular-nums">{guests.length} GUESTS</span></div>
+            <div className="p-8 border-b border-gray-50 bg-slate-50/30 flex items-center justify-between gap-4">
+              <div className="flex items-center gap-4"><div className="w-1.5 h-6 bg-blue-500 rounded-full" /><h3 className="font-black text-xl text-slate-900">報到與中獎實況</h3></div>
               <div className="relative flex-1 max-w-[240px]"><Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-300" /><input type="text" placeholder="快速搜尋..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full pl-11 pr-4 py-3 bg-white border border-gray-100 rounded-2xl text-xs font-black outline-none focus:ring-4 focus:ring-blue-500/5 transition-all" /></div>
             </div>
             <div className="flex-1 overflow-y-auto no-scrollbar divide-y divide-gray-50/50">
               {filteredGuests.map(g => (
-                <div key={g.id} className="px-6 md:px-8 py-5 md:py-6 flex items-center justify-between hover:bg-slate-50/80 transition-all group">
+                <div key={g.id} className="px-8 py-6 flex items-center justify-between hover:bg-slate-50/80 transition-all group">
                   <div className="flex items-center gap-5 min-w-0 flex-1">
                     <div className={`w-10 h-10 md:w-12 md:h-12 rounded-xl flex items-center justify-center font-black text-[10px] md:text-xs shrink-0 shadow-sm border ${g.isCheckedIn ? 'bg-blue-600 text-white border-blue-500' : 'bg-gray-50 text-gray-300 border-gray-100'}`}>{g.code || 'NA'}</div>
                     <div className="truncate flex-1 min-w-0">
-                      <div className="flex items-baseline gap-3"><span className="font-black text-slate-900 text-lg md:text-2xl tracking-tighter truncate">{g.name}</span><span className="text-[10px] md:text-sm font-bold text-slate-400 uppercase tracking-widest whitespace-nowrap">({g.title || '貴賓'})</span>{g.isCheckedIn && <div className="w-1.5 h-1.5 rounded-full bg-green-500" />}</div>
+                      <div className="flex items-baseline gap-3">
+                        <span className={`font-black text-lg md:text-2xl tracking-tighter truncate ${g.isCheckedIn ? 'text-slate-900' : 'text-slate-300'}`}>{g.name}</span>
+                        <span className="text-[10px] md:text-sm font-bold text-slate-400 uppercase tracking-widest whitespace-nowrap">({g.title || '貴賓'})</span>
+                        {g.isCheckedIn && <div className="w-1.5 h-1.5 rounded-full bg-green-500" />}
+                      </div>
                     </div>
                   </div>
-                  {isAdmin && (
-                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <button onClick={() => { const n = prompt("修改姓名", g.name); if(n) updateGuestInfo(g.id, {name:n}); }} className="p-2 bg-white text-slate-400 hover:text-blue-500 rounded-lg shadow-sm border border-gray-50"><Edit3 size={16}/></button>
-                      <button onClick={() => { if(window.confirm(`確定刪除「${g.name}」？`)) deleteGuest(g.id); }} className="p-2 bg-white text-slate-400 hover:text-red-500 rounded-lg shadow-sm border border-gray-50"><Trash2 size={16}/></button>
-                    </div>
-                  )}
+                  <div className="flex items-center gap-4">
+                      {/* 中獎狀態與撤銷功能 - 需求優化區 */}
+                      {g.isWinner && (
+                        <div className="flex items-center gap-2 px-3 py-1.5 bg-amber-500/10 text-amber-600 rounded-xl border border-amber-500/20 shadow-sm animate-in zoom-in-90 duration-500">
+                           <Trophy size={14} className="shrink-0" />
+                           <span className="text-[10px] font-black italic tabular-nums">R{(g.wonRounds || []).join(',')} 獲獎者</span>
+                           {isAdmin && (
+                             <button 
+                                onClick={() => handleRevokeWinner(g)} 
+                                className="ml-1 p-1 hover:bg-amber-500 hover:text-white rounded-md transition-colors"
+                                title="撤銷獲獎資格，返回抽獎池"
+                             >
+                                <RotateCcw size={12} strokeWidth={3} />
+                             </button>
+                           )}
+                        </div>
+                      )}
+                      
+                      {isAdmin && (
+                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <button onClick={() => { const n = prompt("修改姓名", g.name); if(n) updateGuestInfo(g.id, {name:n}); }} className="p-2 bg-white text-slate-400 hover:text-blue-500 rounded-lg shadow-sm border border-gray-50"><Edit3 size={16}/></button>
+                          <button onClick={() => { if(window.confirm(`確定刪除「${g.name}」？`)) deleteGuest(g.id); }} className="p-2 bg-white text-slate-400 hover:text-red-500 rounded-lg shadow-sm border border-gray-50"><Trash2 size={16}/></button>
+                        </div>
+                      )}
+                  </div>
                 </div>
               ))}
             </div>
@@ -286,7 +295,6 @@ const MasterControlPanel: React.FC = () => {
 
         {/* 右側：程序與禮品監控 */}
         <div className="lg:col-span-4 space-y-6 flex flex-col h-[85vh]">
-          {/* 司儀講稿即時監視器 */}
           <div className="bg-white rounded-[2.5rem] shadow-sm border border-white flex flex-col flex-[3] overflow-hidden">
             <div className="p-6 border-b border-gray-50 flex items-center justify-between bg-emerald-50/20"><h3 className="font-black text-lg text-emerald-900 flex items-center gap-2"><Mic2 size={20} className="text-emerald-500" /> 流程監視器</h3><span className="text-[10px] font-black text-emerald-600 bg-emerald-100 px-3 py-1 rounded-full uppercase tracking-widest">Live Flow</span></div>
             <div className="flex-1 overflow-y-auto no-scrollbar p-6 space-y-3">
@@ -299,7 +307,6 @@ const MasterControlPanel: React.FC = () => {
             </div>
           </div>
 
-          {/* 獎項禮品即時配發 */}
           <div className="bg-white rounded-[2.5rem] shadow-sm border border-white flex flex-col flex-[2] overflow-hidden">
             <div className="p-6 border-b border-gray-50 flex items-center justify-between bg-orange-50/20"><h3 className="font-black text-lg text-orange-900 flex items-center gap-2"><Award size={20} className="text-orange-500" /> 禮品進度</h3><span className="text-[10px] font-black text-orange-600 bg-orange-100 px-3 py-1 rounded-full uppercase tracking-widest">Inventory</span></div>
             <div className="flex-1 overflow-y-auto no-scrollbar p-6 space-y-3">
@@ -322,10 +329,7 @@ const MasterControlPanel: React.FC = () => {
             <h3 className="text-xl font-black text-black">管理員授權</h3>
             <form onSubmit={handleLoginSubmit} className="w-full space-y-4">
               <input type="password" placeholder="••••" value={loginPassword} onChange={e => setLoginPassword(e.target.value)} className="w-full bg-[#F2F2F7] border-none rounded-2xl py-5 px-4 text-center text-4xl font-black outline-none" autoFocus />
-              <div className="flex gap-3">
-                <button type="button" onClick={() => setShowLoginModal(false)} className="flex-1 py-4 font-black text-gray-400">取消</button>
-                <button type="submit" className="flex-1 py-4 bg-slate-900 text-white font-black rounded-2xl">確認</button>
-              </div>
+              <div className="flex gap-3"><button type="button" onClick={() => setShowLoginModal(false)} className="flex-1 py-4 font-black text-gray-400">取消</button><button type="submit" className="flex-1 py-4 bg-slate-900 text-white font-black rounded-2xl">確認</button></div>
             </form>
           </div>
         </div>
