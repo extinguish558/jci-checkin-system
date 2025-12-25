@@ -69,6 +69,11 @@ export interface SystemSettings {
   flowFiles?: FlowFile[]; 
   mcFlowSteps?: McFlowStep[];
   giftItems?: GiftItem[];
+  // 用於全球同步動畫與得獎顯示
+  lastDrawTrigger?: {
+    winnerIds: string[];
+    timestamp: number;
+  } | null;
 }
 
 export interface ParsedGuestDraft {

@@ -29,7 +29,7 @@ interface EventContextType {
   toggleIntroduced: (id: string) => Promise<void>;
   resetIntroductions: () => Promise<void>;
   drawWinner: (mode?: DrawMode) => Guest | null;
-  drawWinners: (count: number) => Guest[]; // 新增：支援批次不重複抽獎
+  drawWinners: (count: number) => Guest[]; 
   resetLottery: () => Promise<void>;
   clearLotteryRound: (round: number) => Promise<void>;
   removeWinnerFromRound: (guestId: string, round: number) => Promise<void>;
@@ -70,7 +70,8 @@ const defaultSettings: SystemSettings = {
   totalRounds: 2,
   flowFiles: [],
   mcFlowSteps: [],
-  giftItems: []
+  giftItems: [],
+  lastDrawTrigger: null
 };
 
 const sanitizeForFirestore = (data: any) => {
@@ -90,6 +91,8 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [settings, setSettings] = useState<SystemSettings>(defaultSettings);
   const [isCloudConnected, setIsCloudConnected] = useState(false);
   const [connectionError, setConnectionError] = useState<string | null>(null);
+  
+  // 優化：不再使用全域阻塞，改為細粒度控制
   const isHardResetting = useRef(false);
 
   const [isAdmin, setIsAdmin] = useState(() => localStorage.getItem('isAdmin') === 'true');
@@ -138,7 +141,6 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     if (!isFirebaseReady || !db) return;
     
     const unsubscribeSettings = db.collection("config").doc("mainSettings").onSnapshot((docSnap: any) => {
-      if (isHardResetting.current) return;
       if (docSnap.exists) {
         const s = docSnap.data() as SystemSettings;
         setSettings(s);
@@ -265,10 +267,8 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     return results.length > 0 ? results[0] : null;
   };
 
-  // 核心改進：支援批次抽獎且絕不重複
   const drawWinners = (count: number): Guest[] => {
     const round = settings.lotteryRoundCounter;
-    // 建立目前符合條件的池子 (已報到且此輪未中獎)
     let pool = guests.filter(g => g.isCheckedIn && !g.wonRounds?.includes(round));
     
     if (pool.length === 0) return [];
@@ -276,24 +276,31 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const actualCount = Math.min(count, pool.length);
     const selectedWinners: Guest[] = [];
     
-    // 洗牌選取前 N 位
     const shuffled = [...pool].sort(() => Math.random() - 0.5);
     for (let i = 0; i < actualCount; i++) {
         selectedWinners.push(shuffled[i]);
     }
     
-    // 批次更新資料庫
     const now = new Date().toISOString();
-    selectedWinners.forEach(winner => {
+    
+    // 批次寫入資料庫
+    if (db) {
+      const batch = db.batch();
+      selectedWinners.forEach(winner => {
         const wonRounds = [...(winner.wonRounds || []), round];
         const wonTimes = { ...(winner.wonTimes || {}), [round.toString()]: now };
-        
-        updateGuestInfo(winner.id, {
-          isWinner: true,
-          wonRounds,
-          winRound: round,
-          wonTimes
-        });
+        const ref = db.collection("guests").doc(winner.id);
+        batch.update(ref, { isWinner: true, wonRounds, winRound: round, wonTimes });
+      });
+      batch.commit();
+    }
+
+    // 發送全域觸發指令，所有手機同步啟動動畫
+    updateSettings({
+      lastDrawTrigger: {
+        winnerIds: selectedWinners.map(w => w.id),
+        timestamp: Date.now()
+      }
     });
     
     return selectedWinners;
@@ -314,19 +321,21 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const resetLottery = async () => {
-    isHardResetting.current = true;
-    try {
-        await updateSettings({ lotteryRoundCounter: 1 });
-        if (db) {
-            const snapshot = await db.collection("guests").get();
-            const batch = db.batch();
-            snapshot.forEach((doc: any) => {
-                batch.update(doc.ref, { isWinner: false, wonRounds: [], winRound: null, wonTimes: {} });
+    // 優化：重置時立刻發送清空訊號
+    await updateSettings({ lotteryRoundCounter: 1, lastDrawTrigger: null });
+    
+    if (db) {
+        const snapshot = await db.collection("guests").get();
+        const batch = db.batch();
+        snapshot.forEach((doc: any) => {
+            batch.update(doc.ref, { 
+                isWinner: false, 
+                wonRounds: [], 
+                winRound: null, 
+                wonTimes: {} 
             });
-            await batch.commit();
-        }
-    } finally {
-        setTimeout(() => { isHardResetting.current = false; }, 2000);
+        });
+        await batch.commit();
     }
   };
 
@@ -372,7 +381,7 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     try {
         const updatedSteps = (settings.mcFlowSteps || []).map(s => ({ ...s, isCompleted: false }));
         const updatedGifts = (settings.giftItems || []).map(i => ({ ...i, isPresented: false }));
-        await updateSettings({ mcFlowSteps: updatedSteps, giftItems: updatedGifts, currentCheckInRound: 1, lotteryRoundCounter: 1 });
+        await updateSettings({ mcFlowSteps: updatedSteps, giftItems: updatedGifts, currentCheckInRound: 1, lotteryRoundCounter: 1, lastDrawTrigger: null });
         
         if (db) {
             const snapshot = await db.collection("guests").get();
