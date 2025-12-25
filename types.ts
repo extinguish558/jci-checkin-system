@@ -10,6 +10,15 @@ export enum GuestCategory {
   OTHER = '其他貴賓'
 }
 
+export interface Sponsorship {
+  id: string;
+  name: string;
+  title: string;
+  amount: number;
+  itemName?: string; // 新增贊助品項/名稱
+  timestamp: string;
+}
+
 export interface FlowFile {
   id: string;
   name: string;
@@ -69,9 +78,15 @@ export interface SystemSettings {
   flowFiles?: FlowFile[]; 
   mcFlowSteps?: McFlowStep[];
   giftItems?: GiftItem[];
+  sponsorships?: Sponsorship[];
   // 用於全球同步動畫與得獎顯示
   lastDrawTrigger?: {
     winnerIds: string[];
+    timestamp: number;
+  } | null;
+  // 用於同步贊助慶祝
+  lastSponsorshipTrigger?: {
+    sponsorship: Sponsorship;
     timestamp: number;
   } | null;
 }

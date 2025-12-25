@@ -1,6 +1,6 @@
 
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
-import { Guest, SystemSettings, GuestCategory, ParsedGuestDraft, FlowFile, McFlowStep, GiftItem } from '../types';
+import { Guest, SystemSettings, GuestCategory, ParsedGuestDraft, FlowFile, McFlowStep, GiftItem, Sponsorship } from '../types';
 import { db, isFirebaseReady } from '../services/firebase';
 
 export type DrawMode = 'default' | 'all' | 'winners_only';
@@ -52,6 +52,9 @@ interface EventContextType {
   setMcFlowSteps: (steps: McFlowStep[]) => Promise<void>;
   toggleGiftPresented: (id: string) => Promise<void>;
   setGiftItems: (items: GiftItem[]) => Promise<void>;
+  addSponsorship: (sponsorship: Omit<Sponsorship, 'id' | 'timestamp'>) => Promise<void>;
+  updateSponsorship: (id: string, updates: Partial<Sponsorship>) => Promise<void>;
+  deleteSponsorship: (id: string) => Promise<void>;
   isCloudConnected: boolean; 
   connectionError: string | null;
   usingLocalDataProtection: boolean;
@@ -71,17 +74,22 @@ const defaultSettings: SystemSettings = {
   flowFiles: [],
   mcFlowSteps: [],
   giftItems: [],
-  lastDrawTrigger: null
+  sponsorships: [],
+  lastDrawTrigger: null,
+  lastSponsorshipTrigger: null
 };
 
-const sanitizeForFirestore = (data: any) => {
-    const clean = { ...data };
-    Object.keys(clean).forEach(key => {
-        if (clean[key] === undefined) {
-            clean[key] = null;
-        }
-    });
-    return clean;
+const sanitizeForFirestore = (obj: any): any => {
+  if (obj === undefined) return null;
+  if (obj === null || typeof obj !== 'object') return obj;
+  if (Array.isArray(obj)) return obj.map(item => sanitizeForFirestore(item));
+  const sanitized: any = {};
+  for (const key in obj) {
+    if (Object.prototype.hasOwnProperty.call(obj, key)) {
+      sanitized[key] = sanitizeForFirestore(obj[key]);
+    }
+  }
+  return sanitized;
 };
 
 const EventContext = createContext<EventContextType | undefined>(undefined);
@@ -91,8 +99,6 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [settings, setSettings] = useState<SystemSettings>(defaultSettings);
   const [isCloudConnected, setIsCloudConnected] = useState(false);
   const [connectionError, setConnectionError] = useState<string | null>(null);
-  
-  // 優化：不再使用全域阻塞，改為細粒度控制
   const isHardResetting = useRef(false);
 
   const [isAdmin, setIsAdmin] = useState(() => localStorage.getItem('isAdmin') === 'true');
@@ -139,7 +145,6 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   useEffect(() => {
     if (!isFirebaseReady || !db) return;
-    
     const unsubscribeSettings = db.collection("config").doc("mainSettings").onSnapshot((docSnap: any) => {
       if (docSnap.exists) {
         const s = docSnap.data() as SystemSettings;
@@ -147,7 +152,6 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         saveSettingsToLocal(s);
       }
     });
-
     const unsubscribeGuests = db.collection("guests").onSnapshot((snapshot: any) => {
       setIsCloudConnected(true); setConnectionError(null);
       if (isHardResetting.current) return;
@@ -156,7 +160,6 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       setGuests(cloudGuests);
       saveToLocal(cloudGuests);
     }, (error: any) => { setIsCloudConnected(false); setConnectionError(error.message); });
-
     return () => { unsubscribeGuests(); unsubscribeSettings(); };
   }, []);
 
@@ -168,7 +171,15 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         try {
             const sanitized = sanitizeForFirestore(newSettings);
             await db.collection("config").doc("mainSettings").set(sanitized, { merge: true });
-        } catch (e: any) { console.error("Error updating settings:", e); }
+        } catch (e: any) { 
+          console.error("Firebase Update Error:", e);
+          if (e.message.includes("permission") || e.message.includes("denied")) {
+            alert("同步權限已過期或被拒絕，請嘗試重新解鎖管理員密碼。");
+          } else {
+            alert("雲端同步失敗（" + e.message + "），請重新確認網路狀態。");
+          }
+          throw e; 
+        }
     }
   };
 
@@ -188,7 +199,6 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       isWinner: false,
       wonRounds: [],
     }));
-
     if (db) {
       const batch = db.batch();
       newGuests.forEach(g => {
@@ -246,7 +256,6 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const currentRounds = guest.attendedRounds || [];
     const isAttendingTarget = currentRounds.includes(targetRound);
     let newRounds = isAttendingTarget ? [] : [targetRound];
-    
     const updates = {
         attendedRounds: newRounds,
         isCheckedIn: newRounds.length > 0,
@@ -262,28 +271,15 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     await updateGuestInfo(id, { isIntroduced: !guest.isIntroduced });
   };
 
-  const drawWinner = (): Guest | null => {
-    const results = drawWinners(1);
-    return results.length > 0 ? results[0] : null;
-  };
-
   const drawWinners = (count: number): Guest[] => {
     const round = settings.lotteryRoundCounter;
     let pool = guests.filter(g => g.isCheckedIn && !g.wonRounds?.includes(round));
-    
     if (pool.length === 0) return [];
-    
     const actualCount = Math.min(count, pool.length);
     const selectedWinners: Guest[] = [];
-    
     const shuffled = [...pool].sort(() => Math.random() - 0.5);
-    for (let i = 0; i < actualCount; i++) {
-        selectedWinners.push(shuffled[i]);
-    }
-    
+    for (let i = 0; i < actualCount; i++) selectedWinners.push(shuffled[i]);
     const now = new Date().toISOString();
-    
-    // 批次寫入資料庫
     if (db) {
       const batch = db.batch();
       selectedWinners.forEach(winner => {
@@ -294,16 +290,13 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       });
       batch.commit();
     }
-
-    // 發送全域觸發指令，所有手機同步啟動動畫
-    updateSettings({
-      lastDrawTrigger: {
-        winnerIds: selectedWinners.map(w => w.id),
-        timestamp: Date.now()
-      }
-    });
-    
+    updateSettings({ lastDrawTrigger: { winnerIds: selectedWinners.map(w => w.id), timestamp: Date.now() } });
     return selectedWinners;
+  };
+
+  const drawWinner = (): Guest | null => {
+    const results = drawWinners(1);
+    return results.length > 0 ? results[0] : null;
   };
 
   const removeWinnerFromRound = async (guestId: string, round: number) => {
@@ -312,29 +305,15 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const newWonRounds = (guest.wonRounds || []).filter(r => r !== round);
     const newWonTimes = { ...(guest.wonTimes || {}) };
     delete newWonTimes[round.toString()];
-    await updateGuestInfo(guestId, { 
-      wonRounds: newWonRounds, 
-      isWinner: newWonRounds.length > 0, 
-      winRound: newWonRounds.length > 0 ? Math.max(...newWonRounds) : undefined, 
-      wonTimes: newWonTimes 
-    });
+    await updateGuestInfo(guestId, { wonRounds: newWonRounds, isWinner: newWonRounds.length > 0, winRound: newWonRounds.length > 0 ? Math.max(...newWonRounds) : undefined, wonTimes: newWonTimes });
   };
 
   const resetLottery = async () => {
-    // 優化：重置時立刻發送清空訊號
-    await updateSettings({ lotteryRoundCounter: 1, lastDrawTrigger: null });
-    
+    await updateSettings({ lotteryRoundCounter: 1, lastDrawTrigger: null, lastSponsorshipTrigger: null });
     if (db) {
         const snapshot = await db.collection("guests").get();
         const batch = db.batch();
-        snapshot.forEach((doc: any) => {
-            batch.update(doc.ref, { 
-                isWinner: false, 
-                wonRounds: [], 
-                winRound: null, 
-                wonTimes: {} 
-            });
-        });
+        snapshot.forEach((doc: any) => { batch.update(doc.ref, { isWinner: false, wonRounds: [], winRound: null, wonTimes: {} }); });
         await batch.commit();
     }
   };
@@ -345,9 +324,7 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         const newFiles = (settings.flowFiles || []).filter(f => f.type !== 'mcflow_file');
         const updates = { mcFlowSteps: [], flowFiles: newFiles };
         if (db) await db.collection("config").doc("mainSettings").set(sanitizeForFirestore(updates), { merge: true });
-    } finally {
-        setTimeout(() => { isHardResetting.current = false; }, 2000);
-    }
+    } finally { setTimeout(() => { isHardResetting.current = false; }, 2000); }
   };
 
   const clearGiftsOnly = async () => {
@@ -356,9 +333,7 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         const newFiles = (settings.flowFiles || []).filter(f => f.type !== 'gifts_file');
         const updates = { giftItems: [], flowFiles: newFiles };
         if (db) await db.collection("config").doc("mainSettings").set(sanitizeForFirestore(updates), { merge: true });
-    } finally {
-        setTimeout(() => { isHardResetting.current = false; }, 2000);
-    }
+    } finally { setTimeout(() => { isHardResetting.current = false; }, 2000); }
   };
 
   const clearGuestsOnly = async () => {
@@ -371,9 +346,7 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             await batch.commit();
         }
         await updateSettings({ flowFiles: (settings.flowFiles || []).filter(f => f.type !== 'guests_file') });
-    } finally {
-        setTimeout(() => { isHardResetting.current = false; }, 3000);
-    }
+    } finally { setTimeout(() => { isHardResetting.current = false; }, 3000); }
   };
 
   const resetGlobalEventState = async () => {
@@ -381,8 +354,7 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     try {
         const updatedSteps = (settings.mcFlowSteps || []).map(s => ({ ...s, isCompleted: false }));
         const updatedGifts = (settings.giftItems || []).map(i => ({ ...i, isPresented: false }));
-        await updateSettings({ mcFlowSteps: updatedSteps, giftItems: updatedGifts, currentCheckInRound: 1, lotteryRoundCounter: 1, lastDrawTrigger: null });
-        
+        await updateSettings({ mcFlowSteps: updatedSteps, giftItems: updatedGifts, currentCheckInRound: 1, lotteryRoundCounter: 1, lastDrawTrigger: null, sponsorships: [], lastSponsorshipTrigger: null });
         if (db) {
             const snapshot = await db.collection("guests").get();
             const batch = db.batch();
@@ -391,27 +363,40 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             });
             await batch.commit();
         }
-    } finally {
-        setTimeout(() => { isHardResetting.current = false; }, 3000);
-    }
+    } finally { setTimeout(() => { isHardResetting.current = false; }, 3000); }
+  };
+
+  const addSponsorship = async (s: Omit<Sponsorship, 'id' | 'timestamp'>) => {
+    const newS: Sponsorship = {
+      ...s,
+      id: Math.random().toString(36).substr(2, 9),
+      timestamp: new Date().toISOString()
+    };
+    const nextSponsorships = [...(settings.sponsorships || []), newS];
+    await updateSettings({ 
+      sponsorships: nextSponsorships,
+      lastSponsorshipTrigger: { sponsorship: newS, timestamp: Date.now() }
+    });
+  };
+
+  const updateSponsorship = async (id: string, updates: Partial<Sponsorship>) => {
+    const nextSponsorships = (settings.sponsorships || []).map(s => s.id === id ? { ...s, ...updates } : s);
+    await updateSettings({ sponsorships: nextSponsorships });
+  };
+
+  const deleteSponsorship = async (id: string) => {
+    const nextSponsorships = (settings.sponsorships || []).filter(s => s.id !== id);
+    await updateSettings({ sponsorships: nextSponsorships });
   };
 
   const jumpToLotteryRound = (round: number) => updateSettings({ lotteryRoundCounter: round });
-
-  const setMcFlowSteps = async (steps: McFlowStep[]) => {
-    await updateSettings({ mcFlowSteps: steps });
-  };
-
+  const setMcFlowSteps = async (steps: McFlowStep[]) => { await updateSettings({ mcFlowSteps: steps }); };
   const toggleMcFlowStep = async (id: string) => {
     const currentSteps = settings.mcFlowSteps || [];
     const nextSteps = currentSteps.map(s => s.id === id ? { ...s, isCompleted: !s.isCompleted } : s);
     await updateSettings({ mcFlowSteps: nextSteps });
   };
-
-  const setGiftItems = async (items: GiftItem[]) => {
-    await updateSettings({ giftItems: items });
-  };
-
+  const setGiftItems = async (items: GiftItem[]) => { await updateSettings({ giftItems: items }); };
   const toggleGiftPresented = async (id: string) => {
     const currentItems = settings.giftItems || [];
     const nextItems = currentItems.map(i => i.id === id ? { ...i, isPresented: !i.isPresented } : i);
@@ -428,7 +413,7 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         const next = [...current.filter(x => x.type !== f.type), f];
         await updateSettings({ flowFiles: next });
       }, removeFlowFile: async() => {}, toggleMcFlowStep, setMcFlowSteps, 
-      toggleGiftPresented, setGiftItems, isCloudConnected, connectionError: null,
+      toggleGiftPresented, setGiftItems, addSponsorship, updateSponsorship, deleteSponsorship, isCloudConnected, connectionError: null,
       usingLocalDataProtection: false, uploadAllLocalDataToCloud: async() => {}, isAdmin, unlockedSections, loginAdmin, logoutAdmin
     }}>
       {children}

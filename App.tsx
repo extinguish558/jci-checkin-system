@@ -8,7 +8,10 @@ import FlowPanel from './components/FlowPanel';
 import McFlowPanel from './components/McFlowPanel';
 import GiftsPanel from './components/GiftsPanel';
 import MasterControlPanel from './components/MasterControlPanel';
-import { ClipboardList, Mic2, Gift, ScrollText, ChevronUp, ListChecks, Award, Clock, FileText, Settings } from 'lucide-react';
+import { 
+  ClipboardList, Mic2, Gift, ScrollText, ChevronUp, ListChecks, Award, 
+  Clock, FileText, Settings, Maximize, Minimize 
+} from 'lucide-react';
 
 // 內部組件以便使用 EventContext
 const AppContent: React.FC = () => {
@@ -16,12 +19,36 @@ const AppContent: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'flow' | 'admin' | 'mc' | 'lottery' | 'mcflow' | 'gifts' | 'master'>('flow');
   const [isNavHidden, setIsNavHidden] = useState(false);
   const [currentTime, setCurrentTime] = useState(new Date());
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
+  // 監聽全螢幕狀態變化
+  useEffect(() => {
+    const handleFsChange = () => {
+      setIsFullscreen(!!document.fullscreenElement);
+    };
+    document.addEventListener('fullscreenchange', handleFsChange);
+    document.addEventListener('webkitfullscreenchange', handleFsChange);
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFsChange);
+      document.removeEventListener('webkitfullscreenchange', handleFsChange);
+    };
+  }, []);
 
   // 每秒更新一次時間
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
     return () => clearInterval(timer);
   }, []);
+
+  const toggleFullscreen = () => {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen().catch(err => {
+        console.error(`Error attempting to enable full-screen mode: ${err.message}`);
+      });
+    } else {
+      document.exitFullscreen();
+    }
+  };
 
   const timeString = currentTime.toLocaleTimeString('zh-TW', { 
     hour12: false, 
@@ -32,16 +59,25 @@ const AppContent: React.FC = () => {
   return (
     <div className="fixed inset-0 flex flex-col bg-[#F2F2F7] overflow-hidden">
       
-      {/* 全域頂部狀態列 - 優化標題寬度使其完整顯示 */}
+      {/* 全域頂部狀態列 */}
       <header className="ios-blur bg-white/70 border-b border-gray-200/50 px-4 md:px-8 py-2 sticky top-0 z-[150] flex justify-between items-center h-12 md:h-16 shrink-0">
         <div className="flex items-center gap-3 overflow-hidden flex-1 mr-4">
           <div className="w-1.5 h-6 bg-[#007AFF] rounded-full hidden md:block" />
-          <span className="text-[10px] md:text-sm font-black text-gray-400 uppercase tracking-widest leading-tight">
+          <span className="text-[10px] md:text-sm font-black text-gray-400 uppercase tracking-widest leading-tight truncate">
             {settings.eventName || "活動系統"}
           </span>
         </div>
         
         <div className="flex items-center gap-3 shrink-0">
+          {/* 全螢幕切換按鈕 */}
+          <button 
+            onClick={toggleFullscreen}
+            className="flex items-center justify-center w-10 h-10 md:w-12 md:h-12 bg-white/50 hover:bg-white rounded-2xl border border-gray-100 shadow-sm transition-all active:scale-90 text-[#007AFF]"
+            title={isFullscreen ? "退出全螢幕" : "進入全螢幕"}
+          >
+            {isFullscreen ? <Minimize size={20} /> : <Maximize size={20} />}
+          </button>
+
           <div className="flex items-center gap-1.5 bg-black/5 px-3 md:px-5 py-1 md:py-2 rounded-full border border-black/5">
             <Clock size={12} className="text-[#007AFF] hidden xs:block" />
             <span className="text-base md:text-2xl font-black text-black tabular-nums leading-none">
