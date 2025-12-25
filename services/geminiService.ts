@@ -1,7 +1,7 @@
 
 import { GoogleGenAI, Type } from "@google/genai";
 import { read, utils, writeFile } from "xlsx";
-import { GuestCategory, ParsedGuestDraft, Guest, McFlowStep, GiftItem } from "../types";
+import { GuestCategory, ParsedGuestDraft, Guest, McFlowStep, GiftItem, Sponsorship } from "../types";
 
 const SYSTEM_INSTRUCTION_CHECK_IN = `
 你是一位專業的活動報到管理專家。請分析提供的圖片或文件，識別其中的簽名、姓名、職稱及報到狀態。
@@ -35,14 +35,10 @@ async function callGemini(aiParts: any[], systemInstruction: string, responseSch
   }
 }
 
-// 通用的欄位抓取工具：支援多種名稱及欄位索引
 const getValue = (row: any, keys: string[], index?: number): string => {
-    // 1. 嘗試根據 key 抓取
     for (const key of keys) {
         if (row[key] !== undefined && row[key] !== null) return row[key].toString().trim();
     }
-    // 2. 如果提供了 index (從 0 開始)，嘗試根據 Excel 原始欄位索引抓取 (用於處理表頭名稱不符)
-    // sheet_to_json 預設不會保留 index，除非使用 header: 1
     return "";
 };
 
@@ -107,40 +103,25 @@ export const parseMcFlowFromExcel = async (file: File): Promise<McFlowStep[]> =>
         const data = e.target?.result;
         const workbook = read(data, { type: 'binary' });
         const worksheet = workbook.Sheets[workbook.SheetNames[0]];
-        
-        // 為了極限相容性，我們同時獲取 JSON 格式（抓 Key）與 陣列格式（抓 Index）
         const json: any[] = utils.sheet_to_json(worksheet);
         const rows: any[][] = utils.sheet_to_json(worksheet, { header: 1 });
-        
-        // 移除表頭列 (第一列)
         const dataRows = rows.slice(1);
 
         const steps: McFlowStep[] = json.map((row: any, idx: number) => {
-          // 抓取 D 欄位 (索引為 3) 的原始數據作為備援
           const rawRow = dataRows[idx] || [];
-          const rawDValue = rawRow[3] ? rawRow[3].toString().trim() : ""; // D 欄位是第四格
-
+          const rawDValue = rawRow[3] ? rawRow[3].toString().trim() : "";
           return {
             id: Math.random().toString(36).substr(2, 9),
-            // A 欄位
             sequence: getValue(row, ['序', '序號', 'A']) || (idx + 1).toString(),
-            // B 欄位
             time: getValue(row, ['時間', 'Time', 'B']),
-            // D 欄位 (核心：程序名稱)
             title: getValue(row, ['程序', '程序名稱', '項目', '標題', 'D']) || rawDValue || '⚠️ 請檢查Excel程序欄位',
-            // G 欄位 (腳本)
             script: getValue(row, ['司儀搞', '司儀稿', '腳本', 'Script', 'G']),
-            // C 欄位/其他
             slides: getValue(row, ['簡報頁面', 'PPT', 'C']),
             isCompleted: false
           };
         }).filter(s => s.title !== '');
-        
         resolve(steps);
-      } catch (err) { 
-        console.error(err);
-        reject(new Error("司儀講稿解析失敗，請確保 Excel 格式正確。")); 
-      }
+      } catch (err) { reject(new Error("司儀講稿解析失敗")); }
     };
     reader.readAsBinaryString(file);
   });
@@ -164,41 +145,95 @@ export const parseCheckInSheet = async (files: FileInput[]): Promise<ParsedGuest
   return await callGemini(aiParts, SYSTEM_INSTRUCTION_CHECK_IN, schema);
 };
 
-export const exportDetailedGuestsExcel = (guests: Guest[], eventName: string, getGroupFn: (g: Guest) => string) => {
+const formatTime = (iso?: string) => iso ? new Date(iso).toLocaleString('zh-TW', { hour12: false }) : '';
+
+// 格式化嘉賓數據為 Excel 友善格式
+const formatGuestForExcel = (g: Guest) => ({
+    '編號': g.code || '',
+    '姓名': g.name,
+    '職稱': g.title || '',
+    '類別': g.category,
+    '報到狀態': g.isCheckedIn ? '✅ 已報到' : '❌ 未報到',
+    '報到時間': formatTime(g.checkInTime),
+    '報到輪次': (g.attendedRounds || []).map(r => `R${r}`).join(', '),
+    '司儀介紹': g.isIntroduced ? '🎤 已介紹' : '⏳ 待介紹',
+    '中獎狀態': g.isWinner ? '🏆 已得獎' : '-',
+    '得獎輪次': (g.wonRounds || []).map(r => `R${r}`).join(', '),
+    '備註': g.note || ''
+});
+
+// 整合型報表導出 (包含排序與分頁優化)
+export const exportFinalActivityReport = (guests: Guest[], gifts: GiftItem[], steps: McFlowStep[], sponsorships: Sponsorship[], eventName: string) => {
     const wb = utils.book_new();
-    const categories = [{ key: 'YB', label: '會友' }, { key: 'OB', label: '特友' }, { key: 'HQ', label: '總會' }, { key: 'VISITING', label: '友會' }, { key: 'VIP', label: '貴賓' }];
+    const today = new Date().toLocaleDateString('zh-TW').replace(/\//g, '');
+
+    // 0. 基礎資料排序
+    const sortedGuests = [...guests].sort((a, b) => (a.code || '').localeCompare(b.code || '', undefined, { numeric: true }));
+    const sortedGifts = [...gifts].sort((a, b) => (a.sequence || '').localeCompare(b.sequence || '', undefined, { numeric: true }));
+    const sortedSteps = [...steps].sort((a, b) => (a.sequence || '').localeCompare(b.sequence || '', undefined, { numeric: true }));
+
+    // 1. 報到總表 (按編號排序)
+    const guestData = sortedGuests.map(formatGuestForExcel);
+    const guestWs = utils.json_to_sheet(guestData);
+    utils.book_append_sheet(wb, guestWs, '人員報到總表');
+
+    // 2. 自動按「類別」建立各分頁 (每個分頁也按編號排序)
+    const categories = Object.values(GuestCategory);
     categories.forEach(cat => {
-        const list = guests.filter(g => getGroupFn(g) === cat.key);
-        const ws = utils.json_to_sheet(list.map(g => ({ '姓名': g.name, '職稱': g.title, '狀態': g.isCheckedIn ? '已報到' : '未報到' })));
-        utils.book_append_sheet(wb, ws, cat.label);
+        const list = sortedGuests.filter(g => g.category === cat);
+        if (list.length > 0) {
+            const ws = utils.json_to_sheet(list.map(formatGuestForExcel));
+            // Excel 分頁名稱限 31 字元
+            utils.book_append_sheet(wb, ws, cat.substring(0, 31));
+        }
     });
-    writeFile(wb, `${eventName}_名冊.xlsx`);
-};
 
-export const exportGiftsExcel = (items: GiftItem[], eventName: string) => {
-    const ws = utils.json_to_sheet(items);
-    const wb = utils.book_new();
-    utils.book_append_sheet(wb, ws, '禮品');
-    writeFile(wb, `${eventName}_禮品.xlsx`);
-};
+    // 3. 禮品頒贈進度 (包含頒贈時間，按序號排序)
+    const giftData = sortedGifts.map(i => ({
+        '序號': i.sequence || '',
+        '禮品名稱': i.name,
+        '數量': i.quantity || '1',
+        '受獎單位': i.recipient,
+        '頒發狀態': i.isPresented ? '✅ 已頒發' : '⏳ 待頒發',
+        '頒獎時間': formatTime(i.presentedAt)
+    }));
+    const giftWs = utils.json_to_sheet(giftData);
+    utils.book_append_sheet(wb, giftWs, '禮品頒贈進度');
 
-export const exportMcFlowExcel = (steps: McFlowStep[], eventName: string) => {
-    const ws = utils.json_to_sheet(steps);
-    const wb = utils.book_new();
-    utils.book_append_sheet(wb, ws, '流程');
-    writeFile(wb, `${eventName}_講稿.xlsx`);
-};
+    // 4. 活動程序講稿 (包含完成時間，按序號排序)
+    const flowData = sortedSteps.map(s => ({
+        '序號': s.sequence || '',
+        '預計時間': s.time || '',
+        '程序名稱': s.title,
+        '司儀講稿': s.script || '',
+        '簡報頁面': s.slides || '',
+        '執行狀態': s.isCompleted ? '✅ 已完成' : '⏳ 執行中',
+        '完成時間': formatTime(s.completedAt)
+    }));
+    const flowWs = utils.json_to_sheet(flowData);
+    utils.book_append_sheet(wb, flowWs, '活動程序講稿');
 
-export const exportIntroductionsExcel = (guests: Guest[], eventName: string) => {
-    const ws = utils.json_to_sheet(guests.filter(g => g.isCheckedIn));
-    const wb = utils.book_new();
-    utils.book_append_sheet(wb, ws, '介紹');
-    writeFile(wb, `${eventName}_介紹.xlsx`);
-};
+    // 5. 贊助芳名錄 (按時間排序，最新在後)
+    const sponsorData = sponsorships.sort((a, b) => a.timestamp.localeCompare(b.timestamp)).map(s => ({
+        '姓名': s.name,
+        '職稱': s.title || '',
+        '贊助品項': s.itemName || '現金',
+        '贊助金額': s.amount || 0,
+        '登記時間': formatTime(s.timestamp)
+    }));
+    const sponsorWs = utils.json_to_sheet(sponsorData);
+    utils.book_append_sheet(wb, sponsorWs, '贊助芳名錄');
 
-export const exportLotteryExcel = (guests: Guest[], eventName: string) => {
-    const ws = utils.json_to_sheet(guests.filter(g => g.isWinner));
-    const wb = utils.book_new();
-    utils.book_append_sheet(wb, ws, '得獎');
-    writeFile(wb, `${eventName}_抽獎.xlsx`);
+    // 6. 中獎紀錄名冊 (按姓名排序)
+    const winnerData = sortedGuests.filter(g => g.isWinner).map(g => ({
+        '姓名': g.name,
+        '職稱': g.title,
+        '類別': g.category,
+        '中獎輪次': (g.wonRounds || []).map(r => `R${r}`).join(', '),
+        '中獎時間詳情': JSON.stringify(g.wonTimes || {})
+    }));
+    const winnerWs = utils.json_to_sheet(winnerData);
+    utils.book_append_sheet(wb, winnerWs, '抽獎中獎名冊');
+
+    writeFile(wb, `${eventName}_活動成果總報告_${today}.xlsx`);
 };

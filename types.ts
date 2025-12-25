@@ -15,7 +15,7 @@ export interface Sponsorship {
   name: string;
   title: string;
   amount: number;
-  itemName?: string; // 新增贊助品項/名稱
+  itemName?: string;
   timestamp: string;
 }
 
@@ -26,8 +26,8 @@ export interface FlowFile {
   mimeType: string;
   size: number;
   uploadTime: string;
-  data?: string; // Base64 內容
-  url?: string;  // 外部連結網址
+  data?: string;
+  url?: string;
 }
 
 export interface McFlowStep {
@@ -38,6 +38,7 @@ export interface McFlowStep {
   script?: string;
   slides?: string;
   isCompleted: boolean;
+  completedAt?: string; // 新增：執行完成時間
 }
 
 export interface GiftItem {
@@ -49,6 +50,7 @@ export interface GiftItem {
   personInCharge?: string;
   donor?: string;
   isPresented: boolean;
+  presentedAt?: string; // 新增：頒贈完成時間
 }
 
 export interface Guest {
@@ -79,12 +81,10 @@ export interface SystemSettings {
   mcFlowSteps?: McFlowStep[];
   giftItems?: GiftItem[];
   sponsorships?: Sponsorship[];
-  // 用於全球同步動畫與得獎顯示
   lastDrawTrigger?: {
     winnerIds: string[];
     timestamp: number;
   } | null;
-  // 用於同步贊助慶祝
   lastSponsorshipTrigger?: {
     sponsorship: Sponsorship;
     timestamp: number;

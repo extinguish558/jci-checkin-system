@@ -10,13 +10,13 @@ import GiftsPanel from './components/GiftsPanel';
 import MasterControlPanel from './components/MasterControlPanel';
 import { 
   ClipboardList, Mic2, Gift, ScrollText, ChevronUp, ListChecks, Award, 
-  Clock, FileText, Settings, Maximize, Minimize 
+  Clock, FileText, Settings, Maximize, Minimize, LayoutDashboard 
 } from 'lucide-react';
 
 // 內部組件以便使用 EventContext
 const AppContent: React.FC = () => {
   const { settings } = useEvent();
-  const [activeTab, setActiveTab] = useState<'flow' | 'admin' | 'mc' | 'lottery' | 'mcflow' | 'gifts' | 'master'>('flow');
+  const [activeTab, setActiveTab] = useState<'flow' | 'admin' | 'mc' | 'lottery' | 'mcflow' | 'gifts' | 'master'>('master');
   const [isNavHidden, setIsNavHidden] = useState(false);
   const [currentTime, setCurrentTime] = useState(new Date());
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -69,7 +69,6 @@ const AppContent: React.FC = () => {
         </div>
         
         <div className="flex items-center gap-3 shrink-0">
-          {/* 全螢幕切換按鈕 */}
           <button 
             onClick={toggleFullscreen}
             className="flex items-center justify-center w-10 h-10 md:w-12 md:h-12 bg-white/50 hover:bg-white rounded-2xl border border-gray-100 shadow-sm transition-all active:scale-90 text-[#007AFF]"
@@ -89,22 +88,22 @@ const AppContent: React.FC = () => {
 
       {/* 主內容區塊 */}
       <main className="flex-1 w-full overflow-y-auto relative custom-scrollbar smooth-scroll pb-40 md:pb-56">
-        {activeTab === 'flow' && <FlowPanel />}
+        {activeTab === 'master' && <MasterControlPanel />}
         {activeTab === 'admin' && <AdminPanel />}
         {activeTab === 'gifts' && <GiftsPanel />}
         {activeTab === 'mcflow' && <McFlowPanel />}
         {activeTab === 'mc' && <McPanel />}
         {activeTab === 'lottery' && <LotteryPanel />}
-        {activeTab === 'master' && <MasterControlPanel />}
+        {activeTab === 'flow' && <FlowPanel />}
       </main>
 
       {/* iOS Style Floating Tab Bar */}
       <div className={`fixed bottom-0 left-0 right-0 transition-all duration-500 ease-in-out z-[100] px-2 md:px-8 pb-4 md:pb-12 pt-2 ${isNavHidden ? 'translate-y-32 opacity-0' : 'translate-y-0 opacity-100'}`}>
         <div className="max-w-4xl mx-auto pb-safe">
           <nav className="ios-blur bg-black/90 text-white shadow-[0_30px_60px_rgba(0,0,0,0.4)] rounded-[2.5rem] md:rounded-[3.5rem] h-20 md:h-28 flex justify-around items-center px-2 md:px-6 border border-white/10 ring-1 ring-white/5">
-            <button onClick={() => setActiveTab('flow')} className={`flex flex-col items-center gap-1 md:gap-2 transition-all flex-1 ${activeTab === 'flow' ? 'text-[#007AFF]' : 'text-gray-400'}`}>
-              <ScrollText size={activeTab === 'flow' ? 22 : 20} className={`md:w-8 md:h-8 transition-transform ${activeTab === 'flow' ? 'scale-110 drop-shadow-[0_0_12px_rgba(0,122,255,0.6)]' : ''}`} />
-              <span className="text-[9px] md:text-[11px] font-black tracking-tighter">流程看板</span>
+            <button onClick={() => setActiveTab('master')} className={`flex flex-col items-center gap-1 md:gap-2 transition-all flex-1 ${activeTab === 'master' ? 'text-[#007AFF]' : 'text-gray-400'}`}>
+              <LayoutDashboard size={activeTab === 'master' ? 22 : 20} className={`md:w-8 md:h-8 transition-transform ${activeTab === 'master' ? 'scale-110 drop-shadow-[0_0_12px_rgba(0,122,255,0.6)]' : ''}`} />
+              <span className="text-[9px] md:text-[11px] font-black tracking-tighter">戰情總覽</span>
             </button>
             <button onClick={() => setActiveTab('admin')} className={`flex flex-col items-center gap-1 md:gap-2 transition-all flex-1 ${activeTab === 'admin' ? 'text-[#007AFF]' : 'text-gray-400'}`}>
               <ClipboardList size={activeTab === 'admin' ? 22 : 20} className={`md:w-8 md:h-8 transition-transform ${activeTab === 'admin' ? 'scale-110 drop-shadow-[0_0_12px_rgba(0,122,255,0.6)]' : ''}`} />
@@ -126,8 +125,8 @@ const AppContent: React.FC = () => {
               <Gift size={activeTab === 'lottery' ? 22 : 20} className={`md:w-8 md:h-8 transition-transform ${activeTab === 'lottery' ? 'scale-110 drop-shadow-[0_0_12px_rgba(0,122,255,0.6)]' : ''}`} />
               <span className="text-[9px] md:text-[11px] font-black tracking-tighter">抽獎儀表</span>
             </button>
-            <button onClick={() => setActiveTab('master')} className={`flex flex-col items-center gap-1 md:gap-2 transition-all flex-1 ${activeTab === 'master' ? 'text-[#007AFF]' : 'text-gray-400'}`}>
-              <Settings size={activeTab === 'master' ? 22 : 20} className={`md:w-8 md:h-8 transition-transform ${activeTab === 'master' ? 'scale-110 drop-shadow-[0_0_12px_rgba(0,122,255,0.6)]' : ''}`} />
+            <button onClick={() => setActiveTab('flow')} className={`flex flex-col items-center gap-1 md:gap-2 transition-all flex-1 ${activeTab === 'flow' ? 'text-[#007AFF]' : 'text-gray-400'}`}>
+              <Settings size={activeTab === 'flow' ? 22 : 20} className={`md:w-8 md:h-8 transition-transform ${activeTab === 'flow' ? 'scale-110 drop-shadow-[0_0_12px_rgba(0,122,255,0.6)]' : ''}`} />
               <span className="text-[9px] md:text-[11px] font-black tracking-tighter">系統設定</span>
             </button>
           </nav>

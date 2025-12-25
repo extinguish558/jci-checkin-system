@@ -278,17 +278,17 @@ const LotteryPanel: React.FC = () => {
           0% { transform: translateX(0); }
           100% { transform: translateX(-50%); }
         }
-        .animate-marquee { animation: marquee 25s linear infinite; }
+        .animate-marquee { animation: marquee 30s linear infinite; }
       `}</style>
 
-      {/* 贊助慶祝全螢幕特效 - 優化比例與關閉邏輯 */}
+      {/* 贊助慶祝全螢幕特效 */}
       {showSponsorAlert && (
         <div 
           onClick={() => setShowSponsorAlert(null)}
           className="fixed inset-0 z-[1000] flex items-center justify-center cursor-pointer group"
         >
-            <div className="absolute inset-0 bg-black/60 backdrop-blur-sm animate-in fade-in duration-500"></div>
-            <div className="sponsor-alert-anim relative flex flex-col items-center text-center p-8 md:p-12 bg-amber-950/80 border-2 md:border-4 border-amber-500 rounded-[2.5rem] md:rounded-[3.5rem] shadow-[0_0_80px_rgba(251,191,36,0.4)] w-[90%] max-w-4xl">
+            <div className="absolute inset-0 bg-black/65 backdrop-blur-sm animate-in fade-in duration-500"></div>
+            <div className="sponsor-alert-anim relative flex flex-col items-center text-center p-8 md:p-12 bg-amber-950/85 border-2 md:border-4 border-amber-500 rounded-[2.5rem] md:rounded-[3.5rem] shadow-[0_0_80px_rgba(251,191,36,0.4)] w-[90%] max-w-4xl">
                 <div className="mb-4 md:mb-6 flex gap-4 md:gap-6">
                     <Sparkles size={48} className="text-yellow-400 animate-bounce" />
                     <div className="relative">
@@ -306,16 +306,17 @@ const LotteryPanel: React.FC = () => {
                 </div>
                 
                 <div className="mt-8 md:mt-12 flex flex-col gap-3 md:gap-4 items-center w-full">
-                    {showSponsorAlert.itemName && (
-                      <div className="flex items-center gap-2 md:gap-3 px-6 md:px-10 py-3 md:py-4 bg-blue-600 rounded-2xl md:rounded-3xl border border-blue-400 shadow-xl">
-                        <Package size={20} className="text-white md:w-7 md:h-7" />
-                        <span className="text-xl md:text-4xl font-black text-white italic tracking-tight">{showSponsorAlert.itemName}</span>
+                    {showSponsorAlert.itemName ? (
+                      <div className="flex items-center gap-2 md:gap-3 px-6 md:px-10 py-3 md:py-5 bg-blue-600 rounded-2xl md:rounded-3xl border border-blue-400 shadow-xl">
+                        <Package size={24} className="text-white md:w-8 md:h-8" />
+                        <span className="text-xl md:text-5xl font-black text-white italic tracking-tight">{showSponsorAlert.itemName}</span>
                       </div>
-                    )}
-                    <div className="px-8 md:px-12 py-4 md:py-6 bg-white rounded-full shadow-[0_0_40px_rgba(255,255,255,0.3)] border-2 md:border-4 border-amber-100 flex items-center gap-3 md:gap-4">
+                    ) : (
+                      <div className="px-8 md:px-12 py-4 md:py-6 bg-white rounded-full shadow-[0_0_40px_rgba(255,255,255,0.3)] border-2 md:border-4 border-amber-100 flex items-center gap-3 md:gap-4">
                         <span className="text-amber-600 text-2xl md:text-3xl font-black">NT$</span>
                         <span className="text-4xl md:text-7xl font-black text-amber-600 tabular-nums">{showSponsorAlert.amount.toLocaleString()}</span>
-                    </div>
+                      </div>
+                    )}
                 </div>
                 
                 <div className="mt-8 md:mt-12 flex flex-col items-center gap-2">
@@ -443,15 +444,18 @@ const LotteryPanel: React.FC = () => {
                             <div className="space-y-4">
                                 <h3 className="text-4xl md:text-7xl font-black text-amber-500 italic tracking-tighter drop-shadow-lg">{sponsors[sponsorIndex].name}</h3>
                                 <p className="text-lg md:text-2xl font-bold text-white/40 uppercase tracking-[0.5em]">{sponsors[sponsorIndex].title || '榮譽贊助貴賓'}</p>
-                                {sponsors[sponsorIndex].itemName && (
-                                <div className="bg-blue-600/20 text-blue-400 px-6 py-2 rounded-2xl border border-blue-500/30 flex items-center gap-2 mt-2">
-                                    <Package size={20} />
-                                    <span className="text-lg font-black italic tracking-tight">{sponsors[sponsorIndex].itemName}</span>
-                                </div>
+                                
+                                {/* 中央輪播顯示邏輯優化 */}
+                                {sponsors[sponsorIndex].itemName ? (
+                                    <div className="bg-blue-600/20 text-blue-400 px-8 py-3 rounded-2xl border border-blue-500/30 flex items-center gap-3 mt-4 animate-in zoom-in duration-500">
+                                        <Package size={28} />
+                                        <span className="text-xl md:text-4xl font-black italic tracking-tight">{sponsors[sponsorIndex].itemName}</span>
+                                    </div>
+                                ) : (
+                                    <div className="inline-block px-10 py-4 bg-white/5 rounded-full border border-white/10 mt-6 animate-in zoom-in duration-500">
+                                        <span className="text-3xl md:text-5xl font-black text-yellow-400 tabular-nums">NT$ {sponsors[sponsorIndex].amount.toLocaleString()}</span>
+                                    </div>
                                 )}
-                                <div className="inline-block px-8 py-3 bg-white/5 rounded-full border border-white/10 mt-4">
-                                    <span className="text-2xl md:text-4xl font-black text-yellow-400 tabular-nums">NT$ {sponsors[sponsorIndex].amount.toLocaleString()}</span>
-                                </div>
                             </div>
                             <p className="text-[10px] font-black text-white/10 uppercase tracking-[1em] mt-8 italic">Sponsorship Honor Roll</p>
                         </div>
@@ -466,30 +470,33 @@ const LotteryPanel: React.FC = () => {
                 </div>
              </div>
 
-             {/* 底部贊助芳名即時滾動條 */}
+             {/* 底部贊助芳名即時滾動條 - 條件顯示邏輯優化 */}
              {sponsors.length > 0 && (
                 <div className="bg-black/80 border-t border-white/10 h-16 md:h-24 flex items-center overflow-hidden relative group">
-                    <div className="absolute left-0 top-0 bottom-0 w-20 bg-gradient-to-r from-black z-10"></div>
-                    <div className="absolute right-0 top-0 bottom-0 w-20 bg-gradient-to-l from-black z-10"></div>
+                    <div className="absolute left-0 top-0 bottom-0 w-24 bg-gradient-to-r from-black z-10"></div>
+                    <div className="absolute right-0 top-0 bottom-0 w-24 bg-gradient-to-l from-black z-10"></div>
                     
                     <div className="flex animate-marquee whitespace-nowrap">
                         {[...sponsors, ...sponsors].map((s, i) => (
                             <div key={`${s.id}-${i}`} className="flex items-center gap-4 px-12 md:px-20 border-r border-white/5">
                                 <Heart size={16} fill="#F59E0B" className="text-amber-500 shrink-0" />
                                 <div className="flex items-baseline gap-3">
-                                    <span className="text-amber-400 font-black text-lg md:text-3xl italic tracking-tighter">{s.name}</span>
-                                    <span className="text-white/40 font-bold text-[10px] md:text-sm uppercase tracking-widest">{s.title || '會友'}</span>
+                                    <span className="text-amber-400 font-black text-xl md:text-3xl italic tracking-tighter">{s.name}</span>
+                                    <span className="text-white/30 font-bold text-[10px] md:text-sm uppercase tracking-widest">{s.title || '會友'}</span>
                                 </div>
-                                {s.itemName && (
-                                    <div className="flex items-center gap-1.5 px-3 py-1 bg-blue-500/10 border border-blue-500/30 rounded-full">
-                                        <Package size={12} className="text-blue-400" />
-                                        <span className="text-blue-400 font-black text-[10px] md:text-sm italic">{s.itemName}</span>
+                                
+                                {/* 滾動條智慧顯示：禮品優先於金額 */}
+                                {s.itemName ? (
+                                    <div className="flex items-center gap-1.5 px-4 py-1.5 bg-blue-500/10 border border-blue-500/20 rounded-full">
+                                        <Package size={14} className="text-blue-400" />
+                                        <span className="text-blue-400 font-black text-[10px] md:text-lg italic">{s.itemName}</span>
+                                    </div>
+                                ) : (
+                                    <div className="flex items-center gap-2 bg-white/5 px-4 py-1.5 rounded-full border border-white/10">
+                                        <span className="text-yellow-500/40 font-black text-[9px] md:text-xs tracking-widest uppercase">NT$</span>
+                                        <span className="text-white font-black text-lg md:text-3xl tabular-nums tracking-tighter">{s.amount.toLocaleString()}</span>
                                     </div>
                                 )}
-                                <div className="flex items-center gap-2 bg-white/5 px-4 py-1.5 rounded-full border border-white/10">
-                                    <span className="text-yellow-500/60 font-black text-[9px] md:text-xs tracking-widest uppercase">NT$</span>
-                                    <span className="text-white font-black text-lg md:text-3xl tabular-nums tracking-tighter">{s.amount.toLocaleString()}</span>
-                                </div>
                             </div>
                         ))}
                     </div>

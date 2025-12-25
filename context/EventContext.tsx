@@ -173,11 +173,6 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             await db.collection("config").doc("mainSettings").set(sanitized, { merge: true });
         } catch (e: any) { 
           console.error("Firebase Update Error:", e);
-          if (e.message.includes("permission") || e.message.includes("denied")) {
-            alert("同步權限已過期或被拒絕，請嘗試重新解鎖管理員密碼。");
-          } else {
-            alert("雲端同步失敗（" + e.message + "），請重新確認網路狀態。");
-          }
           throw e; 
         }
     }
@@ -352,8 +347,8 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const resetGlobalEventState = async () => {
     isHardResetting.current = true;
     try {
-        const updatedSteps = (settings.mcFlowSteps || []).map(s => ({ ...s, isCompleted: false }));
-        const updatedGifts = (settings.giftItems || []).map(i => ({ ...i, isPresented: false }));
+        const updatedSteps = (settings.mcFlowSteps || []).map(s => ({ ...s, isCompleted: false, completedAt: null }));
+        const updatedGifts = (settings.giftItems || []).map(i => ({ ...i, isPresented: false, presentedAt: null }));
         await updateSettings({ mcFlowSteps: updatedSteps, giftItems: updatedGifts, currentCheckInRound: 1, lotteryRoundCounter: 1, lastDrawTrigger: null, sponsorships: [], lastSponsorshipTrigger: null });
         if (db) {
             const snapshot = await db.collection("guests").get();
@@ -393,13 +388,21 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const setMcFlowSteps = async (steps: McFlowStep[]) => { await updateSettings({ mcFlowSteps: steps }); };
   const toggleMcFlowStep = async (id: string) => {
     const currentSteps = settings.mcFlowSteps || [];
-    const nextSteps = currentSteps.map(s => s.id === id ? { ...s, isCompleted: !s.isCompleted } : s);
+    const nextSteps = currentSteps.map(s => s.id === id ? { 
+      ...s, 
+      isCompleted: !s.isCompleted,
+      completedAt: !s.isCompleted ? new Date().toISOString() : null 
+    } : s);
     await updateSettings({ mcFlowSteps: nextSteps });
   };
   const setGiftItems = async (items: GiftItem[]) => { await updateSettings({ giftItems: items }); };
   const toggleGiftPresented = async (id: string) => {
     const currentItems = settings.giftItems || [];
-    const nextItems = currentItems.map(i => i.id === id ? { ...i, isPresented: !i.isPresented } : i);
+    const nextItems = currentItems.map(i => i.id === id ? { 
+      ...i, 
+      isPresented: !i.isPresented,
+      presentedAt: !i.isPresented ? new Date().toISOString() : null
+    } : i);
     await updateSettings({ giftItems: nextItems });
   };
 
