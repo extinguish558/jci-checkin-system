@@ -7,12 +7,13 @@ import LotteryPanel from './components/LotteryPanel';
 import FlowPanel from './components/FlowPanel';
 import McFlowPanel from './components/McFlowPanel';
 import GiftsPanel from './components/GiftsPanel';
-import { ClipboardList, Mic2, Gift, ScrollText, ChevronUp, ListChecks, Award, Clock, FileText } from 'lucide-react';
+import MasterControlPanel from './components/MasterControlPanel';
+import { ClipboardList, Mic2, Gift, ScrollText, ChevronUp, ListChecks, Award, Clock, FileText, Settings } from 'lucide-react';
 
 // 內部組件以便使用 EventContext
 const AppContent: React.FC = () => {
   const { settings } = useEvent();
-  const [activeTab, setActiveTab] = useState<'flow' | 'admin' | 'mc' | 'lottery' | 'mcflow' | 'gifts'>('flow');
+  const [activeTab, setActiveTab] = useState<'flow' | 'admin' | 'mc' | 'lottery' | 'mcflow' | 'gifts' | 'master'>('flow');
   const [isNavHidden, setIsNavHidden] = useState(false);
   const [currentTime, setCurrentTime] = useState(new Date());
 
@@ -58,11 +59,12 @@ const AppContent: React.FC = () => {
         {activeTab === 'mcflow' && <McFlowPanel />}
         {activeTab === 'mc' && <McPanel />}
         {activeTab === 'lottery' && <LotteryPanel />}
+        {activeTab === 'master' && <MasterControlPanel />}
       </main>
 
       {/* iOS Style Floating Tab Bar - 手機版尺寸微調 */}
       <div className={`fixed bottom-0 left-0 right-0 transition-all duration-500 ease-in-out z-[100] px-2 md:px-6 pb-4 md:pb-8 pt-2 ${isNavHidden ? 'translate-y-32 opacity-0' : 'translate-y-0 opacity-100'}`}>
-        <div className="max-w-2xl mx-auto pb-safe">
+        <div className="max-w-3xl mx-auto pb-safe">
           <nav className="ios-blur bg-black/90 text-white shadow-[0_20px_50px_rgba(0,0,0,0.3)] rounded-[2rem] md:rounded-[2.5rem] h-16 md:h-22 flex justify-around items-center px-1 md:px-4 border border-white/10 ring-1 ring-white/5">
             <button onClick={() => setActiveTab('flow')} className={`flex flex-col items-center gap-0.5 md:gap-1.5 transition-all flex-1 ${activeTab === 'flow' ? 'text-[#007AFF]' : 'text-gray-400'}`}>
               <ScrollText size={activeTab === 'flow' ? 20 : 18} className={`md:w-6 md:h-6 transition-transform ${activeTab === 'flow' ? 'scale-110 drop-shadow-[0_0_8px_rgba(0,122,255,0.5)]' : ''}`} />
@@ -87,6 +89,10 @@ const AppContent: React.FC = () => {
             <button onClick={() => setActiveTab('lottery')} className={`flex flex-col items-center gap-0.5 md:gap-1.5 transition-all flex-1 ${activeTab === 'lottery' ? 'text-[#007AFF]' : 'text-gray-400'}`}>
               <Gift size={activeTab === 'lottery' ? 20 : 18} className={`md:w-6 md:h-6 transition-transform ${activeTab === 'lottery' ? 'scale-110 drop-shadow-[0_0_8px_rgba(0,122,255,0.5)]' : ''}`} />
               <span className="text-[8px] md:text-[10px] font-black tracking-tighter">抽獎儀表</span>
+            </button>
+            <button onClick={() => setActiveTab('master')} className={`flex flex-col items-center gap-0.5 md:gap-1.5 transition-all flex-1 ${activeTab === 'master' ? 'text-[#007AFF]' : 'text-gray-400'}`}>
+              <Settings size={activeTab === 'master' ? 20 : 18} className={`md:w-6 md:h-6 transition-transform ${activeTab === 'master' ? 'scale-110 drop-shadow-[0_0_8px_rgba(0,122,255,0.5)]' : ''}`} />
+              <span className="text-[8px] md:text-[10px] font-black tracking-tighter">系統設定</span>
             </button>
           </nav>
         </div>
