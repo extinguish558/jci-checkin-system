@@ -21,7 +21,7 @@ const LotteryPanel: React.FC = () => {
   const [drawCount, setDrawCount] = useState<number>(1);
   const [currentSlotName, setCurrentSlotName] = useState<{name: string, title: string}>({ name: "READY", title: "CLICK TO START" });
   
-  // 動畫計時器引用
+  // 動畫計時器引用，用於精確控制減速階段
   const animationTimerRef = useRef<any>(null);
 
   useEffect(() => {
@@ -33,35 +33,37 @@ const LotteryPanel: React.FC = () => {
   const currentRound = settings.lotteryRoundCounter;
   const currentPoolSize = useMemo(() => eligibleGuests.filter(g => !g.wonRounds?.includes(currentRound)).length, [eligibleGuests, currentRound]);
 
-  // 進階拉霸動畫：變頻減速邏輯
-  const runLotteryAnimation = useCallback((duration: number) => {
-    let startTime = Date.now();
+  // 高階變頻拉霸邏輯：模擬慣性減速
+  const runSlotAnimation = useCallback((totalDuration: number) => {
+    const startTime = Date.now();
     
-    const animate = () => {
+    const tick = () => {
       const elapsed = Date.now() - startTime;
-      const progress = elapsed / duration;
+      const progress = elapsed / totalDuration;
 
       if (progress < 1) {
-        // 隨機選一個顯示
+        // 更新顯示名稱
         const randomGuest = eligibleGuests[Math.floor(Math.random() * eligibleGuests.length)];
         if (randomGuest) {
           setCurrentSlotName({ name: randomGuest.name, title: randomGuest.title });
         }
 
-        // 計算下一幀的延遲：隨著進度增加，延遲越來越長（減速）
-        // 0-60% 進度：保持高速 (50ms)
-        // 60-90% 進度：開始明顯減速 (100ms - 300ms)
-        // 90-100% 進度：極慢定格感 (400ms - 800ms)
-        let delay = 50;
-        if (progress > 0.9) delay = 600;
-        else if (progress > 0.7) delay = 300;
-        else if (progress > 0.5) delay = 150;
+        // 動態延遲計算 (減速公式)
+        // 0-40%: 40ms (超高速)
+        // 40-75%: 40ms -> 200ms (線性減速)
+        // 75-95%: 200ms -> 600ms (極慢爬行)
+        // 95-100%: 800ms (最終定格前震盪)
+        let nextDelay = 40;
+        if (progress > 0.95) nextDelay = 850;
+        else if (progress > 0.85) nextDelay = 600;
+        else if (progress > 0.7) nextDelay = 350;
+        else if (progress > 0.4) nextDelay = 40 + (progress - 0.4) * 500;
 
-        animationTimerRef.current = setTimeout(animate, delay);
+        animationTimerRef.current = setTimeout(tick, nextDelay);
       }
     };
 
-    animate();
+    tick();
   }, [eligibleGuests]);
 
   const handleDraw = useCallback(() => {
@@ -71,43 +73,50 @@ const LotteryPanel: React.FC = () => {
         return;
     }
     
-    if (!window.confirm(`確認開始第 ${currentRound} 輪抽獎？\n本次將抽選出 ${drawCount} 位得獎者。`)) return;
+    if (!window.confirm(`【確認開始】\n第 ${currentRound} 輪抽獎，共 ${drawCount} 位名額。\n準備好開始了嗎？`)) return;
 
     setIsAnimating(true);
-    setBatchWinners([]);
+    setBatchWinners([]); // 清除上次結果
     
-    // 啟動變頻動畫，時長約 5.5 秒
-    const animationDuration = 5500;
-    runLotteryAnimation(animationDuration);
+    // 動畫總長度約 7.5 秒，營造強烈緊張感
+    const ANIMATION_DURATION = 7500;
+    runSlotAnimation(ANIMATION_DURATION);
     
-    // 動畫結束後正式產生成果
     setTimeout(() => {
         clearTimeout(animationTimerRef.current);
         setIsAnimating(false);
+        
         const winners: Guest[] = [];
         const count = Math.min(drawCount, currentPoolSize);
-        
         for (let i = 0; i < count; i++) {
             const w = drawWinner();
             if (w) winners.push(w);
         }
         setBatchWinners(winners);
-    }, animationDuration); 
-  }, [isUnlocked, currentPoolSize, currentRound, drawCount, drawWinner, runLotteryAnimation]);
+    }, ANIMATION_DURATION + 500); 
+  }, [isUnlocked, currentPoolSize, currentRound, drawCount, drawWinner, runSlotAnimation]);
 
+  // 修復重置功能：確保 UI 同步更新
   const handleHardReset = async () => {
       if (!isUnlocked) { setShowLoginModal(true); return; }
-      if (!window.confirm("【全域重置警告】\n確定要刪除所有輪次的得獎紀錄嗎？\n此動作將清空資料庫中所有中獎標籤，不可復原。")) return;
+      if (!window.confirm("【全域系統重置】\n確定要清空所有得獎紀錄並回到第 1 輪嗎？\n此操作無法撤回！")) return;
       
       setIsResetting(true);
       try {
-          await resetLottery();
+          // 清除組件本地顯示狀態
           setBatchWinners([]);
           setCurrentSlotName({ name: "READY", title: "CLICK TO START" });
-          alert("抽獎紀錄已全數清空");
+          
+          // 執行 Context 中的重置 (包含 Firebase 同步)
+          await resetLottery();
+          
+          // 強制跳回第一輪 (Context 內的 resetLottery 已包含此邏輯，這裡再次確保)
+          jumpToLotteryRound(1);
+          
+          alert("系統已完成重置！");
       } catch (e) {
           console.error(e);
-          alert("重置失敗，請檢查網路連接");
+          alert("重置過程發生錯誤");
       } finally {
           setIsResetting(false);
       }
@@ -142,175 +151,175 @@ const LotteryPanel: React.FC = () => {
   return (
     <div className="min-h-screen bg-slate-950 flex flex-col items-center pb-48 px-4 md:px-8">
       
-      {/* 超級展示大框 */}
+      {/* 沉浸式大螢幕得獎框 */}
       <div 
         onClick={() => !isAnimating && handleDraw()}
-        className={`group relative mt-6 md:mt-10 w-full max-w-7xl h-[55vh] md:h-[65vh] rounded-[3rem] md:rounded-[4rem] flex flex-col items-center justify-center cursor-pointer transition-all duration-700 border-4 overflow-hidden
+        className={`group relative mt-4 md:mt-10 w-full max-w-7xl h-[60vh] md:h-[68vh] rounded-[2.5rem] md:rounded-[4rem] flex flex-col items-center justify-center cursor-pointer transition-all duration-1000 border-4 overflow-hidden
           ${isAnimating 
-            ? 'bg-gradient-to-br from-indigo-900 via-purple-900 to-slate-900 border-indigo-400/50 shadow-[0_0_80px_rgba(129,140,248,0.3)]' 
+            ? 'bg-gradient-to-br from-slate-900 via-indigo-950 to-purple-950 border-indigo-500/50 shadow-[0_0_120px_rgba(99,102,241,0.25)]' 
             : batchWinners.length > 0 
-              ? 'bg-slate-900 border-yellow-500/30 shadow-[0_0_100px_rgba(234,179,8,0.15)]'
+              ? 'bg-slate-900 border-yellow-500/40 shadow-[0_0_100px_rgba(234,179,8,0.2)]'
               : 'bg-slate-900 border-white/5 hover:border-indigo-500/30 shadow-2xl'
           }`}
       >
+        {/* 動態星光特效 */}
         <div className="absolute inset-0 opacity-20 pointer-events-none">
           <div className="absolute top-0 left-0 w-full h-full bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-indigo-500/10 via-transparent to-transparent"></div>
-          {isAnimating && <div className="absolute inset-0 bg-white/5 animate-pulse"></div>}
+          {isAnimating && <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/stardust.png')] opacity-10 animate-pulse"></div>}
         </div>
 
-        {/* 框內標題列 */}
-        <div className="absolute top-0 left-0 right-0 p-6 md:p-8 flex justify-between items-center bg-gradient-to-b from-black/60 to-transparent z-10">
-           <div className="flex items-center gap-3 md:gap-4">
-              <div className="p-2 md:p-3 bg-yellow-500 text-black rounded-xl md:rounded-2xl shadow-lg animate-bounce"><Trophy size={20} /></div>
-              <div>
-                 <h2 className="text-lg md:text-2xl font-black text-white tracking-tighter">第 {currentRound} 輪抽獎系統</h2>
-                 <p className="text-[8px] md:text-[10px] font-black text-yellow-500/80 uppercase tracking-[0.2em]">Phase {currentRound} Live</p>
+        {/* 框內邊緣標題列 */}
+        <div className="absolute top-0 left-0 right-0 p-6 md:p-10 flex flex-col md:flex-row justify-between items-center gap-4 bg-gradient-to-b from-black/60 to-transparent z-10">
+           <div className="flex items-center gap-3 md:gap-5">
+              <div className="p-3 md:p-4 bg-yellow-500 text-black rounded-2xl md:rounded-3xl shadow-[0_0_20px_rgba(234,179,8,0.4)] animate-bounce"><Trophy size={24} /></div>
+              <div className="text-center md:text-left">
+                 <h2 className="text-xl md:text-3xl font-black text-white tracking-tighter uppercase">第 {currentRound} 輪 抽獎儀表板</h2>
+                 <p className="text-[9px] md:text-[11px] font-black text-yellow-500/80 uppercase tracking-[0.4em] mt-1">LOTTERY PHASE {currentRound} SYSTEM LIVE</p>
               </div>
            </div>
-           <div className="flex items-center gap-2 px-3 md:px-5 py-1.5 md:py-2 bg-white/10 rounded-full border border-white/10 backdrop-blur-md">
-              <Users size={14} className="text-indigo-400" />
-              <span className="text-[10px] md:text-sm font-black text-white/80 tabular-nums">候選: {currentPoolSize} 人</span>
+           <div className="flex items-center gap-3 px-6 py-2 bg-white/10 rounded-full border border-white/10 backdrop-blur-md">
+              <Users size={16} className="text-indigo-400" />
+              <span className="text-xs md:text-base font-black text-white/90 tabular-nums">候選名單: {currentPoolSize} 人</span>
            </div>
         </div>
 
-        {/* 動畫/結果主視窗 */}
-        <div className="w-full h-full flex items-center justify-center p-4 md:p-12">
+        {/* 核心顯示區：拉霸動畫 / 得獎名單 */}
+        <div className="w-full h-full flex items-center justify-center p-6 md:p-12 mt-10 md:mt-20">
             {isAnimating ? (
-              <div className="flex flex-col items-center gap-2 md:gap-4 text-center">
+              <div className="flex flex-col items-center gap-4 text-center">
                 <div className="relative">
-                   <div className="text-2xl md:text-5xl font-black text-indigo-400/40 blur-[2px] mb-2">{currentSlotName.title}</div>
-                   <div className="text-5xl md:text-[9rem] font-black text-white italic tracking-tighter drop-shadow-[0_0_40px_rgba(255,255,255,0.4)] animate-in fade-in zoom-in-50 duration-75">
+                   <div className="text-3xl md:text-6xl font-black text-indigo-400/30 blur-[2px] mb-2">{currentSlotName.title}</div>
+                   <div className="text-6xl md:text-[10rem] font-black text-white italic tracking-tighter drop-shadow-[0_0_50px_rgba(255,255,255,0.4)] transition-all">
                      {currentSlotName.name}
                    </div>
-                   <div className="absolute -inset-10 bg-indigo-500/15 blur-[80px] rounded-full animate-pulse"></div>
+                   <div className="absolute -inset-16 bg-indigo-500/10 blur-[100px] rounded-full animate-pulse"></div>
                 </div>
-                <div className="mt-4 md:mt-8 flex gap-2">
-                  {[1,2,3,4].map(i => <div key={i} className={`w-2 h-2 md:w-3 md:h-3 rounded-full bg-indigo-500 animate-bounce`} style={{animationDelay: `${i*0.15}s`}}></div>)}
+                <div className="mt-8 flex gap-3">
+                  {[1,2,3,4].map(i => <div key={i} className={`w-3 h-3 md:w-4 md:h-4 rounded-full bg-indigo-500 animate-bounce`} style={{animationDelay: `${i*0.2}s`}}></div>)}
                 </div>
               </div>
             ) : batchWinners.length === 0 ? (
-              <div className="group flex flex-col items-center gap-6 md:gap-8 text-center px-4">
+              <div className="group flex flex-col items-center gap-8 text-center">
                  <div className="relative">
-                    <div className="w-28 h-28 md:w-48 md:h-48 bg-white/5 border border-white/10 rounded-full flex items-center justify-center group-hover:scale-110 group-hover:bg-indigo-500/10 transition-all duration-700">
-                       <Play size={48} fill="white" className="ml-2 text-white group-hover:text-indigo-400 transition-colors" />
+                    <div className="w-32 h-32 md:w-56 md:h-56 bg-white/5 border border-white/10 rounded-full flex items-center justify-center group-hover:scale-110 group-hover:bg-indigo-500/10 transition-all duration-700">
+                       <Play size={64} fill="white" className="ml-2 text-white group-hover:text-indigo-400 transition-colors" />
                     </div>
-                    <Star className="absolute -top-4 -right-4 text-yellow-500 animate-spin-slow" size={24} />
+                    <Star className="absolute -top-4 -right-4 text-yellow-500 animate-spin-slow" size={32} />
                  </div>
-                 <div className="space-y-2 md:space-y-3">
-                    <h1 className="text-3xl md:text-7xl font-black text-white tracking-tighter uppercase italic opacity-20 group-hover:opacity-100 transition-opacity">Ready to Win</h1>
-                    <p className="text-slate-500 font-bold text-[10px] md:text-lg uppercase tracking-[0.4em] group-hover:text-indigo-400 transition-colors">點擊大框開始本輪抽獎</p>
+                 <div className="space-y-3">
+                    <h1 className="text-4xl md:text-8xl font-black text-white tracking-tighter uppercase italic opacity-20 group-hover:opacity-100 transition-all duration-700">READY TO WIN</h1>
+                    <p className="text-slate-500 font-bold text-xs md:text-xl uppercase tracking-[0.5em] group-hover:text-indigo-400 transition-colors">點擊螢幕區域 開始本輪抽獎</p>
                  </div>
               </div>
             ) : (
-              <div className={`grid gap-3 md:gap-4 w-full h-full max-h-[80%] animate-in zoom-in-95 duration-1000 overflow-y-auto no-scrollbar py-10 px-2 md:px-4 ${
+              <div className={`grid gap-4 md:gap-6 w-full h-full max-h-[85%] animate-in zoom-in-95 duration-1000 overflow-y-auto no-scrollbar py-10 px-4 ${
                 batchWinners.length === 1 ? 'grid-cols-1' : 
                 batchWinners.length <= 4 ? 'grid-cols-1 md:grid-cols-2' : 
                 'grid-cols-2 lg:grid-cols-3'
               }`}>
                 {batchWinners.map(w => (
-                  <div key={w.id} className="bg-white/5 backdrop-blur-xl rounded-[2rem] md:rounded-[2.5rem] p-6 md:p-12 border border-white/10 text-center shadow-2xl relative overflow-hidden group/card hover:bg-white/15 transition-all flex flex-col justify-center items-center">
-                    <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-yellow-500/80 to-transparent" />
-                    <Sparkles size={20} className="absolute top-4 right-4 text-yellow-500 animate-pulse" />
-                    <div className="text-yellow-500 font-black text-[8px] md:text-[10px] uppercase tracking-[0.3em] mb-2 md:mb-4">CONGRATULATIONS</div>
-                    <div className="text-3xl md:text-6xl font-black text-white truncate w-full px-2 tracking-tighter leading-tight">{w.name}</div>
-                    <div className="text-[10px] md:text-xl text-slate-400 font-bold truncate w-full mt-2 md:mt-4 uppercase tracking-widest leading-none">{w.title || '貴賓'}</div>
+                  <div key={w.id} className="bg-white/5 backdrop-blur-2xl rounded-[2.5rem] md:rounded-[3.5rem] p-8 md:p-14 border border-white/10 text-center shadow-2xl relative overflow-hidden group/card hover:bg-white/15 transition-all flex flex-col justify-center items-center">
+                    <div className="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-yellow-500 to-transparent" />
+                    <Sparkles size={28} className="absolute top-6 right-6 text-yellow-500 animate-pulse" />
+                    <div className="text-yellow-500 font-black text-[10px] md:text-xs uppercase tracking-[0.4em] mb-4 md:mb-6">LUCKY WINNER</div>
+                    <div className="text-4xl md:text-8xl font-black text-white truncate w-full px-2 tracking-tighter leading-none">{w.name}</div>
+                    <div className="text-sm md:text-2xl text-slate-400 font-bold truncate w-full mt-4 md:mt-8 uppercase tracking-[0.2em]">{w.title || '貴賓'}</div>
                   </div>
                 ))}
               </div>
             )}
         </div>
 
+        {/* 底部導引 */}
         {!isAnimating && (
-           <div className="absolute bottom-6 left-1/2 -translate-x-1/2 opacity-30 group-hover:opacity-100 transition-all">
-              <div className="px-6 py-2 bg-white/5 border border-white/10 rounded-full text-white/60 text-[8px] md:text-[10px] font-black tracking-[0.3em] uppercase">Touch Screen to Start</div>
+           <div className="absolute bottom-10 left-1/2 -translate-x-1/2 opacity-30 group-hover:opacity-100 group-hover:translate-y-[-10px] transition-all">
+              <div className="px-10 py-3 bg-white/5 border border-white/10 rounded-full text-white/60 text-[10px] md:text-xs font-black tracking-[0.4em] uppercase">CLICK ANYWHERE TO START</div>
            </div>
         )}
       </div>
 
-      {/* 控制中心操作列 - 手機版優化 */}
-      <div className="mt-6 md:mt-12 w-full max-w-5xl bg-slate-900/40 p-3 md:p-4 rounded-[2rem] md:rounded-[3rem] border border-white/5 backdrop-blur-xl">
-        <div className="flex flex-col md:flex-row items-center justify-between gap-4">
+      {/* 控制中心：手機版優化佈局 */}
+      <div className="mt-8 md:mt-14 w-full max-w-5xl bg-slate-900/40 p-4 md:p-5 rounded-[2.5rem] md:rounded-[4rem] border border-white/5 backdrop-blur-2xl">
+        <div className="flex flex-col gap-4">
             
-            {/* 輪次選擇 (R1-R5) */}
-            <div className="flex bg-black/40 p-1 rounded-xl md:rounded-2xl gap-1 w-full md:w-auto">
+            {/* 上層：輪次選擇 (寬度撐滿) */}
+            <div className="flex bg-black/40 p-1.5 rounded-2xl md:rounded-[2rem] gap-1.5 w-full">
               {[1, 2, 3, 4, 5].map(r => (
                 <button 
                   key={r} 
                   onClick={() => isUnlocked ? jumpToLotteryRound(r) : setShowLoginModal(true)} 
-                  className={`flex-1 md:w-12 h-10 md:h-12 rounded-lg md:rounded-xl font-black text-xs md:text-sm transition-all ${currentRound === r ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}
+                  className={`flex-1 h-12 md:h-14 rounded-xl md:rounded-2xl font-black text-sm md:text-lg transition-all ${currentRound === r ? 'bg-indigo-600 text-white shadow-[0_0_20px_rgba(79,70,229,0.4)]' : 'text-slate-500 hover:text-slate-300'}`}
                 >
-                  {r}
+                  R{r}
                 </button>
               ))}
             </div>
 
-            {/* 功能設定區 (人數、重置、解鎖) */}
-            <div className="flex items-center justify-between w-full md:w-auto gap-2 md:gap-3">
-               <div className="relative flex-1 md:flex-none">
-                  <Users size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" />
+            {/* 下層：功能設定 (抽獎人數、重置、解鎖) */}
+            <div className="flex items-center gap-3 w-full">
+               <div className="relative flex-1">
+                  <Users size={18} className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-500" />
                   <select 
                     value={drawCount} 
                     onChange={(e) => setDrawCount(Number(e.target.value))}
-                    className="w-full md:w-auto h-12 md:h-14 pl-11 pr-10 bg-black/40 border-none rounded-xl md:rounded-2xl font-black text-sm md:text-lg text-white appearance-none focus:ring-2 focus:ring-indigo-500 transition-all cursor-pointer"
+                    className="w-full h-14 md:h-16 pl-14 pr-10 bg-black/40 border-none rounded-2xl md:rounded-[2rem] font-black text-base md:text-xl text-white appearance-none focus:ring-4 focus:ring-indigo-500/20 transition-all cursor-pointer"
                   >
-                    {[1, 2, 3, 4, 5, 10, 15, 20].map(n => <option key={n} value={n}>{n} 人 / 抽</option>)}
+                    {[1, 2, 3, 4, 5, 10, 15, 20].map(n => <option key={n} value={n}>{n} 人 / 次</option>)}
                   </select>
-                  <ChevronDown size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
+                  <ChevronDown size={20} className="absolute right-5 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
                </div>
 
-               <div className="flex gap-2">
-                 <button 
-                   onClick={handleHardReset}
-                   disabled={isResetting}
-                   className={`w-12 md:w-14 h-12 md:h-14 bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white rounded-xl md:rounded-2xl flex items-center justify-center transition-all active:scale-90 ${isResetting ? 'opacity-50' : ''}`}
-                   title="清空得獎紀錄"
-                 >
-                   {isResetting ? <Loader2 size={20} className="animate-spin" /> : <RotateCcw size={20} />}
-                 </button>
+               <button 
+                 onClick={handleHardReset}
+                 disabled={isResetting}
+                 className={`w-14 md:w-16 h-14 md:h-16 bg-red-500/15 text-red-500 hover:bg-red-500 hover:text-white rounded-2xl md:rounded-[2rem] flex items-center justify-center transition-all active:scale-90 ${isResetting ? 'animate-pulse' : ''}`}
+                 title="全域重置"
+               >
+                 {isResetting ? <Loader2 size={24} className="animate-spin" /> : <RotateCcw size={24} />}
+               </button>
 
-                 <button 
-                   onClick={() => isUnlocked ? logoutAdmin() : setShowLoginModal(true)} 
-                   className="w-12 md:w-14 h-12 md:h-14 bg-white/5 text-slate-400 hover:text-indigo-400 rounded-xl md:rounded-2xl flex items-center justify-center transition-all"
-                 >
-                   {isUnlocked ? <Unlock size={20} /> : <Lock size={20} />}
-                 </button>
-               </div>
+               <button 
+                 onClick={() => isUnlocked ? logoutAdmin() : setShowLoginModal(true)} 
+                 className={`w-14 md:w-16 h-14 md:h-16 rounded-2xl md:rounded-[2rem] flex items-center justify-center transition-all ${isUnlocked ? 'bg-indigo-600 text-white shadow-lg' : 'bg-white/5 text-slate-400'}`}
+               >
+                 {isUnlocked ? <Unlock size={24} /> : <Lock size={24} />}
+               </button>
             </div>
         </div>
       </div>
 
-      {/* 歷史得獎紀錄區 */}
-      <div className="w-full max-w-5xl space-y-6 md:space-y-8 mt-12 md:mt-16">
-          <div className="px-4">
-              <h4 className="text-[9px] md:text-[11px] font-black text-slate-500 uppercase tracking-[0.4em] flex items-center gap-3">
-                  <Star size={14} className="text-yellow-500" />
+      {/* 歷史得獎名單 */}
+      <div className="w-full max-w-5xl space-y-8 mt-16 md:mt-24">
+          <div className="flex items-center justify-between px-6">
+              <h4 className="text-[10px] md:text-xs font-black text-slate-500 uppercase tracking-[0.5em] flex items-center gap-4">
+                  <Star size={16} className="text-yellow-500" />
                   各輪得獎歷史實況
               </h4>
           </div>
           
-          <div className="space-y-4 md:space-y-6">
+          <div className="space-y-6 md:space-y-10">
               {historyData.map(group => (
-                  <div key={group.round} className="bg-slate-900/40 rounded-[2rem] md:rounded-[2.5rem] overflow-hidden border border-white/5 backdrop-blur-sm">
-                      <div className="bg-white/5 px-6 md:px-10 py-4 md:py-5 flex justify-between items-center border-b border-white/5">
-                          <div className="flex items-center gap-2 md:gap-3">
-                              <div className="w-7 h-7 md:w-8 md:h-8 bg-indigo-600 text-white rounded-lg flex items-center justify-center text-[10px] md:text-xs font-black">{group.round}</div>
-                              <span className="font-black text-slate-200 uppercase tracking-widest text-xs md:text-sm">ROUND {group.round}</span>
+                  <div key={group.round} className="bg-slate-900/40 rounded-[2.5rem] md:rounded-[3.5rem] overflow-hidden border border-white/5 backdrop-blur-xl">
+                      <div className="bg-white/5 px-8 md:px-12 py-5 md:py-7 flex justify-between items-center border-b border-white/5">
+                          <div className="flex items-center gap-4">
+                              <div className="w-10 h-10 bg-indigo-600 text-white rounded-xl flex items-center justify-center text-xs font-black">R{group.round}</div>
+                              <span className="font-black text-slate-200 uppercase tracking-[0.2em] text-sm md:text-lg">ROUND {group.round} WINNERS</span>
                           </div>
-                          <span className="text-[8px] md:text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">{group.list.length} WINNERS</span>
+                          <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">{group.list.length} LUCKY GUESTS</span>
                       </div>
-                      <div className="p-4 md:p-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 md:gap-3">
+                      <div className="p-6 md:p-10 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 md:gap-5">
                           {group.list.map((w, idx) => (
-                              <div key={`${w.id}-${group.round}`} className="flex items-center justify-between p-4 md:p-5 bg-white/5 rounded-xl md:rounded-2xl border border-white/5 hover:bg-white/10 transition-all group/item">
+                              <div key={`${w.id}-${group.round}`} className="flex items-center justify-between p-5 md:p-6 bg-white/5 rounded-2xl md:rounded-3xl border border-white/5 hover:bg-white/10 transition-all group/item">
                                   <div className="min-w-0">
-                                      <div className="font-black text-white text-base md:text-lg truncate tracking-tight">{w.name}</div>
-                                      <div className="text-[8px] md:text-[10px] text-slate-500 font-bold truncate mt-0.5 md:mt-1 uppercase tracking-widest">{w.title || '貴賓'}</div>
+                                      <div className="font-black text-white text-lg md:text-xl truncate tracking-tight">{w.name}</div>
+                                      <div className="text-[10px] md:text-xs text-slate-500 font-bold truncate mt-1 uppercase tracking-widest">{w.title || '貴賓'}</div>
                                   </div>
                                   {isUnlocked && (
                                       <button 
-                                          onClick={(e) => { e.stopPropagation(); if(window.confirm(`確定撤回 ${w.name} 的中獎資格？`)) removeWinnerFromRound(w.id, group.round); }}
-                                          className="w-7 h-7 md:w-8 md:h-8 bg-red-500/10 text-red-500 rounded-lg md:opacity-0 group-hover/item:opacity-100 transition-all flex items-center justify-center"
+                                          onClick={(e) => { e.stopPropagation(); if(window.confirm(`確定撤回 ${w.name} 的中獎資格嗎？`)) removeWinnerFromRound(w.id, group.round); }}
+                                          className="w-9 h-9 bg-red-500/15 text-red-500 rounded-xl md:opacity-0 group-hover/item:opacity-100 transition-all flex items-center justify-center hover:bg-red-500 hover:text-white"
                                       >
-                                          <X size={14} />
+                                          <X size={16} />
                                       </button>
                                   )}
                               </div>
@@ -319,21 +328,24 @@ const LotteryPanel: React.FC = () => {
                   </div>
               ))}
               {historyData.length === 0 && (
-                 <div className="py-16 text-center text-slate-600 font-bold italic text-sm">暫無得獎紀錄</div>
+                 <div className="py-20 text-center bg-white/5 rounded-[3rem] border border-dashed border-white/10">
+                    <Star size={32} className="mx-auto text-slate-800 mb-4" />
+                    <p className="text-slate-600 font-black italic tracking-widest">目前尚無得獎紀錄</p>
+                 </div>
               )}
           </div>
       </div>
 
       {showLoginModal && (
         <div className="fixed inset-0 ios-blur bg-black/60 z-[300] flex items-center justify-center p-6">
-          <div className="bg-slate-900 border border-white/10 rounded-[2.5rem] md:rounded-[3rem] p-8 md:p-10 max-w-xs w-full shadow-2xl flex flex-col items-center gap-6 md:gap-8 text-center">
-            <h3 className="text-xl md:text-2xl font-black text-white tracking-tight">抽獎系統授權</h3>
-            <form onSubmit={handleLoginSubmit} className="w-full space-y-4 md:space-y-6">
-              <p className="text-[10px] font-bold text-indigo-400">系統密碼：3333</p>
-              <input type="password" placeholder="••••" value={loginPassword} onChange={e => setLoginPassword(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-2xl py-5 md:py-6 px-4 text-center text-3xl md:text-4xl font-black text-white focus:ring-4 focus:ring-indigo-500/20 outline-none transition-all" autoFocus />
-              <div className="flex gap-3 md:gap-4">
-                <button type="button" onClick={() => setShowLoginModal(false)} className="flex-1 py-3 md:py-4 font-black text-slate-500 text-xs md:text-sm">取消</button>
-                <button type="submit" className="flex-1 py-3 md:py-4 bg-indigo-600 text-white font-black rounded-xl md:rounded-2xl shadow-xl active:scale-95 transition-transform text-xs md:text-sm">解鎖</button>
+          <div className="bg-slate-900 border border-white/10 rounded-[3rem] p-10 max-w-xs w-full shadow-2xl flex flex-col items-center gap-8 text-center">
+            <h3 className="text-2xl font-black text-white tracking-tight">抽獎系統授權</h3>
+            <form onSubmit={handleLoginSubmit} className="w-full space-y-6">
+              <p className="text-[10px] font-bold text-indigo-400">密碼提示：3333</p>
+              <input type="password" placeholder="••••" value={loginPassword} onChange={e => setLoginPassword(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-2xl py-6 px-4 text-center text-4xl font-black text-white focus:ring-4 focus:ring-indigo-500/20 outline-none transition-all" autoFocus />
+              <div className="flex gap-4">
+                <button type="button" onClick={() => setShowLoginModal(false)} className="flex-1 py-4 font-black text-slate-500">取消</button>
+                <button type="submit" className="flex-1 py-4 bg-indigo-600 text-white font-black rounded-2xl shadow-xl active:scale-95 transition-transform">解鎖</button>
               </div>
             </form>
           </div>
