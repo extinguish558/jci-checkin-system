@@ -118,37 +118,39 @@ const MasterControlPanel: React.FC = () => {
   return (
     <div className="p-4 md:p-6 w-full max-w-[1920px] mx-auto space-y-6 pb-40">
       
-      {/* 頂部全寬度戰情列 */}
-      <div className="flex flex-col xl:flex-row justify-between items-center gap-6 bg-slate-900 text-white p-6 rounded-[2.5rem] shadow-2xl border border-white/10">
+      {/* 頂部全寬度戰情列 - 高度縮減優化 */}
+      <div className="flex flex-col xl:flex-row justify-between items-center gap-4 bg-slate-900 text-white p-3 md:p-4 rounded-[2rem] md:rounded-[2.5rem] shadow-2xl border border-white/10">
         <div className="flex items-center gap-4">
-          <div className="p-4 bg-blue-600 rounded-2xl shadow-lg shadow-blue-500/20"><LayoutDashboard size={28} /></div>
+          <div className="p-2.5 md:p-3 bg-blue-600 rounded-2xl shadow-lg shadow-blue-500/20">
+            <LayoutDashboard size={22} md:size={26} />
+          </div>
           <div>
-            <h1 className="text-2xl md:text-3xl font-black italic tracking-tighter">戰情總覽 CENTER</h1>
-            <div className="flex items-center gap-2 mt-1">
-              <div className="flex items-center gap-1.5 px-3 py-1 bg-green-500/10 text-green-400 rounded-full text-[10px] font-black border border-green-500/20">
-                <Globe size={12} className="animate-pulse" /> LIVE MONITORING
+            <h1 className="text-xl md:text-2xl font-black italic tracking-tighter">戰情總覽 CENTER</h1>
+            <div className="flex items-center gap-2 mt-0.5">
+              <div className="flex items-center gap-1 px-2 py-0.5 bg-green-500/10 text-green-400 rounded-full text-[8px] md:text-[9px] font-black border border-green-500/20">
+                <Globe size={10} className="animate-pulse" /> LIVE
               </div>
-              <p className="text-white/40 font-bold uppercase tracking-[0.3em] text-[9px]">Event War Room Dashboard v7.5</p>
+              <p className="text-white/30 font-bold uppercase tracking-[0.2em] text-[8px]">Event War Room Dashboard v7.5</p>
             </div>
           </div>
         </div>
         
-        <div className="flex flex-wrap justify-center gap-3">
+        <div className="flex flex-wrap justify-center gap-2.5">
             {[
               { label: '報到率', val: stats.regPercent, color: 'text-blue-400', icon: ClipboardList },
               { label: '禮品發放', val: stats.giftsPercent, color: 'text-orange-400', icon: Award },
               { label: '流程進度', val: stats.stepsPercent, color: 'text-emerald-400', icon: Mic2 }
             ].map(i => (
-              <div key={i.label} className="bg-white/5 border border-white/5 px-6 py-3 rounded-2xl flex items-center gap-4 min-w-[140px]">
-                <i.icon size={20} className={i.color} />
+              <div key={i.label} className="bg-white/5 border border-white/5 px-4 py-1.5 md:py-2 rounded-[1.2rem] flex items-center gap-3 min-w-[120px]">
+                <i.icon size={16} className={i.color} />
                 <div className="flex flex-col">
-                    <span className="text-[10px] font-black text-white/40 uppercase tracking-widest">{i.label}</span>
-                    <span className="text-xl font-black tabular-nums">{i.val}%</span>
+                    <span className="text-[8px] font-black text-white/40 uppercase tracking-widest">{i.label}</span>
+                    <span className="text-lg font-black tabular-nums leading-none">{i.val}%</span>
                 </div>
               </div>
             ))}
-            <button onClick={() => isAdmin ? logoutAdmin() : setShowLoginModal(true)} className={`p-4 rounded-2xl transition-all border border-white/5 ${isAdmin ? 'bg-red-500/20 text-red-400' : 'bg-white/5 text-white/60'}`}>
-              {isAdmin ? <X size={24} /> : <Lock size={24} />}
+            <button onClick={() => isAdmin ? logoutAdmin() : setShowLoginModal(true)} className={`p-2.5 md:p-3 rounded-2xl transition-all border border-white/5 ${isAdmin ? 'bg-red-500/20 text-red-400' : 'bg-white/5 text-white/60'}`}>
+              {isAdmin ? <X size={20} /> : <Lock size={20} />}
             </button>
         </div>
       </div>
