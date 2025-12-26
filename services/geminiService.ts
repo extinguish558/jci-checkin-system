@@ -59,8 +59,20 @@ export const parseGuestsFromExcel = async (file: File): Promise<ParsedGuestDraft
           
           let category = GuestCategory.OTHER;
           if (categoryStr) {
-            const matched = Object.values(GuestCategory).find(val => categoryStr.includes(val));
-            if (matched) category = matched;
+            const s = categoryStr.toUpperCase();
+            // 增強型分類邏輯：確保 OB/YB 關鍵字優先匹配
+            if (s.includes('OB') || s.includes('特友')) {
+              category = GuestCategory.MEMBER_OB;
+            } else if (s.includes('YB') || s.includes('會友')) {
+              category = GuestCategory.MEMBER_YB;
+            } else if (s.includes('會長')) {
+              category = GuestCategory.PAST_PRESIDENT;
+            } else if (s.includes('主席')) {
+              category = GuestCategory.PAST_CHAIRMAN;
+            } else {
+              const matched = Object.values(GuestCategory).find(val => categoryStr.includes(val));
+              if (matched) category = matched;
+            }
           }
           return { name, title, category, code, hasSignature: false };
         }).filter(d => d.name !== '');
@@ -147,7 +159,6 @@ export const parseCheckInSheet = async (files: FileInput[]): Promise<ParsedGuest
 
 const formatTime = (iso?: string) => iso ? new Date(iso).toLocaleString('zh-TW', { hour12: false }) : '';
 
-// 格式化嘉賓數據為 Excel 友善格式
 const formatGuestForExcel = (g: Guest) => ({
     '編號': g.code || '',
     '姓名': g.name,
@@ -162,33 +173,27 @@ const formatGuestForExcel = (g: Guest) => ({
     '備註': g.note || ''
 });
 
-// 整合型報表導出 (包含排序與分頁優化)
 export const exportFinalActivityReport = (guests: Guest[], gifts: GiftItem[], steps: McFlowStep[], sponsorships: Sponsorship[], eventName: string) => {
     const wb = utils.book_new();
     const today = new Date().toLocaleDateString('zh-TW').replace(/\//g, '');
 
-    // 0. 基礎資料排序
     const sortedGuests = [...guests].sort((a, b) => (a.code || '').localeCompare(b.code || '', undefined, { numeric: true }));
     const sortedGifts = [...gifts].sort((a, b) => (a.sequence || '').localeCompare(b.sequence || '', undefined, { numeric: true }));
     const sortedSteps = [...steps].sort((a, b) => (a.sequence || '').localeCompare(b.sequence || '', undefined, { numeric: true }));
 
-    // 1. 報到總表 (按編號排序)
     const guestData = sortedGuests.map(formatGuestForExcel);
     const guestWs = utils.json_to_sheet(guestData);
     utils.book_append_sheet(wb, guestWs, '人員報到總表');
 
-    // 2. 自動按「類別」建立各分頁 (每個分頁也按編號排序)
     const categories = Object.values(GuestCategory);
     categories.forEach(cat => {
         const list = sortedGuests.filter(g => g.category === cat);
         if (list.length > 0) {
             const ws = utils.json_to_sheet(list.map(formatGuestForExcel));
-            // Excel 分頁名稱限 31 字元
             utils.book_append_sheet(wb, ws, cat.substring(0, 31));
         }
     });
 
-    // 3. 禮品頒贈進度 (包含頒贈時間，按序號排序)
     const giftData = sortedGifts.map(i => ({
         '序號': i.sequence || '',
         '禮品名稱': i.name,
@@ -200,7 +205,6 @@ export const exportFinalActivityReport = (guests: Guest[], gifts: GiftItem[], st
     const giftWs = utils.json_to_sheet(giftData);
     utils.book_append_sheet(wb, giftWs, '禮品頒贈進度');
 
-    // 4. 活動程序講稿 (包含完成時間，按序號排序)
     const flowData = sortedSteps.map(s => ({
         '序號': s.sequence || '',
         '預計時間': s.time || '',
@@ -213,7 +217,6 @@ export const exportFinalActivityReport = (guests: Guest[], gifts: GiftItem[], st
     const flowWs = utils.json_to_sheet(flowData);
     utils.book_append_sheet(wb, flowWs, '活動程序講稿');
 
-    // 5. 贊助芳名錄 (按時間排序，最新在後)
     const sponsorData = sponsorships.sort((a, b) => a.timestamp.localeCompare(b.timestamp)).map(s => ({
         '姓名': s.name,
         '職稱': s.title || '',
@@ -224,7 +227,6 @@ export const exportFinalActivityReport = (guests: Guest[], gifts: GiftItem[], st
     const sponsorWs = utils.json_to_sheet(sponsorData);
     utils.book_append_sheet(wb, sponsorWs, '贊助芳名錄');
 
-    // 6. 中獎紀錄名冊 (按姓名排序)
     const winnerData = sortedGuests.filter(g => g.isWinner).map(g => ({
         '姓名': g.name,
         '職稱': g.title,

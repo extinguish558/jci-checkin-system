@@ -23,7 +23,6 @@ const LotteryPanel: React.FC = () => {
   const [confirmState, setConfirmState] = useState<'idle' | 'armed'>('idle');
   const [isMuted, setIsMuted] = useState(() => localStorage.getItem('lottery_muted') === 'true');
   
-  // 贊助特效狀態
   const [showSponsorAlert, setShowSponsorAlert] = useState<Sponsorship | null>(null);
   const lastSponsorshipTimeRef = useRef<number>(0);
 
@@ -33,11 +32,9 @@ const LotteryPanel: React.FC = () => {
   const animationFrameRef = useRef<number>(0);
   const armTimerRef = useRef<any>(null);
 
-  // 贊助名單輪播控制
   const [sponsorIndex, setSponsorIndex] = useState(0);
   const sponsors = settings.sponsorships || [];
 
-  // 抽獎池配置顯示邏輯
   const poolConfigInfo = useMemo(() => {
     const config = settings.lotteryPoolConfig;
     if (!config) return "抽獎範圍：所有已報到貴賓";
@@ -71,7 +68,6 @@ const LotteryPanel: React.FC = () => {
     }
   }, [sponsors, isAnimating, currentWinnerBatch, showSponsorAlert]);
 
-  // 音效
   const audioRefs = useRef<{
     tick: HTMLAudioElement;
     roll: HTMLAudioElement;
@@ -122,7 +118,6 @@ const LotteryPanel: React.FC = () => {
 
   const eligibleGuests = useMemo(() => guests.filter(g => g.isCheckedIn), [guests]);
 
-  // 修改抽獎池統計邏輯：精確計算 未中獎人數 / 抽獎池總人數，並增加類別 Breakdown
   const poolStats = useMemo(() => {
     const poolConfig = settings.lotteryPoolConfig || { includedCategories: Object.values(GuestCategory), includedIndividualIds: [] };
     
@@ -134,11 +129,9 @@ const LotteryPanel: React.FC = () => {
     });
 
     const totalInPool = poolMembers.length;
-    // 嚴格過濾掉任何已經得過獎的人（全場唯一性）
     const candidates = poolMembers.filter(g => !g.isWinner);
     const notWonYetCount = candidates.length;
 
-    // 類別 breakdown 標籤配置 (對應 YB, OB, 會長, 貴賓)
     const breakdownData = [
         { key: 'YB', label: 'YB', color: 'text-blue-400', bg: 'bg-blue-500/10', count: 0 },
         { key: 'OB', label: 'OB', color: 'text-orange-400', bg: 'bg-orange-500/10', count: 0 },
@@ -283,11 +276,10 @@ const LotteryPanel: React.FC = () => {
         @keyframes winner-celebration { 0%, 100% { transform: scale(1.1); filter: brightness(1) drop-shadow(0 0 15px rgba(255,215,0,0.3)); } 50% { transform: scale(1.3); filter: brightness(2.5) drop-shadow(0 0 45px rgba(255,215,0,0.9)); } }
         .animate-winner-win { animation: winner-celebration 0.4s ease-in-out infinite; }
         @keyframes marquee { 0% { transform: translateX(0); } 100% { transform: translateX(-50%); } }
-        .animate-marquee { animation: marquee 30s linear infinite; }
-        .animate-pool-marquee { animation: marquee 20s linear infinite; }
+        .animate-marquee { animation: marquee 180s linear infinite; }
+        .animate-pool-marquee { animation: marquee 120s linear infinite; }
       `}</style>
 
-      {/* 贊助特效 */}
       {showSponsorAlert && (
         <div onClick={() => setShowSponsorAlert(null)} className="fixed inset-0 z-[1000] flex items-center justify-center cursor-pointer group">
             <div className="absolute inset-0 bg-black/65 backdrop-blur-sm animate-in fade-in duration-500"></div>
@@ -303,7 +295,6 @@ const LotteryPanel: React.FC = () => {
         </div>
       )}
 
-      {/* 1. 主舞台 */}
       <div onClick={handleDrawClick} className={`relative mt-8 w-full max-w-7xl h-[75vh] rounded-[3rem] flex flex-col transition-all duration-1000 border border-white/5 overflow-hidden z-10 shadow-3xl ${confirmState === 'armed' ? 'bg-red-950/20' : isAnimating ? 'bg-blue-950/10' : 'bg-slate-900/5'}`}>
         <header className="relative w-full p-8 z-30 border-b border-white/5 bg-gradient-to-b from-black/95 to-transparent flex items-center justify-between">
            <div className="flex items-center gap-6">
@@ -315,7 +306,6 @@ const LotteryPanel: React.FC = () => {
            </div>
            
            <div className="flex items-center gap-4">
-              {/* 精緻類別統計 Pills - 需求優化區 */}
               <div className="hidden xl:flex items-center gap-2 mr-3 animate-in fade-in slide-in-from-right-4 duration-1000">
                  {poolStats.breakdown.map((item) => (
                     <div key={item.key} className={`flex items-center gap-2 px-4 py-2 ${item.bg} border border-white/5 rounded-2xl shadow-inner transition-all hover:scale-105`}>
@@ -340,7 +330,6 @@ const LotteryPanel: React.FC = () => {
         </header>
 
         <div className="flex-1 flex flex-col md:flex-row overflow-hidden">
-          {/* 左側：滾輪 */}
           <div className="relative w-full md:w-[32%] h-[30%] md:h-full flex flex-col items-center justify-center overflow-hidden bg-black/60 border-r border-white/5">
             <div className="absolute inset-0 z-10 pointer-events-none bg-gradient-to-b from-black via-transparent to-black opacity-60"></div>
             <div className="absolute inset-x-0 h-[ITEM_HEIGHT] top-1/2 -translate-y-1/2 border-y border-white/15 bg-red-500/5 pointer-events-none z-20 shadow-[inset_0_0_40px_rgba(255,255,255,0.02)]"></div>
@@ -357,7 +346,6 @@ const LotteryPanel: React.FC = () => {
             </div>
           </div>
 
-          {/* 右側：顯示區 */}
           <div className={`relative w-full md:w-[68%] h-[70%] md:h-full flex flex-col transition-all duration-1000 ${isAnimating || currentWinnerBatch.length > 0 ? 'bg-red-900/10 ring-inset ring-1 ring-red-500/20' : 'bg-black/40'}`}>
              <div className="p-6 flex-1 flex flex-col overflow-hidden">
                 <div className="flex items-center gap-2 mb-4 opacity-40"><Snowflake size={14} className="text-red-400" /><span className="text-[10px] font-black text-white tracking-[0.4em] uppercase italic">{currentWinnerBatch.length > 0 || isAnimating ? 'Holiday Ceremony Sync' : 'Honor Roll Display'}</span></div>
@@ -398,7 +386,6 @@ const LotteryPanel: React.FC = () => {
                 </div>
              </div>
 
-             {/* 底部跑馬燈 */}
              {sponsors.length > 0 && (
                 <div className="bg-black/80 border-t border-white/10 h-24 flex items-center overflow-hidden relative group">
                     <div className="absolute left-0 top-0 bottom-0 w-24 bg-gradient-to-r from-black z-10"></div>
@@ -426,7 +413,6 @@ const LotteryPanel: React.FC = () => {
         )}
       </div>
 
-      {/* 2. 控制台 */}
       <div className="mt-12 w-full max-w-4xl space-y-6 z-20">
         <div className="relative h-12 bg-white/5 rounded-2xl border border-white/10 overflow-hidden flex items-center shadow-inner group">
           <div className="absolute left-0 top-0 bottom-0 px-4 bg-slate-900/80 z-20 flex items-center gap-2 border-r border-white/10"><Filter size={16} className="text-red-500" /><span className="text-xs font-black text-white uppercase tracking-widest">Active Pool</span></div>
@@ -447,7 +433,7 @@ const LotteryPanel: React.FC = () => {
             </div>
             <div className="flex gap-4 shrink-0">
                 <button onClick={handleResetClick} className="w-16 h-16 bg-red-600/5 text-red-500 hover:bg-red-600 hover:text-white rounded-full flex items-center justify-center transition-all border border-red-500/10 shadow-xl"><RotateCcw size={24} /></button>
-                <button onClick={() => isUnlocked ? logoutAdmin() : setShowLoginModal(true)} className={`w-16 h-16 rounded-full flex items-center justify-center transition-all border border-white/5 shadow-xl ${isUnlocked ? 'bg-red-600/20 text-red-500' : 'bg-white/5 text-slate-700'}`}>{isUnlocked ? <Unlock size={24} /> : <Lock size={24} />}</button>
+                <button onClick={() => isUnlocked ? logoutAdmin() : setShowLoginModal(true)} className={`w-16 h-16 rounded-full flex items-center justify-center transition-all border border-white/5 shadow-xl ${isUnlocked ? 'bg-red-600/20 text-red-400' : 'bg-white/5 text-slate-700'}`}>{isUnlocked ? <Unlock size={24} /> : <Lock size={24} />}</button>
             </div>
         </div>
 
@@ -485,12 +471,12 @@ const LotteryPanel: React.FC = () => {
       </div>
 
       {showLoginModal && (
-        <div className="fixed inset-0 ios-blur bg-black/98 z-[500] flex items-center justify-center p-6">
-          <div className="bg-[#0b0c10] border border-white/10 rounded-[3rem] p-16 max-sm w-full shadow-3xl flex flex-col items-center gap-8 text-center animate-in zoom-in-95 duration-500">
-            <h3 className="text-2xl font-black text-white tracking-[0.5em] italic uppercase">Holiday Admin Access</h3>
-            <form onSubmit={handleLoginSubmit} className="w-full space-y-10">
-              <input type="password" placeholder="••••" value={loginPassword} onChange={e => setLoginPassword(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-2xl py-8 px-6 text-center text-7xl font-black text-white outline-none tracking-[1em] focus:bg-white/10 transition-all" autoFocus />
-              <div className="flex gap-6"><button type="button" onClick={() => setShowLoginModal(false)} className="flex-1 py-6 font-black text-slate-600 text-xs uppercase tracking-[0.4em]">Abort</button><button type="submit" className="flex-1 py-6 bg-red-600 text-white font-black rounded-2xl text-xs uppercase tracking-[0.4em] active:scale-95">Verify</button></div>
+        <div className="fixed inset-0 ios-blur bg-black/40 z-[300] flex items-center justify-center p-6">
+          <div className="bg-white rounded-[2.5rem] p-10 w-full max-w-xs shadow-2xl flex flex-col items-center gap-6">
+            <h3 className="text-2xl font-black text-slate-900">權限驗證</h3>
+            <form onSubmit={handleLoginSubmit} className="w-full space-y-4">
+              <input type="password" placeholder="••••" value={loginPassword} onChange={e => setLoginPassword(e.target.value)} className="w-full bg-[#F2F2F7] border-none rounded-2xl py-5 px-4 text-center text-4xl font-black outline-none" autoFocus />
+              <div className="flex gap-3"><button type="button" onClick={() => setShowLoginModal(false)} className="flex-1 py-4 font-black text-gray-400">取消</button><button type="submit" className="flex-1 py-4 bg-slate-900 text-white font-black rounded-2xl">解鎖</button></div>
             </form>
           </div>
         </div>

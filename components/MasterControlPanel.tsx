@@ -122,7 +122,8 @@ const MasterControlPanel: React.FC = () => {
       <div className="flex flex-col xl:flex-row justify-between items-center gap-4 bg-slate-900 text-white p-3 md:p-4 rounded-[2rem] md:rounded-[2.5rem] shadow-2xl border border-white/10">
         <div className="flex items-center gap-4">
           <div className="p-2.5 md:p-3 bg-blue-600 rounded-2xl shadow-lg shadow-blue-500/20">
-            <LayoutDashboard size={22} md:size={26} />
+            {/* Fix: Removed invalid responsive prop 'md:size' and used Tailwind for responsive sizing */}
+            <LayoutDashboard className="w-[22px] h-[22px] md:w-[26px] md:h-[26px]" />
           </div>
           <div>
             <h1 className="text-xl md:text-2xl font-black italic tracking-tighter">戰情總覽 CENTER</h1>
