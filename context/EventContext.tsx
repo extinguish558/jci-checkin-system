@@ -43,6 +43,7 @@ interface EventContextType {
   resetSpecificRecords: (options: ResetOptions) => Promise<void>;
   deleteGuest: (id: string) => Promise<void>;
   toggleCheckInRound: (id: string, round: number) => Promise<void>;
+  checkInById: (id: string) => Promise<void>;
   clearGuestCheckIn: (id: string) => Promise<void>;
   clearAllCheckIns: () => Promise<void>;
   clearCheckInsForIds: (ids: string[]) => Promise<void>;
@@ -65,6 +66,7 @@ interface EventContextType {
   logoutAdmin: () => void;
 }
 
+// 預設經緯度為嘉義市政府 (僅作範例，用戶可於後台調整)
 const defaultSettings: SystemSettings = {
   eventName: "年度盛會",
   briefSchedule: "",
@@ -98,7 +100,6 @@ const sanitizeForFirestore = (obj: any): any => {
 
 const EventContext = createContext<EventContextType | undefined>(undefined);
 
-// Fisher-Yates 洗牌演算法：確保絕對公平的隨機分佈
 function shuffleArray<T>(array: T[]): T[] {
   const result = [...array];
   for (let i = result.length - 1; i > 0; i--) {
@@ -109,8 +110,15 @@ function shuffleArray<T>(array: T[]): T[] {
 }
 
 export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [guests, setGuests] = useState<Guest[]>([]);
-  const [settings, setSettings] = useState<SystemSettings>(defaultSettings);
+  const [guests, setGuests] = useState<Guest[]>(() => {
+    const saved = localStorage.getItem('event_guests');
+    return saved ? JSON.parse(saved) : [];
+  });
+  const [settings, setSettings] = useState<SystemSettings>(() => {
+    const saved = localStorage.getItem('event_settings');
+    return saved ? { ...defaultSettings, ...JSON.parse(saved) } : defaultSettings;
+  });
+
   const [isCloudConnected, setIsCloudConnected] = useState(false);
   const [connectionError, setConnectionError] = useState<string | null>(null);
   const isHardResetting = useRef(false);
@@ -159,21 +167,27 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   useEffect(() => {
     if (!isFirebaseReady || !db) return;
+
     const unsubscribeSettings = db.collection("config").doc("mainSettings").onSnapshot((docSnap: any) => {
       if (docSnap.exists) {
+        setIsCloudConnected(true);
         const s = docSnap.data() as SystemSettings;
         setSettings(s);
         saveSettingsToLocal(s);
       }
+    }, (error: any) => {
+        setIsCloudConnected(false);
     });
+
     const unsubscribeGuests = db.collection("guests").onSnapshot((snapshot: any) => {
-      setIsCloudConnected(true); setConnectionError(null);
+      setIsCloudConnected(true); 
       if (isHardResetting.current) return;
       const cloudGuests: Guest[] = [];
       snapshot.forEach((doc: any) => cloudGuests.push(doc.data() as Guest));
       setGuests(cloudGuests);
       saveToLocal(cloudGuests);
-    }, (error: any) => { setIsCloudConnected(false); setConnectionError(error.message); });
+    });
+
     return () => { unsubscribeGuests(); unsubscribeSettings(); };
   }, []);
 
@@ -187,7 +201,6 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             await db.collection("config").doc("mainSettings").set(sanitized, { merge: true });
         } catch (e: any) { 
           console.error("Firebase Update Error:", e);
-          throw e; 
         }
     }
   };
@@ -274,6 +287,18 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     await updateGuestInfo(id, updates);
   };
 
+  const checkInById = async (id: string) => {
+    const guest = guests.find(g => g.id === id);
+    if (!guest) throw new Error("找不到貴賓資料");
+    const round = settings.currentCheckInRound;
+    await updateGuestInfo(id, {
+        isCheckedIn: true,
+        round: round,
+        attendedRounds: [round],
+        checkInTime: new Date().toISOString()
+    });
+  };
+
   const toggleIntroduced = async (id: string) => {
     const guest = guests.find(g => g.id === id);
     if (!guest) return;
@@ -284,16 +309,11 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const round = settings.lotteryRoundCounter;
     const poolConfig = settings.lotteryPoolConfig || { includedCategories: Object.values(GuestCategory), includedIndividualIds: [] };
     
-    // 嚴格過濾邏輯：
-    // 1. 必須已報到
-    // 2. 絕對不能已經中過獎 (isWinner 為 true 的人永久排除，直到重置)
     let pool = guests.filter(g => {
       if (!g.isCheckedIn) return false; 
-      if (g.isWinner) return false; // 關鍵修正：杜絕跨輪次重複得獎
-      
+      if (g.isWinner) return false; 
       const isInCategory = poolConfig.includedCategories.includes(g.category);
       const isExplicitlyIncluded = poolConfig.includedIndividualIds.includes(g.id);
-      
       return isInCategory || isExplicitlyIncluded;
     });
 
@@ -307,17 +327,13 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       return [];
     }
     
-    // 使用 Fisher-Yates 洗牌演算法確保隨機公平性
     const shuffledPool = shuffleArray(pool);
-    // Explicitly type selectedWinners as Guest[] to fix inference errors.
     const selectedWinners: Guest[] = shuffledPool.slice(0, count) as Guest[];
-    
     const now = new Date().toISOString();
     
     if (db) {
       const batch = db.batch();
       selectedWinners.forEach(winner => {
-        // Correcting property access errors on type 'unknown' by using typed selectedWinners
         const wonRounds = [...(winner.wonRounds || []), round];
         const wonTimes = { ...(winner.wonTimes || {}), [round.toString()]: now };
         const ref = db.collection("guests").doc(winner.id);
@@ -326,7 +342,6 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       batch.commit();
     }
     
-    // Fix: Explicitly using 'Guest' type for mapped winner IDs
     updateSettings({ lastDrawTrigger: { winnerIds: selectedWinners.map(w => w.id), timestamp: Date.now() } });
     return selectedWinners;
   };
@@ -452,13 +467,13 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     <EventContext.Provider value={{
       guests, settings, updateSettings, addGuestsFromDraft, overwriteGuestsFromDraft, updateGuestInfo, toggleIntroduced,
       resetIntroductions: async() => {}, drawWinner, drawWinners, resetLottery, clearLotteryRound: async() => {}, removeWinnerFromRound, nextLotteryRound: () => {},
-      jumpToLotteryRound, clearAllData: async() => {}, clearGuestsOnly, clearGiftsOnly, clearMcFlowOnly, resetGlobalEventState, resetSpecificRecords: async() => {}, deleteGuest, toggleCheckInRound, clearGuestCheckIn: async() => {},
+      jumpToLotteryRound, clearAllData: async() => {}, clearGuestsOnly, clearGiftsOnly, clearMcFlowOnly, resetGlobalEventState, resetSpecificRecords: async() => {}, deleteGuest, toggleCheckInRound, checkInById, clearGuestCheckIn: async() => {},
       clearAllCheckIns: async() => {}, clearCheckInsForIds: async() => {}, addFlowFile: async(f) => {
         const current = settings.flowFiles || [];
         const next = [...current.filter(x => x.type !== f.type), f];
         await updateSettings({ flowFiles: next });
       }, removeFlowFile: async() => {}, toggleMcFlowStep, setMcFlowSteps, 
-      toggleGiftPresented, setGiftItems, addSponsorship, updateSponsorship, deleteSponsorship, isCloudConnected, connectionError: null,
+      toggleGiftPresented, setGiftItems, addSponsorship, updateSponsorship, deleteSponsorship, isCloudConnected, connectionError,
       usingLocalDataProtection: false, uploadAllLocalDataToCloud: async() => {}, isAdmin, unlockedSections, loginAdmin, logoutAdmin
     }}>
       {children}

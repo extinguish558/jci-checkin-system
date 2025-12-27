@@ -7,7 +7,7 @@ import {
   RotateCcw, Trash2, Save, Wifi, Clock, Activity, Users, 
   ChevronRight, AlertCircle, ShieldAlert, Database, Globe,
   Edit3, Search, X, CheckCircle2, ChevronDown, ListChecks, ArrowUpDown,
-  ExternalLink, Check, Zap, BarChart3, ShieldCheck, UserCheck, Coins, Heart, Package, Loader2, Info, Lock, Trophy, UserMinus
+  ExternalLink, Check, Zap, BarChart3, ShieldCheck, UserCheck, Coins, Heart, Package, Loader2, Info, Lock, Trophy, UserMinus, WifiOff
 } from 'lucide-react';
 
 const MasterControlPanel: React.FC = () => {
@@ -22,7 +22,6 @@ const MasterControlPanel: React.FC = () => {
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [loginPassword, setLoginPassword] = useState("");
 
-  // 編輯贊助狀態
   const [showEditSponsorshipModal, setShowEditSponsorshipModal] = useState(false);
   const [editingSponsorship, setEditingSponsorship] = useState<Sponsorship | null>(null);
 
@@ -39,12 +38,10 @@ const MasterControlPanel: React.FC = () => {
   const handleEditSponsorshipSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingSponsorship) return;
-
     if (!editingSponsorship.itemName?.trim() && (!editingSponsorship.amount || Number(editingSponsorship.amount) <= 0)) {
         alert("請填寫「贊助品項」或「贊助金額」其中之一");
         return;
     }
-
     await updateSponsorship(editingSponsorship.id, { 
         name: editingSponsorship.name, 
         title: editingSponsorship.title, 
@@ -55,7 +52,6 @@ const MasterControlPanel: React.FC = () => {
     setEditingSponsorship(null);
   };
 
-  // 手動撤銷中獎資格 (返回抽獎池)
   const handleRevokeWinner = async (guest: Guest) => {
     if (!window.confirm(`確定要撤銷「${guest.name}」的中獎資格嗎？\n該員將會返回抽獎池中。`)) return;
     try {
@@ -80,7 +76,6 @@ const MasterControlPanel: React.FC = () => {
     return (settings.sponsorships || []).reduce((acc, curr) => acc + curr.amount, 0);
   }, [settings.sponsorships]);
 
-  // 工具函式：計算報到數據概覽
   const getTargetGroup = (g: Guest): string => {
     const title = g.title || '';
     const category = (g.category || '').toString();
@@ -118,20 +113,25 @@ const MasterControlPanel: React.FC = () => {
   return (
     <div className="p-4 md:p-6 w-full max-w-[1920px] mx-auto space-y-6 pb-40">
       
-      {/* 頂部全寬度戰情列 - 高度縮減優化 */}
       <div className="flex flex-col xl:flex-row justify-between items-center gap-4 bg-slate-900 text-white p-3 md:p-4 rounded-[2rem] md:rounded-[2.5rem] shadow-2xl border border-white/10">
         <div className="flex items-center gap-4">
           <div className="p-2.5 md:p-3 bg-blue-600 rounded-2xl shadow-lg shadow-blue-500/20">
-            {/* Fix: Removed invalid responsive prop 'md:size' and used Tailwind for responsive sizing */}
             <LayoutDashboard className="w-[22px] h-[22px] md:w-[26px] md:h-[26px]" />
           </div>
           <div>
             <h1 className="text-xl md:text-2xl font-black italic tracking-tighter">戰情總覽 CENTER</h1>
             <div className="flex items-center gap-2 mt-0.5">
-              <div className="flex items-center gap-1 px-2 py-0.5 bg-green-500/10 text-green-400 rounded-full text-[8px] md:text-[9px] font-black border border-green-500/20">
-                <Globe size={10} className="animate-pulse" /> LIVE
-              </div>
-              <p className="text-white/30 font-bold uppercase tracking-[0.2em] text-[8px]">Event War Room Dashboard v7.5</p>
+              {/* 動態連線指示器：確認網路是否正常的核心組件 */}
+              {isCloudConnected ? (
+                <div className="flex items-center gap-1.5 px-3 py-0.5 bg-green-500/10 text-green-400 rounded-full text-[9px] md:text-[11px] font-black border border-green-500/20">
+                  <Globe size={12} className="animate-pulse" /> 雲端同步中
+                </div>
+              ) : (
+                <div className="flex items-center gap-1.5 px-3 py-0.5 bg-red-500/10 text-red-400 rounded-full text-[9px] md:text-[11px] font-black border border-red-500/20">
+                  <WifiOff size={12} /> 離線運作模式
+                </div>
+              )}
+              <p className="text-white/30 font-bold uppercase tracking-[0.2em] text-[8px]">Event War Room Dashboard v7.6</p>
             </div>
           </div>
         </div>
@@ -156,10 +156,7 @@ const MasterControlPanel: React.FC = () => {
         </div>
       </div>
 
-      {/* 三欄核心佈局 */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start h-full">
-        
-        {/* 左側：核心活動看板資訊 */}
         <div className="lg:col-span-3 space-y-6">
           <div className="bg-white rounded-[2.5rem] p-8 shadow-sm border border-white space-y-8 relative overflow-hidden group">
             <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity"><Settings size={80} /></div>
@@ -182,7 +179,6 @@ const MasterControlPanel: React.FC = () => {
             </div>
           </div>
 
-          {/* 時間相位控制 */}
           <div className="bg-slate-50 rounded-[2.5rem] p-8 space-y-6 border border-white shadow-sm">
             <h3 className="font-black text-lg text-slate-900 flex items-center gap-2"><Clock size={20} className="text-slate-400" /> 時間相位控制</h3>
             <div className="space-y-6">
@@ -201,7 +197,6 @@ const MasterControlPanel: React.FC = () => {
             </div>
           </div>
 
-          {/* 贊助芳名即時牆 */}
           <div className="bg-white rounded-[2.5rem] shadow-sm border border-white flex flex-col overflow-hidden">
             <div className="p-8 border-b border-amber-50 bg-amber-50/20 flex items-center justify-between gap-4">
               <div className="flex items-center gap-4">
@@ -224,7 +219,6 @@ const MasterControlPanel: React.FC = () => {
           </div>
         </div>
 
-        {/* 中間：報到數據與實況牆 */}
         <div className="lg:col-span-5 flex flex-col h-[85vh] gap-6">
           <div className="bg-white rounded-[2.5rem] p-8 shadow-sm border border-white flex flex-col md:flex-row gap-6 md:gap-8 relative overflow-hidden shrink-0">
             <div className="absolute top-0 left-0 w-1.5 h-full bg-blue-500/10" />
@@ -246,7 +240,6 @@ const MasterControlPanel: React.FC = () => {
             </div>
           </div>
 
-          {/* 人員名單實況牆 - 優化中獎狀態顯示 */}
           <div className="bg-white rounded-[2.5rem] shadow-sm border border-white flex flex-col flex-1 overflow-hidden min-h-0">
             <div className="p-8 border-b border-gray-50 bg-slate-50/30 flex items-center justify-between gap-4">
               <div className="flex items-center gap-4"><div className="w-1.5 h-6 bg-blue-500 rounded-full" /><h3 className="font-black text-xl text-slate-900">報到與中獎實況</h3></div>
@@ -266,7 +259,6 @@ const MasterControlPanel: React.FC = () => {
                     </div>
                   </div>
                   <div className="flex items-center gap-4">
-                      {/* 中獎狀態與撤銷功能 - 需求優化區 */}
                       {g.isWinner && (
                         <div className="flex items-center gap-2 px-3 py-1.5 bg-amber-500/10 text-amber-600 rounded-xl border border-amber-500/20 shadow-sm animate-in zoom-in-90 duration-500">
                            <Trophy size={14} className="shrink-0" />
@@ -296,7 +288,6 @@ const MasterControlPanel: React.FC = () => {
           </div>
         </div>
 
-        {/* 右側：程序與禮品監控 */}
         <div className="lg:col-span-4 space-y-6 flex flex-col h-[85vh]">
           <div className="bg-white rounded-[2.5rem] shadow-sm border border-white flex flex-col flex-[3] overflow-hidden">
             <div className="p-6 border-b border-gray-50 flex items-center justify-between bg-emerald-50/20"><h3 className="font-black text-lg text-emerald-900 flex items-center gap-2"><Mic2 size={20} className="text-emerald-500" /> 流程監視器</h3><span className="text-[10px] font-black text-emerald-600 bg-emerald-100 px-3 py-1 rounded-full uppercase tracking-widest">Live Flow</span></div>

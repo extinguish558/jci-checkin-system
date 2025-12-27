@@ -386,6 +386,7 @@ const LotteryPanel: React.FC = () => {
                 </div>
              </div>
 
+             {/* 底部跑馬燈：調慢至 180s */}
              {sponsors.length > 0 && (
                 <div className="bg-black/80 border-t border-white/10 h-24 flex items-center overflow-hidden relative group">
                     <div className="absolute left-0 top-0 bottom-0 w-24 bg-gradient-to-r from-black z-10"></div>
@@ -416,6 +417,7 @@ const LotteryPanel: React.FC = () => {
       <div className="mt-12 w-full max-w-4xl space-y-6 z-20">
         <div className="relative h-12 bg-white/5 rounded-2xl border border-white/10 overflow-hidden flex items-center shadow-inner group">
           <div className="absolute left-0 top-0 bottom-0 px-4 bg-slate-900/80 z-20 flex items-center gap-2 border-r border-white/10"><Filter size={16} className="text-red-500" /><span className="text-xs font-black text-white uppercase tracking-widest">Active Pool</span></div>
+          {/* 抽獎池跑馬燈：調慢至 120s */}
           <div className="flex animate-pool-marquee whitespace-nowrap pl-32">
              <span className="text-base font-black text-slate-400 italic pr-40">{poolConfigInfo}</span>
              <span className="text-base font-black text-slate-400 italic pr-40">{poolConfigInfo}</span>

@@ -1,7 +1,9 @@
+
 {
   "name": "活動報到抽獎系統-已上線",
   "description": "AI-powered event check-in system with OCR for handwriting, MC view, and integrated lottery.",
   "requestFramePermissions": [
-    "camera"
+    "camera",
+    "geolocation"
   ]
 }

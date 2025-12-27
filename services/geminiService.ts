@@ -59,18 +59,23 @@ export const parseGuestsFromExcel = async (file: File): Promise<ParsedGuestDraft
           
           let category = GuestCategory.OTHER;
           if (categoryStr) {
-            const s = categoryStr.toUpperCase();
-            // 增強型分類邏輯：確保 OB/YB 關鍵字優先匹配
-            if (s.includes('OB') || s.includes('特友')) {
+            const s = categoryStr.replace(/\s+/g, '').toUpperCase();
+            if (s.includes('OB') || s.includes('特友') || s.includes('老兵')) {
               category = GuestCategory.MEMBER_OB;
-            } else if (s.includes('YB') || s.includes('會友')) {
+            } else if (s.includes('YB') || s.includes('會友') || s.includes('青商')) {
               category = GuestCategory.MEMBER_YB;
             } else if (s.includes('會長')) {
               category = GuestCategory.PAST_PRESIDENT;
             } else if (s.includes('主席')) {
               category = GuestCategory.PAST_CHAIRMAN;
+            } else if (s.includes('總會') || s.includes('HQ')) {
+              category = GuestCategory.HQ_GUEST;
+            } else if (s.includes('政府') || s.includes('長官')) {
+              category = GuestCategory.GOV_OFFICIAL;
+            } else if (s.includes('友會') || s.includes('分會')) {
+              category = GuestCategory.VISITING_CHAPTER;
             } else {
-              const matched = Object.values(GuestCategory).find(val => categoryStr.includes(val));
+              const matched = Object.values(GuestCategory).find(val => s.includes(val.replace(/\s+/g, '')));
               if (matched) category = matched;
             }
           }
@@ -159,29 +164,28 @@ export const parseCheckInSheet = async (files: FileInput[]): Promise<ParsedGuest
 
 const formatTime = (iso?: string) => iso ? new Date(iso).toLocaleString('zh-TW', { hour12: false }) : '';
 
-const formatGuestForExcel = (g: Guest) => ({
+const formatGuestForExcel = (g: Guest, baseUrl: string) => ({
     '編號': g.code || '',
     '姓名': g.name,
     '職稱': g.title || '',
     '類別': g.category,
+    '自主報到網址': `${baseUrl}?guestId=${g.id}`,
     '報到狀態': g.isCheckedIn ? '✅ 已報到' : '❌ 未報到',
     '報到時間': formatTime(g.checkInTime),
-    '報到輪次': (g.attendedRounds || []).map(r => `R${r}`).join(', '),
-    '司儀介紹': g.isIntroduced ? '🎤 已介紹' : '⏳ 待介紹',
     '中獎狀態': g.isWinner ? '🏆 已得獎' : '-',
-    '得獎輪次': (g.wonRounds || []).map(r => `R${r}`).join(', '),
     '備註': g.note || ''
 });
 
 export const exportFinalActivityReport = (guests: Guest[], gifts: GiftItem[], steps: McFlowStep[], sponsorships: Sponsorship[], eventName: string) => {
     const wb = utils.book_new();
     const today = new Date().toLocaleDateString('zh-TW').replace(/\//g, '');
+    const baseUrl = window.location.origin + window.location.pathname;
 
     const sortedGuests = [...guests].sort((a, b) => (a.code || '').localeCompare(b.code || '', undefined, { numeric: true }));
     const sortedGifts = [...gifts].sort((a, b) => (a.sequence || '').localeCompare(b.sequence || '', undefined, { numeric: true }));
     const sortedSteps = [...steps].sort((a, b) => (a.sequence || '').localeCompare(b.sequence || '', undefined, { numeric: true }));
 
-    const guestData = sortedGuests.map(formatGuestForExcel);
+    const guestData = sortedGuests.map(g => formatGuestForExcel(g, baseUrl));
     const guestWs = utils.json_to_sheet(guestData);
     utils.book_append_sheet(wb, guestWs, '人員報到總表');
 
@@ -189,7 +193,7 @@ export const exportFinalActivityReport = (guests: Guest[], gifts: GiftItem[], st
     categories.forEach(cat => {
         const list = sortedGuests.filter(g => g.category === cat);
         if (list.length > 0) {
-            const ws = utils.json_to_sheet(list.map(formatGuestForExcel));
+            const ws = utils.json_to_sheet(list.map(g => formatGuestForExcel(g, baseUrl)));
             utils.book_append_sheet(wb, ws, cat.substring(0, 31));
         }
     });
@@ -210,7 +214,6 @@ export const exportFinalActivityReport = (guests: Guest[], gifts: GiftItem[], st
         '預計時間': s.time || '',
         '程序名稱': s.title,
         '司儀講稿': s.script || '',
-        '簡報頁面': s.slides || '',
         '執行狀態': s.isCompleted ? '✅ 已完成' : '⏳ 執行中',
         '完成時間': formatTime(s.completedAt)
     }));
@@ -226,16 +229,6 @@ export const exportFinalActivityReport = (guests: Guest[], gifts: GiftItem[], st
     }));
     const sponsorWs = utils.json_to_sheet(sponsorData);
     utils.book_append_sheet(wb, sponsorWs, '贊助芳名錄');
-
-    const winnerData = sortedGuests.filter(g => g.isWinner).map(g => ({
-        '姓名': g.name,
-        '職稱': g.title,
-        '類別': g.category,
-        '中獎輪次': (g.wonRounds || []).map(r => `R${r}`).join(', '),
-        '中獎時間詳情': JSON.stringify(g.wonTimes || {})
-    }));
-    const winnerWs = utils.json_to_sheet(winnerData);
-    utils.book_append_sheet(wb, winnerWs, '抽獎中獎名冊');
 
     writeFile(wb, `${eventName}_活動成果總報告_${today}.xlsx`);
 };
