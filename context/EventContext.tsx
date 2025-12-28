@@ -66,7 +66,6 @@ interface EventContextType {
   logoutAdmin: () => void;
 }
 
-// 預設經緯度為嘉義市政府 (僅作範例，用戶可於後台調整)
 const defaultSettings: SystemSettings = {
   eventName: "年度盛會",
   briefSchedule: "",
@@ -168,27 +167,38 @@ export const EventProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   useEffect(() => {
     if (!isFirebaseReady || !db) return;
 
+    /**
+     * Firestore 連線監測優化：
+     * 移除錯誤的 .info/connected 引用。
+     * 直接利用快照元數據 (metadata.fromCache) 判斷數據是否成功與伺服器同步。
+     */
     const unsubscribeSettings = db.collection("config").doc("mainSettings").onSnapshot((docSnap: any) => {
       if (docSnap.exists) {
-        setIsCloudConnected(true);
+        setIsCloudConnected(!docSnap.metadata.fromCache);
         const s = docSnap.data() as SystemSettings;
         setSettings(s);
         saveSettingsToLocal(s);
       }
     }, (error: any) => {
         setIsCloudConnected(false);
+        setConnectionError(error.message);
     });
 
     const unsubscribeGuests = db.collection("guests").onSnapshot((snapshot: any) => {
-      setIsCloudConnected(true); 
+      setIsCloudConnected(!snapshot.metadata.fromCache);
       if (isHardResetting.current) return;
       const cloudGuests: Guest[] = [];
       snapshot.forEach((doc: any) => cloudGuests.push(doc.data() as Guest));
       setGuests(cloudGuests);
       saveToLocal(cloudGuests);
+    }, (error: any) => {
+        setIsCloudConnected(false);
     });
 
-    return () => { unsubscribeGuests(); unsubscribeSettings(); };
+    return () => { 
+        unsubscribeGuests(); 
+        unsubscribeSettings();
+    };
   }, []);
 
   const updateSettings = async (newSettings: Partial<SystemSettings>) => {

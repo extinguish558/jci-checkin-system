@@ -13,6 +13,7 @@ export interface FileInput {
     mimeType: string;
 }
 
+// 使用 Gemini 3 Pro 進行內容生成，並指定 JSON 回傳格式
 async function callGemini(aiParts: any[], systemInstruction: string, responseSchema: any) {
   if (!process.env.API_KEY) {
       throw new Error("API KEY 缺失");
@@ -42,6 +43,7 @@ const getValue = (row: any, keys: string[], index?: number): string => {
     return "";
 };
 
+// 解析人員清單 Excel
 export const parseGuestsFromExcel = async (file: File): Promise<ParsedGuestDraft[]> => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -88,6 +90,7 @@ export const parseGuestsFromExcel = async (file: File): Promise<ParsedGuestDraft
   });
 };
 
+// 解析禮品清單 Excel
 export const parseGiftsFromExcel = async (file: File): Promise<GiftItem[]> => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -112,6 +115,7 @@ export const parseGiftsFromExcel = async (file: File): Promise<GiftItem[]> => {
   });
 };
 
+// 解析司儀講稿 Excel
 export const parseMcFlowFromExcel = async (file: File): Promise<McFlowStep[]> => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -144,6 +148,7 @@ export const parseMcFlowFromExcel = async (file: File): Promise<McFlowStep[]> =>
   });
 };
 
+// 使用 AI 解析報到單圖片
 export const parseCheckInSheet = async (files: FileInput[]): Promise<ParsedGuestDraft[]> => {
   const aiParts = files.map(file => ({ inlineData: { mimeType: file.mimeType, data: file.data } }));
   const schema = {
@@ -176,6 +181,78 @@ const formatGuestForExcel = (g: Guest, baseUrl: string) => ({
     '備註': g.note || ''
 });
 
+// 匯出詳細人員報到 Excel
+export const exportDetailedGuestsExcel = (guests: Guest[], eventName: string, getTargetGroup: (g: Guest) => string) => {
+    const wb = utils.book_new();
+    const baseUrl = window.location.origin + window.location.pathname;
+    const data = guests.map(g => formatGuestForExcel(g, baseUrl));
+    const ws = utils.json_to_sheet(data);
+    utils.book_append_sheet(wb, ws, '人員報到總表');
+    writeFile(wb, `${eventName}_人員報到總表.xlsx`);
+};
+
+// 匯出禮品清單 Excel
+export const exportGiftsExcel = (gifts: GiftItem[], eventName: string) => {
+    const wb = utils.book_new();
+    const data = gifts.map(i => ({
+        '序號': i.sequence || '',
+        '禮品名稱': i.name,
+        '數量': i.quantity || '1',
+        '受獎單位': i.recipient,
+        '頒發狀態': i.isPresented ? '✅ 已頒發' : '⏳ 待頒發',
+        '頒獎時間': formatTime(i.presentedAt)
+    }));
+    const ws = utils.json_to_sheet(data);
+    utils.book_append_sheet(wb, ws, '禮品頒贈進度');
+    writeFile(wb, `${eventName}_禮品頒贈進度.xlsx`);
+};
+
+// 匯出司儀講稿 Excel
+export const exportMcFlowExcel = (steps: McFlowStep[], eventName: string) => {
+    const wb = utils.book_new();
+    const data = steps.map(s => ({
+        '序號': s.sequence || '',
+        '預計時間': s.time || '',
+        '程序名稱': s.title,
+        '司儀講稿': s.script || '',
+        '執行狀態': s.isCompleted ? '✅ 已完成' : '⏳ 執行中',
+        '完成時間': formatTime(s.completedAt)
+    }));
+    const ws = utils.json_to_sheet(data);
+    utils.book_append_sheet(wb, ws, '活動程序講稿');
+    writeFile(wb, `${eventName}_活動程序講稿.xlsx`);
+};
+
+// 匯出貴賓介紹現況 Excel
+export const exportIntroductionsExcel = (guests: Guest[], eventName: string) => {
+    const wb = utils.book_new();
+    const data = guests.filter(g => g.isCheckedIn).map(g => ({
+        '姓名': g.name,
+        '職稱': g.title || '',
+        '類別': g.category,
+        '介紹狀態': g.isIntroduced ? '✅ 已介紹' : '⏳ 待介紹'
+    }));
+    const ws = utils.json_to_sheet(data);
+    utils.book_append_sheet(wb, ws, '貴賓介紹現況');
+    writeFile(wb, `${eventName}_貴賓介紹現況.xlsx`);
+};
+
+// 匯出抽獎結果 Excel
+export const exportLotteryExcel = (guests: Guest[], eventName: string) => {
+    const wb = utils.book_new();
+    const data = guests.filter(g => g.isWinner).map(g => ({
+        '姓名': g.name,
+        '職稱': g.title || '',
+        '類別': g.category,
+        '中獎輪次': (g.wonRounds || []).join(', '),
+        '最後中獎時間': formatTime(g.wonTimes?.[Math.max(...(g.wonRounds || [0])).toString()] || undefined)
+    }));
+    const ws = utils.json_to_sheet(data);
+    utils.book_append_sheet(wb, ws, '抽獎結果總表');
+    writeFile(wb, `${eventName}_抽獎結果總表.xlsx`);
+};
+
+// 匯出活動總報告
 export const exportFinalActivityReport = (guests: Guest[], gifts: GiftItem[], steps: McFlowStep[], sponsorships: Sponsorship[], eventName: string) => {
     const wb = utils.book_new();
     const today = new Date().toLocaleDateString('zh-TW').replace(/\//g, '');

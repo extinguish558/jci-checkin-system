@@ -1,39 +1,57 @@
 
-import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { useEvent } from '../context/EventContext';
 import { 
   QrCode, Download, Search, ExternalLink, MapPin, Info, 
   CheckCircle2, Loader2, UserPlus, Heart, Edit2, Trash2, 
   Edit3, LayoutGrid, Clock, Globe, Handshake, Shield, 
   Coins, Package, UserCheck, X, PlusCircle, RotateCcw,
-  PieChart, Users, ChevronRight, BarChart3
+  PieChart, Users, ChevronRight, BarChart3, AlertTriangle, Maximize2,
+  Navigation, Crosshair, Radar, ScanLine, CheckCircle, Smartphone
 } from 'lucide-react';
 import { Guest, GuestCategory, Sponsorship } from '../types';
 import { generateQrDataUrl, downloadAllQrAsZip } from '../services/qrService';
 
 // 子元件：負責非同步生成並顯示單個 QR Code
-const QrCodeImage: React.FC<{ url: string }> = ({ url }) => {
+const QrCodeImage: React.FC<{ url: string; onZoom?: (dataUrl: string) => void }> = ({ url, onZoom }) => {
   const [dataUrl, setDataUrl] = useState<string>('');
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
 
   useEffect(() => {
     let isMounted = true;
-    generateQrDataUrl(url).then(data => {
-      if (isMounted) {
-        setDataUrl(data);
-        setLoading(false);
-      }
-    });
+    generateQrDataUrl(url)
+      .then(data => {
+        if (isMounted) {
+          setDataUrl(data);
+          setLoading(false);
+        }
+      })
+      .catch(() => {
+        if (isMounted) {
+          setError(true);
+          setLoading(false);
+        }
+      });
     return () => { isMounted = false; };
   }, [url]);
 
   if (loading) return <div className="w-full h-full bg-slate-50 animate-pulse flex items-center justify-center"><QrCode className="text-slate-200" size={20}/></div>;
-  return <img src={dataUrl} alt="QR Code" className="w-full h-full object-contain" />;
+  if (error) return <div className="w-full h-full bg-red-50 flex items-center justify-center text-red-300"><AlertTriangle size={20}/></div>;
+  
+  return (
+    <div className="relative group w-full h-full cursor-zoom-in" onClick={() => onZoom?.(dataUrl)}>
+      <img src={dataUrl} alt="QR Code" className="w-full h-full object-contain" />
+      <div className="absolute inset-0 bg-black/0 group-hover:bg-black/5 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all">
+        <Maximize2 size={16} className="text-slate-400" />
+      </div>
+    </div>
+  );
 };
 
 const DigitalCheckInPanel: React.FC = () => {
   const { 
-    guests, settings, isAdmin, unlockedSections,
+    guests, settings, isAdmin, unlockedSections, checkInById,
     addGuestsFromDraft, updateGuestInfo, deleteGuest, toggleCheckInRound,
     addSponsorship, updateSponsorship, deleteSponsorship 
   } = useEvent();
@@ -45,23 +63,107 @@ const DigitalCheckInPanel: React.FC = () => {
   const [activeTab, setActiveTab] = useState<string>('YB');
   const [isZipping, setIsZipping] = useState(false);
   
-  // 彈窗狀態
+  // 彈窗與通知狀態
   const [showManualAdd, setShowManualAdd] = useState(false);
   const [manualGuest, setManualGuest] = useState({ name: '', title: '', category: GuestCategory.MEMBER_YB });
   const [showManualSponsorAdd, setShowManualSponsorAdd] = useState(false);
   const [manualSponsorship, setManualSponsorship] = useState({ name: '', title: '', amount: '', itemName: '' });
   const [showEditModal, setShowEditModal] = useState(false);
   const [editingGuest, setEditingGuest] = useState<Guest | null>(null);
+  const [checkInNotice, setCheckInNotice] = useState<{ type: 'success' | 'info'; message: string; name: string } | null>(null);
+  
+  // 放大查看 QR Code
+  const [zoomQr, setZoomQr] = useState<{name: string, dataUrl: string} | null>(null);
 
-  // 修正網址生成邏輯，解決 DNS 錯誤
-  const getGuestUrl = (id: string) => {
-    try {
-      const url = new URL(window.location.origin + window.location.pathname);
-      url.searchParams.set('guestId', id);
-      return url.toString();
-    } catch (e) {
-      return `${window.location.origin}${window.location.pathname}?guestId=${id}`;
+  // 定位功能狀態
+  const [isTracking, setIsTracking] = useState(false);
+  const [userLocation, setUserLocation] = useState<{ lat: number; lng: number; accuracy: number } | null>(null);
+  const watchIdRef = useRef<number | null>(null);
+
+  const startTracking = () => {
+    if (!navigator.geolocation) return alert("您的瀏覽器不支援定位功能");
+    setIsTracking(true);
+    watchIdRef.current = navigator.geolocation.watchPosition(
+      (pos) => {
+        setUserLocation({
+          lat: pos.coords.latitude,
+          lng: pos.coords.longitude,
+          accuracy: pos.coords.accuracy
+        });
+      },
+      (err) => {
+        console.error("定位出錯:", err);
+        alert(`定位追蹤失敗 (${err.code}): ${err.message}\n請確認您已授予活動頁面 GPS 權限。`);
+        setIsTracking(false);
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+    );
+  };
+
+  const stopTracking = () => {
+    if (watchIdRef.current !== null) {
+      navigator.geolocation.clearWatch(watchIdRef.current);
+      watchIdRef.current = null;
     }
+    setIsTracking(false);
+    setUserLocation(null);
+  };
+
+  const distance = useMemo(() => {
+    if (!userLocation || !settings.location) return null;
+    return getDistance(
+      userLocation.lat,
+      userLocation.lng,
+      settings.location.latitude,
+      settings.location.longitude
+    );
+  }, [userLocation, settings.location]);
+
+  const isInRange = useMemo(() => {
+    if (distance === null || !settings.location) return false;
+    return distance <= (settings.location.radius || 500);
+  }, [distance, settings.location]);
+
+  // 海弗辛公式計算兩點距離 (公尺)
+  function getDistance(lat1: number, lon1: number, lat2: number, lon2: number) {
+    const R = 6371e3;
+    const φ1 = lat1 * Math.PI / 180;
+    const φ2 = lat2 * Math.PI / 180;
+    const Δφ = (lat2 - lat1) * Math.PI / 180;
+    const Δλ = (lon2 - lon1) * Math.PI / 180;
+    const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) + Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
+  }
+
+  // 核心：模擬掃描報到邏輯
+  const handleSimulatedScan = async (guest: Guest) => {
+    if (!isUnlocked) return alert("請由右上角解鎖管理權限");
+    
+    if (guest.isCheckedIn) {
+      setCheckInNotice({ type: 'info', name: guest.name, message: '已報到過了' });
+    } else {
+      try {
+        await checkInById(guest.id);
+        setCheckInNotice({ type: 'success', name: guest.name, message: '已報到成功' });
+      } catch (e: any) {
+        alert("報到出錯: " + e.message);
+      }
+    }
+    
+    setTimeout(() => setCheckInNotice(null), 3000);
+  };
+
+  const getGuestUrl = (id: string) => {
+    const origin = window.location.origin;
+    const path = window.location.pathname.replace(/\/$/, '');
+    return `${origin}${path}/?guestId=${id}`;
+  };
+
+  const getGeneralUrl = () => {
+    const origin = window.location.origin;
+    const path = window.location.pathname.replace(/\/$/, '');
+    return `${origin}${path}/?mode=general`;
   };
 
   const triggerAction = (action: () => void) => {
@@ -69,7 +171,6 @@ const DigitalCheckInPanel: React.FC = () => {
     action();
   };
 
-  // 統計數據
   const statsOverview = useMemo(() => {
     const totalChecked = guests.filter(g => g.isCheckedIn).length;
     const totalCount = guests.length;
@@ -77,7 +178,6 @@ const DigitalCheckInPanel: React.FC = () => {
     return { totalChecked, totalCount, percent };
   }, [guests]);
 
-  // 分組邏輯
   const getTargetGroup = useCallback((g: Guest): string => {
     const title = g.title || '';
     const category = (g.category || '').toString();
@@ -120,13 +220,15 @@ const DigitalCheckInPanel: React.FC = () => {
     });
   }, [guests, searchTerm, getTargetGroup, settings.sponsorships]);
 
-  // 行政功能
   const handleDownloadAll = async () => {
     if (guests.length === 0) return alert('目前沒有賓客名單');
-    if (!confirm(`確定要下載 ${guests.length} 位賓客的專屬 QR Code 嗎？`)) return;
+    if (!confirm(`確定要產生並下載 ${guests.length} 位賓客的專屬 QR Code 嗎？`)) return;
     setIsZipping(true);
     try {
       await downloadAllQrAsZip(guests, settings.eventName);
+      alert('QR Code 打包完成。');
+    } catch (err: any) {
+      alert(`下載失敗！`);
     } finally {
       setIsZipping(false);
     }
@@ -159,7 +261,18 @@ const DigitalCheckInPanel: React.FC = () => {
 
   return (
     <div className="p-4 md:p-8 max-w-7xl mx-auto space-y-6 pb-60">
-      {/* 頂部戰情板與功能按鈕 */}
+      {/* 浮動通知 */}
+      {checkInNotice && (
+        <div className={`fixed top-20 left-1/2 -translate-x-1/2 z-[1000] px-8 py-4 rounded-3xl shadow-2xl flex items-center gap-4 animate-in slide-in-from-top-10 duration-500 ${checkInNotice.type === 'success' ? 'bg-green-600 text-white' : 'bg-amber-500 text-white'}`}>
+          {checkInNotice.type === 'success' ? <CheckCircle size={24} /> : <Info size={24} />}
+          <div className="text-left">
+            <p className="font-black text-lg leading-none">{checkInNotice.name}</p>
+            <p className="text-xs font-bold opacity-80 mt-1 uppercase tracking-widest">{checkInNotice.message}</p>
+          </div>
+        </div>
+      )}
+
+      {/* 頂部戰情板 */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <div className="md:col-span-2 bg-slate-900 rounded-[2.5rem] p-8 text-white shadow-2xl border border-white/10 relative overflow-hidden flex flex-col md:flex-row gap-8">
              <div className="absolute top-0 right-0 p-8 opacity-10"><BarChart3 size={100} /></div>
@@ -175,7 +288,7 @@ const DigitalCheckInPanel: React.FC = () => {
                 <button onClick={() => triggerAction(() => setShowManualAdd(true))} className="bg-white/10 hover:bg-white/20 px-6 py-4 rounded-2xl font-black flex items-center gap-2 text-sm transition-all active:scale-95"><UserPlus size={18}/> 新增人員</button>
                 <button onClick={() => triggerAction(() => setShowManualSponsorAdd(true))} className="bg-amber-500/20 text-amber-500 hover:bg-amber-500 hover:text-white px-6 py-4 rounded-2xl font-black flex items-center gap-2 text-sm transition-all active:scale-95"><Heart size={18} fill="currentColor"/> 錄入贊助</button>
                 <button onClick={handleDownloadAll} disabled={isZipping} className="bg-blue-600 hover:bg-blue-500 disabled:bg-slate-700 px-6 py-4 rounded-2xl font-black flex items-center gap-2 text-sm shadow-xl transition-all active:scale-95">
-                  {isZipping ? <Loader2 className="animate-spin" size={18} /> : <Download size={18} />} 下載全部 QR
+                  {isZipping ? <Loader2 className="animate-spin" size={18} /> : <Download size={18} />} 打包全部 QR
                 </button>
              </div>
           </div>
@@ -194,7 +307,67 @@ const DigitalCheckInPanel: React.FC = () => {
           </div>
       </div>
 
-      {/* 分組導覽 */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {/* 通用自主報到 QR Code (新增區塊) */}
+          <div className="bg-white rounded-[2.5rem] p-8 shadow-sm border border-white flex flex-col md:flex-row items-center gap-8 relative overflow-hidden group">
+              <div className="w-32 h-32 bg-slate-50 rounded-3xl p-3 border border-slate-100 shadow-inner shrink-0 relative">
+                  <QrCodeImage 
+                    url={getGeneralUrl()} 
+                    onZoom={(dataUrl) => setZoomQr({ name: '通用報到入口', dataUrl })} 
+                  />
+                  <div className="absolute -top-2 -right-2 bg-blue-600 text-white p-1.5 rounded-full shadow-lg">
+                    <Smartphone size={16} />
+                  </div>
+              </div>
+              <div className="flex-1 space-y-2 text-center md:text-left">
+                  <div className="flex items-center justify-center md:justify-start gap-2">
+                    <span className="text-[10px] font-black text-blue-500 tracking-widest uppercase">General Access</span>
+                    <span className="px-2 py-0.5 bg-blue-50 text-blue-600 rounded-md text-[9px] font-black">通用入口</span>
+                  </div>
+                  <h3 className="text-2xl font-black text-slate-900 tracking-tight">通用自主報到 QR Code</h3>
+                  <p className="text-sm font-bold text-slate-400">供現場不具特定 ID 的賓客掃描進入，支援姓名檢索與自主新增名單。</p>
+                  <button 
+                    onClick={() => window.open(getGeneralUrl(), '_blank')}
+                    className="flex items-center gap-2 text-blue-600 font-black text-xs hover:underline mt-2"
+                  >
+                    <ExternalLink size={14} /> 開啟通用報到網頁
+                  </button>
+              </div>
+          </div>
+
+          {/* 地理定位測試卡片 */}
+          <div className="bg-white rounded-[2.5rem] p-8 shadow-sm border border-white overflow-hidden relative group">
+              <div className="flex flex-col md:flex-row items-center gap-8">
+                  <div className={`w-24 h-24 rounded-[2rem] flex items-center justify-center transition-all duration-500 ${isTracking ? (isInRange ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600') : 'bg-slate-100 text-slate-400'}`}>
+                    {isTracking ? <Radar size={40} className="animate-pulse" /> : <MapPin size={40} />}
+                  </div>
+                  <div className="flex-1 space-y-2 text-center md:text-left">
+                      <div className="flex items-center justify-center md:justify-start gap-2">
+                        <span className="text-[10px] font-black text-slate-400 tracking-widest uppercase">地理位置驗證測試</span>
+                        {isTracking && (
+                          <span className={`px-2 py-0.5 rounded-md text-[10px] font-black ${isInRange ? 'bg-green-500 text-white shadow-lg shadow-green-200' : 'bg-red-500 text-white shadow-lg shadow-red-200'}`}>
+                              {isInRange ? '符合報到資格' : '超出報到範圍'}
+                          </span>
+                        )}
+                      </div>
+                      <h3 className="text-2xl font-black text-slate-900 tracking-tight">
+                        {isTracking ? (userLocation ? `當前距離會場：${Math.round(distance || 0)} 公尺` : '正在等待 GPS 回傳座標...') : '定位追蹤已關閉'}
+                      </h3>
+                      <p className="text-sm font-bold text-slate-400">
+                        驗證半徑：{settings.location?.radius || 500}m
+                      </p>
+                  </div>
+                  <div className="flex flex-col gap-2 w-full md:w-auto">
+                    <button onClick={isTracking ? stopTracking : startTracking} className={`px-8 py-5 rounded-[1.8rem] font-black text-sm flex items-center justify-center gap-3 shadow-xl transition-all active:scale-95 ${isTracking ? 'bg-red-600 text-white' : 'bg-emerald-600 text-white'}`}>
+                      {isTracking ? <X size={20} /> : <Crosshair size={20} />}
+                      {isTracking ? '停止' : '測試'}
+                    </button>
+                  </div>
+              </div>
+          </div>
+      </div>
+
+      {/* 分組標籤 */}
       <div className="flex flex-wrap bg-white/50 backdrop-blur-md p-1.5 rounded-[2rem] gap-1 border border-white shadow-sm overflow-x-auto no-scrollbar">
           {groupedData.map(group => (
               <button key={group.key} onClick={() => setActiveTab(group.key)} className={`px-6 py-3 rounded-[1.5rem] font-black text-xs md:text-sm whitespace-nowrap transition-all flex items-center gap-2 ${activeTab === group.key ? 'bg-white text-slate-900 shadow-sm border border-gray-100' : 'text-slate-400 hover:text-slate-600'}`}>
@@ -205,7 +378,7 @@ const DigitalCheckInPanel: React.FC = () => {
           ))}
       </div>
 
-      {/* 列表內容 */}
+      {/* 賓客列表 */}
       <div className="bg-white rounded-[3rem] shadow-sm border border-white overflow-hidden">
         {groupedData.filter(g => g.key === activeTab).map(group => (
           <div key={group.key} className="divide-y divide-gray-50">
@@ -233,8 +406,18 @@ const DigitalCheckInPanel: React.FC = () => {
                   <div key={g.id} className="px-6 md:px-10 py-6 flex flex-col md:flex-row md:items-center justify-between gap-6 hover:bg-slate-50/50 transition-colors">
                     <div className="flex items-center gap-6 min-w-0 flex-1">
                       <div className="w-20 h-20 bg-white rounded-xl flex items-center justify-center border border-slate-100 overflow-hidden shrink-0 shadow-inner group relative">
-                         <QrCodeImage url={getGuestUrl(g.id)} />
-                         <div onClick={() => window.open(getGuestUrl(g.id), '_blank')} className="absolute inset-0 bg-blue-600/80 text-white opacity-0 group-hover:opacity-100 flex items-center justify-center cursor-pointer transition-opacity"><ExternalLink size={20}/></div>
+                         <QrCodeImage 
+                           url={getGuestUrl(g.id)} 
+                           onZoom={(dataUrl) => setZoomQr({name: g.name, dataUrl})} 
+                         />
+                         <div className="absolute inset-0 bg-slate-900/80 text-white opacity-0 group-hover:opacity-100 flex flex-col items-center justify-center gap-1 transition-opacity cursor-default">
+                            <button onClick={() => handleSimulatedScan(g)} className="flex items-center gap-1 bg-blue-600 hover:bg-blue-500 px-2 py-1 rounded-md text-[9px] font-black uppercase transition-all active:scale-90">
+                               <ScanLine size={12}/> 模擬掃描
+                            </button>
+                            <button onClick={() => window.open(getGuestUrl(g.id), '_blank')} className="flex items-center gap-1 bg-white/10 hover:bg-white/20 px-2 py-1 rounded-md text-[9px] font-black uppercase transition-all active:scale-90">
+                               <ExternalLink size={12}/> 連結
+                            </button>
+                         </div>
                       </div>
                       <div className="flex-1 min-w-0">
                          <div className="flex items-baseline gap-3 mb-1">
@@ -243,7 +426,7 @@ const DigitalCheckInPanel: React.FC = () => {
                          </div>
                          <div className="flex flex-wrap gap-2">
                            <span className="px-2 py-0.5 bg-slate-100 text-[10px] font-black text-slate-400 rounded-md">ID: {g.code || idx+1}</span>
-                           {g.isCheckedIn && <span className="px-2 py-0.5 bg-green-100 text-[10px] font-black text-green-600 rounded-md flex items-center gap-1"><CheckCircle2 size={10}/> 已完成報到</span>}
+                           {g.isCheckedIn && <span className="px-2 py-0.5 bg-green-100 text-[10px] font-black text-green-600 rounded-md flex items-center gap-1"><CheckCircle2 size={10}/> 已報到</span>}
                          </div>
                       </div>
                     </div>
@@ -262,7 +445,7 @@ const DigitalCheckInPanel: React.FC = () => {
                             className={`w-12 h-12 rounded-xl font-black text-xs transition-all flex flex-col items-center justify-center ${g.attendedRounds?.includes(r) ? 'bg-blue-600 text-white shadow-lg' : 'bg-slate-100 text-slate-400 hover:bg-slate-200'}`}
                           >
                             <span className="text-[8px] opacity-60 uppercase">R{r}</span>
-                            <span className="uppercase">確認</span>
+                            <span className="uppercase font-black text-[10px]">報到</span>
                           </button>
                         ))}
                       </div>
@@ -275,7 +458,25 @@ const DigitalCheckInPanel: React.FC = () => {
         ))}
       </div>
 
-      {/* 彈窗部分保持不變 */}
+      {/* 彈窗：放大查看 QR Code */}
+      {zoomQr && (
+        <div className="fixed inset-0 ios-blur bg-black/60 z-[500] flex items-center justify-center p-6" onClick={() => setZoomQr(null)}>
+           <div className="bg-white rounded-[3rem] p-10 w-full max-w-sm shadow-2xl space-y-8 flex flex-col items-center animate-in zoom-in duration-300" onClick={e => e.stopPropagation()}>
+              <div className="text-center">
+                 <h3 className="text-3xl font-black text-slate-900 tracking-tighter">{zoomQr.name}</h3>
+                 <p className="text-sm font-bold text-blue-600 uppercase tracking-widest mt-1">專屬報到 QR Code</p>
+              </div>
+              <div className="w-full aspect-square bg-slate-50 rounded-[2rem] border border-slate-100 p-6">
+                 <img src={zoomQr.dataUrl} alt="Zoomed QR" className="w-full h-full object-contain" />
+              </div>
+              <button onClick={() => setZoomQr(null)} className="w-full py-5 bg-slate-900 text-white font-black rounded-2xl flex items-center justify-center gap-2">
+                <X size={20}/> 關閉預覽
+              </button>
+           </div>
+        </div>
+      )}
+
+      {/* 彈窗：新增人員 */}
       {showManualAdd && (
         <div className="fixed inset-0 ios-blur bg-black/40 z-[300] flex items-center justify-center p-4">
           <div className="bg-white rounded-[2.5rem] p-8 w-full max-w-sm shadow-2xl space-y-6">
@@ -313,7 +514,7 @@ const DigitalCheckInPanel: React.FC = () => {
               <input type="text" value={editingGuest.name} onChange={e => setEditingGuest({...editingGuest, name: e.target.value})} className="w-full bg-slate-50 border-none rounded-2xl p-5 font-black text-lg outline-none shadow-inner" required />
               <input type="text" value={editingGuest.title} onChange={e => setEditingGuest({...editingGuest, title: e.target.value})} className="w-full bg-slate-50 border-none rounded-2xl p-5 font-black text-lg outline-none shadow-inner" />
               <select value={editingGuest.category} onChange={e => setEditingGuest({...editingGuest, category: e.target.value as GuestCategory})} className="w-full bg-slate-50 border-none rounded-2xl p-5 font-black text-lg outline-none shadow-inner">{Object.values(GuestCategory).map(cat => <option key={cat} value={cat}>{cat}</option>)}</select>
-              <div className="flex gap-3 pt-2"><button type="button" onClick={() => { setShowEditModal(false); setEditingGuest(null); }} className="flex-1 py-4 font-black text-slate-400">取消</button><button type="submit" className="flex-1 py-4 bg-blue-600 text-white font-black rounded-2xl">更新資料</button></div>
+              <div className="flex gap-3 pt-2"><button type="button" onClick={() => { setShowEditModal(false); setEditingGuest(null); }} className="flex-1 py-4 font-black text-gray-400">取消</button><button type="submit" className="flex-1 py-4 bg-blue-600 text-white font-black rounded-2xl">更新資料</button></div>
             </form>
           </div>
         </div>

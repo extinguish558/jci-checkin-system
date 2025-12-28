@@ -29,15 +29,30 @@ if (isConfigured) {
         
         dbInstance = appInstance.firestore();
         
-        // 啟用離線持久化（選用，但在此系統中我們傾向於即時同步）
-        // dbInstance.settings({ cacheSizeBytes: firebase.firestore.CACHE_SIZE_UNLIMITED });
+        /**
+         * 修正初始化錯誤：
+         * 僅保留必要設定，避免與 SDK 內部預設值衝突。
+         * 在 esm.sh 環境下，Firestore 實例建立後應立即進行 settings 配置。
+         */
+        dbInstance.settings({ 
+          experimentalForceLongPolling: true
+        });
+
+        // 嘗試啟用離線持久化 (Offline Persistence)
+        dbInstance.enablePersistence({ synchronizeTabs: true }).catch((err) => {
+            if (err.code === 'failed-precondition') {
+                console.warn("Firestore Persistence failed: Multiple tabs open.");
+            } else if (err.code === 'unimplemented') {
+                console.warn("Firestore Persistence failed: Browser not supported.");
+            }
+        });
         
-        console.log("Firebase/Firestore initialized with project:", firebaseConfig.projectId);
+        console.log("Firebase/Firestore 服務已啟動。");
     } catch (e) {
-        console.error("Firebase initialization error:", e);
+        console.error("Firebase 初始化失敗:", e);
     }
 } else {
-    console.warn("Firebase 尚未設定或 Project ID 無效！系統將以單機模式運作。");
+    console.warn("Firebase 尚未配置 Project ID。");
 }
 
 export const app = appInstance;
