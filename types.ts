@@ -38,7 +38,7 @@ export interface McFlowStep {
   script?: string;
   slides?: string;
   isCompleted: boolean;
-  completedAt?: string; // 新增：執行完成時間
+  completedAt?: string; 
 }
 
 export interface GiftItem {
@@ -50,7 +50,7 @@ export interface GiftItem {
   personInCharge?: string;
   donor?: string;
   isPresented: boolean;
-  presentedAt?: string; // 新增：頒贈完成時間
+  presentedAt?: string;
 }
 
 export interface Guest {
@@ -95,6 +95,13 @@ export interface SystemSettings {
     sponsorship: Sponsorship;
     timestamp: number;
   } | null;
+  // 地點設定相關
+  location?: {
+    latitude: number;
+    longitude: number;
+    name: string;
+    radius: number; // 單位：公尺
+  };
 }
 
 export interface ParsedGuestDraft {

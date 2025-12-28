@@ -9,11 +9,194 @@ import McFlowPanel from './components/McFlowPanel';
 import GiftsPanel from './components/GiftsPanel';
 import MasterControlPanel from './components/MasterControlPanel';
 import DigitalCheckInPanel from './components/DigitalCheckInPanel';
+import { GuestCategory } from './types';
 import { 
   ClipboardList, Mic2, Gift, Award, 
   Clock, FileText, Settings, Maximize, Minimize, LayoutDashboard,
-  Lock, Unlock, MapPin, CheckCircle, AlertTriangle, Snowflake, Sparkles, Loader2, QrCode
+  Lock, Unlock, MapPin, CheckCircle, AlertTriangle, Snowflake, Sparkles, Loader2, QrCode, Search, UserPlus
 } from 'lucide-react';
+
+// 通用自主報到視圖
+const GeneralCheckInView: React.FC = () => {
+  const { guests, checkInById, addGuestsFromDraft, settings } = useEvent();
+  const [step, setStep] = useState<'input' | 'register' | 'locating' | 'success' | 'error'>('input');
+  const [nameInput, setNameInput] = useState('');
+  const [titleInput, setTitleInput] = useState('');
+  const [errorMessage, setErrorMessage] = useState('');
+  const [targetGuestId, setTargetGuestId] = useState<string | null>(null);
+
+  const handleSearch = () => {
+    const trimmed = nameInput.trim();
+    if (!trimmed) return;
+
+    // 搜尋名單中是否有此人 (不分大小寫)
+    const match = guests.find(g => g.name.trim().toLowerCase() === trimmed.toLowerCase());
+    
+    if (match) {
+      if (match.isCheckedIn) {
+        setStep('success');
+      } else {
+        setTargetGuestId(match.id);
+        handleExecuteCheckIn(match.id);
+      }
+    } else {
+      // 找不到人，進入自主新增模式
+      setStep('register');
+    }
+  };
+
+  const handleSelfRegister = async () => {
+    if (!nameInput.trim()) return;
+    setStep('locating');
+    
+    try {
+      const draft = { 
+        name: nameInput.trim(), 
+        title: titleInput.trim() || '貴賓', 
+        category: GuestCategory.OTHER, 
+        hasSignature: true,
+        code: `SELF-${Date.now().toString().slice(-4)}`
+      };
+      // 此處 addGuestsFromDraft 會自動處理報到狀態
+      await addGuestsFromDraft([draft], new Date());
+      setStep('success');
+    } catch (e: any) {
+      setStep('error');
+      setErrorMessage(e.message || '註冊失敗');
+    }
+  };
+
+  const handleExecuteCheckIn = async (id: string) => {
+    setStep('locating');
+    if (!navigator.geolocation) {
+      setStep('error');
+      setErrorMessage('您的設備不支援定位功能。');
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        try {
+          await checkInById(id);
+          setStep('success');
+        } catch (e: any) {
+          setStep('error');
+          setErrorMessage(e.message || '報到失敗');
+        }
+      },
+      (error) => {
+        setStep('error');
+        setErrorMessage('定位失敗，請確保已開啟 GPS 權限。');
+      },
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
+  };
+
+  return (
+    <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-8 relative overflow-hidden text-center">
+      <div className="absolute inset-0 bg-gradient-to-b from-blue-900/10 to-transparent"></div>
+      
+      <div className="z-10 w-full max-w-sm space-y-8">
+        <div className="space-y-2">
+          <h1 className="text-white font-black text-2xl italic tracking-tighter opacity-40 uppercase">{settings.eventName}</h1>
+          <div className="h-1 w-16 bg-blue-600 mx-auto rounded-full"></div>
+        </div>
+
+        {step === 'input' && (
+          <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+            <div className="space-y-2">
+              <p className="text-slate-500 font-black tracking-[0.4em] uppercase text-[10px]">Welcome to the Event</p>
+              <h2 className="text-4xl font-black text-white italic tracking-tighter">快速自主報到</h2>
+            </div>
+            <div className="space-y-4">
+              <div className="relative">
+                <Search className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-500" size={20} />
+                <input 
+                  type="text" 
+                  value={nameInput}
+                  onChange={e => setNameInput(e.target.value)}
+                  placeholder="請輸入您的真實姓名" 
+                  className="w-full pl-14 pr-6 py-5 bg-white/5 border border-white/10 rounded-2xl text-white font-black text-xl outline-none focus:ring-4 focus:ring-blue-600/20 transition-all"
+                />
+              </div>
+              <button 
+                onClick={handleSearch}
+                className="w-full bg-blue-600 hover:bg-blue-500 text-white p-6 rounded-2xl shadow-lg flex items-center justify-center gap-3 transition-all active:scale-95"
+              >
+                <CheckCircle size={24} />
+                <span className="text-xl font-black uppercase tracking-widest">開始報到</span>
+              </button>
+            </div>
+          </div>
+        )}
+
+        {step === 'register' && (
+          <div className="space-y-6 animate-in fade-in zoom-in duration-500">
+            <div className="space-y-2">
+              <AlertTriangle className="text-amber-500 mx-auto" size={48} />
+              <h3 className="text-2xl font-black text-white">名單內查無此人</h3>
+              <p className="text-slate-400 text-sm">若您是受邀嘉賓，請進行「自主新增」。</p>
+            </div>
+            <div className="space-y-4 bg-white/5 p-6 rounded-3xl border border-white/10">
+              <div className="text-left space-y-1">
+                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">姓名 (確認)</label>
+                <input readOnly value={nameInput} className="w-full bg-transparent border-none p-0 text-white text-2xl font-black outline-none" />
+              </div>
+              <div className="text-left space-y-1">
+                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">職稱 / 單位 (選填)</label>
+                <input 
+                  type="text" 
+                  value={titleInput}
+                  onChange={e => setTitleInput(e.target.value)}
+                  placeholder="例如：OO分會 會長"
+                  className="w-full bg-white/10 border-none rounded-xl p-4 text-white font-bold outline-none focus:ring-2 focus:ring-blue-600" 
+                />
+              </div>
+            </div>
+            <div className="flex gap-3">
+              <button onClick={() => setStep('input')} className="flex-1 py-5 font-black text-slate-400">返回</button>
+              <button onClick={handleSelfRegister} className="flex-[2] bg-emerald-600 text-white py-5 rounded-2xl font-black flex items-center justify-center gap-2">
+                <UserPlus size={20}/> 註冊並報到
+              </button>
+            </div>
+          </div>
+        )}
+
+        {step === 'locating' && (
+          <div className="space-y-6 py-12">
+            <Loader2 className="animate-spin text-blue-500 mx-auto" size={64} />
+            <p className="text-white font-black text-xl animate-pulse">正在驗證您的位置與資訊...</p>
+          </div>
+        )}
+
+        {step === 'success' && (
+          <div className="space-y-8 animate-in zoom-in duration-500 py-10">
+            <div className="w-24 h-24 bg-green-500 rounded-full flex items-center justify-center mx-auto shadow-[0_0_50px_rgba(34,197,94,0.4)]">
+              <CheckCircle size={48} className="text-white" />
+            </div>
+            <div className="space-y-2">
+              <h2 className="text-4xl font-black text-white italic tracking-tighter">報到成功！</h2>
+              <p className="text-green-500 font-black uppercase tracking-[0.2em]">Success Verified</p>
+            </div>
+            <p className="text-slate-400 font-bold leading-relaxed">
+              您已成功進入活動名單。<br/>
+              歡迎參與 {settings.eventName}！
+            </p>
+          </div>
+        )}
+
+        {step === 'error' && (
+          <div className="space-y-6 animate-in shake duration-500">
+            <AlertTriangle className="text-red-500 mx-auto" size={64} />
+            <h3 className="text-2xl font-black text-white">報到發生問題</h3>
+            <p className="text-red-400 font-bold">{errorMessage}</p>
+            <button onClick={() => setStep('input')} className="w-full bg-white/10 text-white p-5 rounded-2xl font-black">重新嘗試</button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
 
 const GuestCheckInView: React.FC<{ guestId: string }> = ({ guestId }) => {
   const { guests, checkInById, settings } = useEvent();
@@ -33,10 +216,6 @@ const GuestCheckInView: React.FC<{ guestId: string }> = ({ guestId }) => {
 
     navigator.geolocation.getCurrentPosition(
       async (position) => {
-        // 在這裡可以加入距離判斷邏輯
-        // const { latitude, longitude } = position.coords;
-        // console.log("當前位置:", latitude, longitude);
-        
         try {
           await checkInById(guestId);
           setStatus('success');
@@ -84,11 +263,11 @@ const GuestCheckInView: React.FC<{ guestId: string }> = ({ guestId }) => {
   }
 
   return (
-    <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-8 relative overflow-hidden">
+    <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-8 relative overflow-hidden text-center">
        <div className="absolute inset-0 bg-gradient-to-b from-blue-900/10 to-transparent"></div>
        <Sparkles className="absolute top-10 right-10 text-amber-500/20 animate-bounce" size={40} />
        
-       <div className="z-10 w-full max-w-sm space-y-12 text-center">
+       <div className="z-10 w-full max-w-sm space-y-12">
           <div className="space-y-2">
             <h1 className="text-white font-black text-3xl italic tracking-tighter opacity-40 uppercase">{settings.eventName}</h1>
             <div className="h-1 w-20 bg-blue-600 mx-auto rounded-full"></div>
@@ -140,10 +319,13 @@ const AppContent: React.FC = () => {
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [loginPassword, setLoginPassword] = useState("");
 
-  // 偵測是否為賓客自主報到模式
-  const guestId = useMemo(() => {
+  // 路由偵測
+  const routeParams = useMemo(() => {
     const params = new URLSearchParams(window.location.search);
-    return params.get('guestId');
+    return {
+      guestId: params.get('guestId'),
+      mode: params.get('mode')
+    };
   }, []);
 
   const isCurrentSectionUnlocked = () => {
@@ -154,7 +336,7 @@ const AppContent: React.FC = () => {
       case 'mcflow': return unlockedSections.mc;
       case 'mc': return unlockedSections.mc;
       case 'lottery': return unlockedSections.lottery;
-      case 'digital': return isAdmin; // 數位報到僅管理員可見
+      case 'digital': return isAdmin;
       default: return false;
     }
   };
@@ -192,9 +374,14 @@ const AppContent: React.FC = () => {
     hour12: false, hour: '2-digit', minute: '2-digit' 
   });
 
-  // 如果是賓客報到模式，渲染賓客專屬介面
-  if (guestId) {
-    return <GuestCheckInView guestId={guestId} />;
+  // 如果是通用自主報到模式
+  if (routeParams.mode === 'general') {
+    return <GeneralCheckInView />;
+  }
+
+  // 如果是特定賓客報到模式
+  if (routeParams.guestId) {
+    return <GuestCheckInView guestId={routeParams.guestId} />;
   }
 
   return (
